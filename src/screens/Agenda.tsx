@@ -5,32 +5,35 @@ import { useStore } from '../data/store'
 import { mxn } from '../lib/helpers'
 import type { Cita, EstadoCita } from '../types'
 
-const START = 9, END = 20, PXH = 60
+const PXH = 60
 const DIAS_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const DIAS_CORTOS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const DIAS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 
-const SLOTS: string[] = Array.from({ length: (END - START) * 4 }, (_, i) => {
-  const total = START * 60 + i * 15
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-})
+function makeSlots(start: number, end: number, step: number): string[] {
+  const count = Math.round((end - start) * 60 / step)
+  return Array.from({ length: count }, (_, i) => {
+    const total = start * 60 + i * step
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+  })
+}
 
 function toMin(hhmm: string) {
   const [h, m] = (hhmm || '0:0').split(':').map(Number)
   return h * 60 + m
 }
 
-function snapSlot(hhmm: string): string {
-  const total = Math.round(toMin(hhmm || '10:00') / 15) * 15
-  const clamped = Math.min(Math.max(total, START * 60), (END - 1) * 60 + 45)
+function snapSlot(hhmm: string, start: number, end: number, step: number): string {
+  const total = Math.round(toMin(hhmm || '10:00') / step) * step
+  const clamped = Math.min(Math.max(total, start * 60), (end - 1) * 60 + (60 - step))
   return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`
 }
 
-function top(hhmm: string) {
+function top(hhmm: string, start: number): number {
   const [h, m] = hhmm.split(':').map(Number)
-  return (h - START + m / 60) * PXH
+  return (h - start + m / 60) * PXH
 }
 
 function dateToIso(d: Date): string {
@@ -54,6 +57,8 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   onSaved: (c: Cita) => void
 }) {
   const { data, upsertCita, upsertCitaFutura } = useStore()
+  const { agendaStart: S, agendaEnd: E, slotMin, diasAbiertos } = data.config
+  const SLOTS = makeSlots(S, E, slotMin)
   const nuevo = !cita.id
 
   const todayBase = new Date()
@@ -64,7 +69,8 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const fechasList: { iso: string; label: string }[] = []
   for (let i = 0; fechasList.length < 15; i++) {
     const d = new Date(todayBase.getTime() + i * 86400000)
-    if (d.getDay() === 0) continue
+    const dayIdx = (d.getDay() + 6) % 7  // 0=Lun, 6=Dom
+    if (!diasAbiertos[dayIdx]) continue
     const iso = dateToIso(d)
     const label = iso === todayIso
       ? `Hoy · ${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
@@ -94,7 +100,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
 
   const availableSlots = SLOTS.filter(slot => {
     const sS = toMin(slot), sE = sS + srv.dur
-    if (sE > END * 60) return false
+    if (sE > E * 60) return false
     if (citasDelDia.some(a => { const aS = toMin(a.h); return sS < aS + a.dur && sE > aS })) return false
     if (bloqueos.filter(b => b.est === est && (!b.fecha || b.fecha === selectedDate)).some(b => {
       const bS = toMin(b.h), bE = toMin(b.fin)
@@ -104,7 +110,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   })
 
   const [h, setH] = useState(() => {
-    const snapped = snapSlot(cita.h || '10:00')
+    const snapped = snapSlot(cita.h || '10:00', S, E, slotMin)
     return availableSlots.includes(snapped) ? snapped : (availableSlots[0] || snapped)
   })
 
@@ -237,6 +243,8 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
 // ─── Modal bloquear horario ─────────────────────────────────────────────────
 function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: Bloqueo) => void }) {
   const { data } = useStore()
+  const { agendaStart: S, agendaEnd: E, slotMin, diasAbiertos } = data.config
+  const SLOTS = makeSlots(S, E, slotMin)
 
   const todayBase = new Date()
   todayBase.setHours(0, 0, 0, 0)
@@ -246,7 +254,8 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
   const fechasList: { iso: string; label: string }[] = []
   for (let i = 0; fechasList.length < 15; i++) {
     const d = new Date(todayBase.getTime() + i * 86400000)
-    if (d.getDay() === 0) continue
+    const dayIdx = (d.getDay() + 6) % 7  // 0=Lun, 6=Dom
+    if (!diasAbiertos[dayIdx]) continue
     const iso = dateToIso(d)
     const label = iso === todayIso
       ? `Hoy · ${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
@@ -536,6 +545,7 @@ function MonthView() {
 // ─── Pantalla principal ─────────────────────────────────────────────────────
 export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
   const { data, upsertCita, deleteCita, deleteCitaFutura } = useStore()
+  const { agendaStart: S, agendaEnd: E } = data.config
   const [vista, setVista] = useState('Día')
   const [filtro, setFiltro] = useState('todos')
   const [sel, setSel] = useState<Cita | null>(null)
@@ -551,7 +561,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const visibles = filtro === 'todos' ? estilistas : estilistas.filter(e => e.id === filtro)
 
   const horas: number[] = []
-  for (let h = START; h <= END; h++) horas.push(h)
+  for (let h = S; h <= E; h++) horas.push(h)
 
   const addBloqueo = (b: Bloqueo) => setBloqueos(prev => [...prev, b])
   const removeBloqueo = (id: string) => setBloqueos(prev => prev.filter(b => b.id !== id))
@@ -641,7 +651,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                       onClick={() => removeBloqueo(b.id)}
                       style={{
                         position: 'absolute', left: 4, right: 4, zIndex: 1,
-                        top: top(b.h) + 2,
+                        top: top(b.h, S) + 2,
                         height: Math.max((toMin(b.fin) - toMin(b.h)) / 60 * PXH - 6, 18),
                         background: 'repeating-linear-gradient(45deg,rgba(200,80,60,0.12),rgba(200,80,60,0.12) 4px,transparent 4px,transparent 10px)',
                         border: '1px dashed rgba(200,80,60,0.5)',
@@ -662,7 +672,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                       onClick={() => setSel(a)}
                       style={{
                         position: 'absolute', left: 4, right: 4, zIndex: 2,
-                        top: top(a.h) + 2,
+                        top: top(a.h, S) + 2,
                         height: (a.dur / 60) * PXH - 6,
                         boxShadow: sel?.id === a.id ? '0 0 0 1.5px var(--gold)' : 'none'
                       }}

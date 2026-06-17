@@ -42,6 +42,12 @@ function AppShell() {
     return () => window.removeEventListener('rb_logo_changed', handler)
   }, [])
 
+  useEffect(() => {
+    if (data.config?.acento) {
+      document.documentElement.style.setProperty('--gold', data.config.acento)
+    }
+  }, [data.config?.acento])
+
   useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null) }, [route])
 
   // Lazy-load screen

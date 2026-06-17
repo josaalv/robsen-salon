@@ -1,13 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { defaultData } from './mockData'
-import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion } from '../types'
+import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig } from '../types'
 
-const STORAGE_KEY = 'rb_data_v2'
+const STORAGE_KEY = 'rb_data_v3'
 
 interface Store {
   data: RBData
   resetData: () => void
+  updateConfig: (patch: Partial<SalonConfig>) => void
   upsertCita: (cita: Partial<Cita> & { id: string }) => void
   deleteCita: (id: string) => void
   upsertCitaFutura: (cita: Partial<Cita> & { id: string }) => void
@@ -30,6 +31,10 @@ export const useStore = create<Store>()(
       data: defaultData,
 
       resetData: () => set({ data: defaultData }),
+
+      updateConfig: (patch) => set(s => ({
+        data: { ...s.data, config: { ...s.data.config, ...patch } }
+      })),
 
       upsertCita: (cita) => set(s => {
         const hoy = s.data.hoy

@@ -1,4 +1,4 @@
-import type { RBData, Estilista, Servicio, Clienta, Cita, Venta, Producto, Movimiento, Transaccion, Mensaje, Plantilla, Usuario, Modulo, Rol, Adicional } from '../types'
+import type { RBData, Estilista, Servicio, Clienta, Cita, Venta, Producto, Movimiento, Transaccion, Mensaje, Plantilla, Usuario, Modulo, Rol, Adicional, SalonConfig } from '../types'
 
 export const estilistas: Estilista[] = [
   { id: 'e1', nombre: 'Valeria Mendoza',  rol: 'Color & Balayage', color: '#C8A14A', ini: 'VM' },
@@ -162,7 +162,37 @@ export const adicionales: Adicional[] = [
   { id:'ad6', nombre:'Cargo por domicilio',       precio:300, cat:'Extra' },
 ]
 
+export const defaultConfig: SalonConfig = {
+  agendaStart: 9,
+  agendaEnd: 20,
+  slotMin: 15,
+  diasAbiertos: [true, true, true, true, true, true, false],
+
+  nombre: 'Robsen Salón & Spa',
+  direccion: 'Av. Chapultepec 456, Col. Americana, Guadalajara, Jal.',
+  tel: '33 3826 0774',
+  whatsapp: '33 3826 0774',
+
+  anticipoPct: 35,
+  iva: 0,
+  metodospago: { efectivo: true, tarjeta: true, transferencia: true, credito: false },
+
+  acento: '#C8A14A',
+
+  comisiones: {
+    Mechas: 35, Colorimetría: 30, Cortes: 28, Tratamientos: 32,
+    Uñas: 25, Pedicure: 25, Maquillaje: 30, Extensiones: 35,
+    Depilación: 22, Paquetes: 30, _producto: 10,
+  },
+
+  notifs: {
+    citas: true, recordatorios: true, anticipos: true,
+    stock: true, inactivas: false, cumples: true,
+  },
+}
+
 export const defaultData: RBData = {
+  config: defaultConfig,
   estilistas,
   servicios,
   clientas,

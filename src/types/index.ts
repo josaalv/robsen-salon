@@ -179,7 +179,39 @@ export interface NavGroup {
   items: NavItem[]
 }
 
+export type SlotMinutos = 15 | 30 | 60
+
+export interface SalonConfig {
+  agendaStart: number
+  agendaEnd: number
+  slotMin: SlotMinutos
+  diasAbiertos: [boolean, boolean, boolean, boolean, boolean, boolean, boolean]  // Lun-Dom
+
+  nombre: string
+  direccion: string
+  tel: string
+  whatsapp: string
+
+  anticipoPct: number
+  iva: 0 | 16
+  metodospago: { efectivo: boolean; tarjeta: boolean; transferencia: boolean; credito: boolean }
+
+  acento: string
+
+  comisiones: Record<string, number>
+
+  notifs: {
+    citas: boolean
+    recordatorios: boolean
+    anticipos: boolean
+    stock: boolean
+    inactivas: boolean
+    cumples: boolean
+  }
+}
+
 export interface RBData {
+  config: SalonConfig
   estilistas: Estilista[]
   servicios: Servicio[]
   clientas: Clienta[]
