@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Avatar, EstadoBadge, Seg, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
@@ -8,7 +8,9 @@ import type { Cita, EstadoCita } from '../types'
 const START = 9, END = 20, PXH = 60
 const DIAS_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const DIAS_CORTOS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+const DIAS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 
 const SLOTS: string[] = Array.from({ length: (END - START) * 4 }, (_, i) => {
   const total = START * 60 + i * 15
@@ -31,6 +33,10 @@ function top(hhmm: string) {
   return (h - START + m / 60) * PXH
 }
 
+function dateToIso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 interface Bloqueo {
   id: string
   est: string
@@ -46,65 +52,80 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   onClose: () => void
   onSaved: (c: Cita) => void
 }) {
-  const { data, upsertCita } = useStore()
+  const { data, upsertCita, upsertCitaFutura } = useStore()
   const nuevo = !cita.id
+
+  const todayBase = new Date()
+  todayBase.setHours(0, 0, 0, 0)
+  const todayIso = dateToIso(todayBase)
+  const tomorrowIso = dateToIso(new Date(todayBase.getTime() + 86400000))
+
+  const fechasList: { iso: string; label: string }[] = []
+  for (let i = 0; fechasList.length < 15; i++) {
+    const d = new Date(todayBase.getTime() + i * 86400000)
+    if (d.getDay() === 0) continue
+    const iso = dateToIso(d)
+    const label = iso === todayIso
+      ? `Hoy · ${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
+      : iso === tomorrowIso
+        ? `Mañana · ${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
+        : `${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
+    fechasList.push({ iso, label })
+  }
+
+  const initDate = cita.fecha && fechasList.some(f => f.iso === cita.fecha) ? cita.fecha : todayIso
+  const [selectedDate, setSelectedDate] = useState(initDate)
   const [cl, setCl] = useState(cita.cl || '')
   const [srvId, setSrvId] = useState(() => {
     const s = data.servicios.find(s => s.nombre === cita.srv)
     return s ? s.id : data.servicios[0].id
   })
   const [est, setEst] = useState(cita.est || data.estilistas[0].id)
-  const [h, setH] = useState(snapSlot(cita.h || '10:00'))
   const [estado, setEstado] = useState<EstadoCita>(cita.estado || 'pend')
   const [ant, setAnt] = useState(cita.ant || 0)
 
   const srv = data.servicios.find(s => s.id === srvId) || data.servicios[0]
+  const isToday = selectedDate === todayIso
+
+  const citasDelDia = isToday
+    ? data.hoy.filter(a => a.est === est && a.id !== cita.id)
+    : (data.citasFuturas || []).filter(a => a.fecha === selectedDate && a.est === est && a.id !== cita.id)
+
+  const availableSlots = SLOTS.filter(slot => {
+    const sS = toMin(slot), sE = sS + srv.dur
+    if (sE > END * 60) return false
+    if (citasDelDia.some(a => { const aS = toMin(a.h); return sS < aS + a.dur && sE > aS })) return false
+    if (bloqueos.filter(b => b.est === est).some(b => {
+      const bS = toMin(b.h), bE = toMin(b.fin)
+      return sS < bE && sE > bS
+    })) return false
+    return true
+  })
+
+  const [h, setH] = useState(() => {
+    const snapped = snapSlot(cita.h || '10:00')
+    return availableSlots.includes(snapped) ? snapped : (availableSlots[0] || snapped)
+  })
+
+  useEffect(() => {
+    if (availableSlots.length > 0 && !availableSlots.includes(h)) {
+      setH(availableSlots[0])
+    }
+  }, [est, srvId, selectedDate])
+
+  const displayH = availableSlots.includes(h) ? h : (availableSlots[0] || h)
   const saldoPreview = Math.max(0, srv.precio - (+ant || 0))
 
   const guardar = () => {
-    if (!cl.trim()) return
-
-    // — Verificar solapamiento con otras citas de la misma estilista —
-    const newStart = toMin(h)
-    const newEnd = newStart + srv.dur
-    const conflictoCita = data.hoy
-      .filter(a => a.est === est && a.id !== cita.id)
-      .some(a => {
-        const aStart = toMin(a.h)
-        const aEnd = aStart + a.dur
-        return newStart < aEnd && newEnd > aStart
-      })
-    if (conflictoCita) {
-      toast('Esa estilista ya tiene una cita en ese horario')
-      return
-    }
-
-    // — Verificar solapamiento con bloqueos —
-    const conflictoBloqueo = bloqueos
-      .filter(b => b.est === est)
-      .some(b => {
-        const bStart = toMin(b.h)
-        const bEnd = toMin(b.fin)
-        return newStart < bEnd && newEnd > bStart
-      })
-    if (conflictoBloqueo) {
-      toast('Ese horario está bloqueado para esa estilista')
-      return
-    }
-
+    if (!cl.trim() || availableSlots.length === 0) return
     const id = cita.id || ('a' + Date.now())
     const newCita: Cita = {
-      id,
-      cl: cl.trim(),
-      srv: srv.nombre,
-      est,
-      h,
-      dur: srv.dur,
-      estado,
-      total: srv.precio,
-      ant: Math.max(0, +ant || 0),
+      id, cl: cl.trim(), srv: srv.nombre, est, h: displayH, dur: srv.dur,
+      estado, total: srv.precio, ant: Math.max(0, +ant || 0),
+      ...(isToday ? {} : { fecha: selectedDate }),
     }
-    upsertCita(newCita)
+    if (isToday) upsertCita(newCita)
+    else upsertCitaFutura(newCita)
     toast(nuevo ? 'Cita agendada correctamente' : 'Cita actualizada')
     onSaved(newCita)
   }
@@ -143,11 +164,23 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
               </select>
             </div>
             <div className="field">
-              <label>Hora de inicio</label>
-              <select className="select" value={h} onChange={e => setH(e.target.value)}>
-                {SLOTS.map(s => <option key={s} value={s}>{s}</option>)}
+              <label>Fecha</label>
+              <select className="select" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}>
+                {fechasList.map(f => <option key={f.iso} value={f.iso}>{f.label}</option>)}
               </select>
             </div>
+          </div>
+          <div className="field">
+            <label>Hora de inicio</label>
+            {availableSlots.length > 0 ? (
+              <select className="select" value={displayH} onChange={e => setH(e.target.value)}>
+                {availableSlots.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <div style={{ padding: '10px 14px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13, color: 'var(--st-canc)', background: 'var(--surface)' }}>
+                Sin horarios disponibles ese día
+              </div>
+            )}
           </div>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className="field">
@@ -169,13 +202,15 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
               <span className="muted">Total del servicio</span>
               <span className="num gold-text" style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 600 }}>{mxn(srv.precio)}</span>
             </div>
-            <div className="between mt10" style={{ fontSize: 12.5 }}>
-              <span className="muted">Termina aprox.</span>
-              <span className="num">{(() => {
-                const end = toMin(h) + srv.dur
-                return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
-              })()}</span>
-            </div>
+            {availableSlots.length > 0 && (
+              <div className="between mt10" style={{ fontSize: 12.5 }}>
+                <span className="muted">Termina aprox.</span>
+                <span className="num">{(() => {
+                  const end = toMin(displayH) + srv.dur
+                  return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
+                })()}</span>
+              </div>
+            )}
             <div className="between mt10" style={{ fontSize: 12.5 }}>
               <span className="muted">Saldo por cobrar</span>
               <span className="num" style={{ fontWeight: 600 }}>{mxn(saldoPreview)}</span>
@@ -188,7 +223,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
           <button
             className="btn gold"
             onClick={guardar}
-            style={{ opacity: cl.trim() ? 1 : .4, pointerEvents: cl.trim() ? 'auto' : 'none' }}
+            style={{ opacity: cl.trim() && availableSlots.length > 0 ? 1 : .4, pointerEvents: cl.trim() && availableSlots.length > 0 ? 'auto' : 'none' }}
           >
             <Ic n="check" />{nuevo ? 'Agendar cita' : 'Guardar cambios'}
           </button>
@@ -303,6 +338,17 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
             </div>
           </div>
         ))}
+        {a.fecha && (
+          <div className="list-item" style={{ padding: '11px 0' }}>
+            <div className="ico" style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.08)', border: '1px solid var(--line)', color: 'var(--gold)' }}>
+              <Ic n="calendar" />
+            </div>
+            <div className="f1">
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Fecha</div>
+              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{a.fecha}</div>
+            </div>
+          </div>
+        )}
         <div className="card" style={{ background: 'var(--surface)', padding: 14, marginTop: 12 }}>
           <div className="between" style={{ fontSize: 13 }}>
             <span className="muted">Total servicio</span>
@@ -353,18 +399,23 @@ function WeekView({ onSel }: { onSel: (a: Cita) => void }) {
   const dow = hoy.getDay()
   const monday = new Date(hoy)
   monday.setDate(hoy.getDate() - (dow === 0 ? 6 : dow - 1))
+  monday.setHours(0, 0, 0, 0)
+  const todayIso = dateToIso(hoy)
 
   const dias = DIAS_CORTOS.map((label, i) => {
     const date = new Date(monday)
     date.setDate(monday.getDate() + i)
-    return { label, date, isHoy: date.toDateString() === hoy.toDateString() }
+    const iso = dateToIso(date)
+    return { label, date, iso, isHoy: iso === todayIso }
   })
 
   return (
     <div className="card card-pad">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 12 }}>
-        {dias.map(({ label, date, isHoy }, i) => {
-          const items = isHoy ? data.hoy : []
+        {dias.map(({ label, date, iso, isHoy }, i) => {
+          const items = isHoy
+            ? data.hoy
+            : (data.citasFuturas || []).filter(c => c.fecha === iso)
           const esDom = i === 6
           return (
             <div key={label + date.getDate()}>
@@ -403,6 +454,8 @@ function MonthView() {
   const firstDow = new Date(hoy.getFullYear(), hoy.getMonth(), 1).getDay()
   const offset = firstDow === 0 ? 6 : firstDow - 1
   const daysInMonth = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()
+  const yy = hoy.getFullYear()
+  const mm = String(hoy.getMonth() + 1).padStart(2, '0')
 
   const cells: (number | null)[] = [
     ...Array(offset).fill(null),
@@ -419,7 +472,10 @@ function MonthView() {
           if (d === null) return <div key={'e' + idx} />
           const isHoy = d === todayNum
           const isDom = idx % 7 === 6
-          const n = isHoy ? data.hoy.length : 0
+          const dayIso = `${yy}-${mm}-${String(d).padStart(2, '0')}`
+          const n = isHoy
+            ? data.hoy.length
+            : (data.citasFuturas || []).filter(c => c.fecha === dayIso).length
           return (
             <div key={d} style={{
               minHeight: 92, borderRadius: 10,
@@ -449,7 +505,7 @@ function MonthView() {
 
 // ─── Pantalla principal ─────────────────────────────────────────────────────
 export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data, upsertCita, deleteCita } = useStore()
+  const { data, upsertCita, deleteCita, deleteCitaFutura } = useStore()
   const [vista, setVista] = useState('Día')
   const [filtro, setFiltro] = useState('todos')
   const [sel, setSel] = useState<Cita | null>(null)
@@ -458,6 +514,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const [bloqueos, setBloqueos] = useState<Bloqueo[]>([])
 
   const hoy = new Date()
+  const todayIso = dateToIso(hoy)
   const fechaStr = `${DIAS_FULL[hoy.getDay()]} ${hoy.getDate()} de ${MESES_ES[hoy.getMonth()]}, ${hoy.getFullYear()}`
 
   const estilistas = data.estilistas
@@ -468,6 +525,12 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
 
   const addBloqueo = (b: Bloqueo) => setBloqueos(prev => [...prev, b])
   const removeBloqueo = (id: string) => setBloqueos(prev => prev.filter(b => b.id !== id))
+
+  const handleDelete = (cita: Cita) => {
+    if (cita.fecha && cita.fecha !== todayIso) deleteCitaFutura(cita.id)
+    else deleteCita(cita.id)
+    setSel(null)
+  }
 
   return (
     <div>
@@ -592,7 +655,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
             a={sel}
             onClose={() => setSel(null)}
             onEdit={() => setEditCita(sel)}
-            onDelete={() => { deleteCita(sel.id); setSel(null) }}
+            onDelete={() => handleDelete(sel)}
           />
         )}
       </div>

@@ -10,6 +10,8 @@ interface Store {
   resetData: () => void
   upsertCita: (cita: Partial<Cita> & { id: string }) => void
   deleteCita: (id: string) => void
+  upsertCitaFutura: (cita: Partial<Cita> & { id: string }) => void
+  deleteCitaFutura: (id: string) => void
   upsertClienta: (c: Partial<Clienta> & { id: string }) => void
   deleteClienta: (id: string) => void
   upsertServicio: (s: Partial<Servicio> & { id: string }) => void
@@ -40,6 +42,22 @@ export const useStore = create<Store>()(
 
       deleteCita: (id) => set(s => ({
         data: { ...s.data, hoy: s.data.hoy.filter(c => c.id !== id) }
+      })),
+
+      upsertCitaFutura: (cita) => set(s => {
+        const futuras = s.data.citasFuturas || []
+        const idx = futuras.findIndex(c => c.id === cita.id)
+        const newFuturas = idx >= 0
+          ? futuras.map((c, i) => i === idx ? { ...c, ...cita } : c)
+          : [...futuras, cita as Cita].sort((a, b) => {
+              const fd = (a.fecha || '').localeCompare(b.fecha || '')
+              return fd !== 0 ? fd : a.h.localeCompare(b.h)
+            })
+        return { data: { ...s.data, citasFuturas: newFuturas } }
+      }),
+
+      deleteCitaFutura: (id) => set(s => ({
+        data: { ...s.data, citasFuturas: (s.data.citasFuturas || []).filter(c => c.id !== id) }
       })),
 
       upsertClienta: (c) => set(s => {

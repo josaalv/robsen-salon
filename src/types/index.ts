@@ -55,6 +55,7 @@ export interface Cita {
   total: number
   ant: number
   notas?: string
+  fecha?: string  // 'YYYY-MM-DD' — undefined significa hoy
 }
 
 export interface LineaVenta {
@@ -184,6 +185,7 @@ export interface RBData {
   clientas: Clienta[]
   estadosCita: Record<string, { k: string; label: string }>
   hoy: Cita[]
+  citasFuturas: Cita[]
   servMasVendidos: { srv: string; n: number; ingreso: number }[]
   ventas7: { d: string; v: number }[]
   ventasMes: { d: string; v: number }[]

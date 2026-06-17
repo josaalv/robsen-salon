@@ -174,6 +174,7 @@ export const defaultData: RBData = {
     canc: { k:'canc', label:'Cancelada' },
   },
   hoy,
+  citasFuturas: [],
   servMasVendidos: [
     { srv:'Balayage Premium',        n:38, ingreso:106400 },
     { srv:'Colorimetría completa',   n:52, ingreso:101400 },

@@ -128,6 +128,10 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   'calendar-x': Ph.CalendarX,
   'lock-simple': Ph.LockSimple,
   'pencil-simple': Ph.PencilSimple,
+  'arrows-clockwise': Ph.ArrowsClockwise,
+  'warning-circle': Ph.WarningCircle,
+  'upload-simple': Ph.UploadSimple,
+  'repeat': Ph.Repeat,
 }
 
 interface IconProps {

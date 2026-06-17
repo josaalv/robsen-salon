@@ -5,7 +5,16 @@ import { useStore } from '../data/store'
 import { mxn, helpers } from '../lib/helpers'
 import type { Clienta, EstadoClienta } from '../types'
 
-function ClientaModal({ c, onClose, onSaved }: { c: Partial<Clienta>; onClose: () => void; onSaved: () => void }) {
+const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+function fechaHoy() {
+  const d = new Date()
+  return `${d.getDate()} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`
+}
+
+// ─── Modal nueva / editar clienta ───────────────────────────────────────────
+function ClientaModal({ c, onClose, onSaved }: {
+  c: Partial<Clienta>; onClose: () => void; onSaved: () => void
+}) {
   const { data, upsertClienta } = useStore()
   const nuevo = !c.id
   const [nombre, setNombre] = useState(c.nombre || '')
@@ -33,11 +42,12 @@ function ClientaModal({ c, onClose, onSaved }: { c: Partial<Clienta>; onClose: (
       cumple: cumple || '01 Ene',
       ciclo: +ciclo || 8,
       ini,
-      ultima: c.ultima || '17 Jun 2026',
+      ultima: c.ultima || fechaHoy(),
       ticket: c.ticket || 0,
       visitas: c.visitas || 0,
       gasto: c.gasto || 0,
     })
+    toast(nuevo ? 'Clienta registrada correctamente' : 'Clienta actualizada')
     onSaved()
   }
 
@@ -85,7 +95,7 @@ function ClientaModal({ c, onClose, onSaved }: { c: Partial<Clienta>; onClose: (
             </div>
             <div className="field">
               <label>Ciclo de recompra (semanas)</label>
-              <input className="input num" type="number" value={ciclo} onChange={e => setCiclo(+e.target.value)} />
+              <input className="input num" type="number" min="1" value={ciclo} onChange={e => setCiclo(Math.max(1, +e.target.value))} />
             </div>
           </div>
         </div>
@@ -105,11 +115,13 @@ function ClientaModal({ c, onClose, onSaved }: { c: Partial<Clienta>; onClose: (
   )
 }
 
-function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
+// ─── Perfil de clienta ───────────────────────────────────────────────────────
+function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEditCl }: {
   c: Clienta
   onBack: () => void
   onEdit: () => void
   onDelete: () => void
+  onNavigate: (r: string) => void
   editCl: Partial<Clienta> | null
   setEditCl: (c: Partial<Clienta> | null) => void
 }) {
@@ -117,6 +129,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
   const [tab, setTab] = useState('Historial')
   const e = data.estilistas.find(est => est.id === c.est) || data.estilistas[0]
 
+  // Solo ventas reales de esta clienta
   const ventasCl = data.ventas.filter(v => v.cliente === c.nombre).map(v => ({
     f: v.fecha,
     ticket: v.ticket,
@@ -128,14 +141,6 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
     total: v.lineas.reduce((s, l) => s + l.precio * l.cant, 0) - (v.desc || 0),
     estado: v.estado === 'parcial' ? 'pend' : 'done',
   }))
-
-  const historialBase = [
-    { f: '12 May 2026', srv: 'Retoque de raíz', est: e.nombre, total: 950, estado: 'done', ticket: '' },
-    { f: '20 Abr 2026', srv: 'Corte & Peinado', est: 'Renata Ochoa', total: 680, estado: 'done', ticket: '' },
-    { f: '15 Mar 2026', srv: 'Tratamiento de Keratina', est: 'Mariana Salgado', total: 2400, estado: 'done', ticket: '' },
-    { f: '02 Mar 2026', srv: 'Balayage Premium', est: e.nombre, total: 2800, estado: 'done', ticket: '' },
-  ]
-  const historial = [...ventasCl, ...historialBase]
 
   const ins = helpers.insights(c)
   const salud = ins.riesgo === 'fuga'
@@ -150,7 +155,8 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
         <button className="btn ghost sm" onClick={onBack}><Ic n="arrow-left" />Volver a clientas</button>
         <div className="vc gap8">
           <button className="btn ghost sm" onClick={onEdit}><Ic n="pencil-simple" />Editar</button>
-          <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} onClick={() => { if (confirm('¿Eliminar a ' + c.nombre + '?')) onDelete() }}>
+          <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }}
+            onClick={() => { if (confirm('¿Eliminar a ' + c.nombre + '?')) onDelete() }}>
             <Ic n="trash" />Eliminar
           </button>
         </div>
@@ -165,13 +171,13 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
             <h2 className="display" style={{ fontSize: 23, margin: '14px 0 6px' }}>{c.nombre}</h2>
             <ClienteBadge estado={c.estado} />
             <div className="vc gap8 mt14" style={{ justifyContent: 'center' }}>
-              <button className="btn gold sm" onClick={() => toast('Abriendo agenda...')}><Ic n="calendar-plus" />Agendar</button>
+              <button className="btn gold sm" onClick={() => onNavigate('agenda')}><Ic n="calendar-plus" />Agendar</button>
               <button className="btn ghost sm" onClick={() => toast('Abriendo WhatsApp...')}><Ic n="whatsapp-logo" />Mensaje</button>
             </div>
           </div>
           <hr className="hr" />
           <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {([['phone', 'Teléfono', c.tel], ['calendar-blank', 'Última visita', c.ultima], ['scissors', 'Servicio favorito', c.fav], ['user', 'Estilista habitual', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
+            {([['phone', 'Teléfono', c.tel || '—'], ['calendar-blank', 'Última visita', c.ultima], ['scissors', 'Servicio favorito', c.fav], ['user', 'Estilista habitual', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
               <div key={l} className="vc gap12">
                 <span style={{ color: 'var(--gold)', width: 18 }}><Ic n={ic} /></span>
                 <div>
@@ -182,12 +188,11 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
             ))}
           </div>
           <hr className="hr" />
-          {/* Retención */}
           <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="eyebrow">Retención</div>
             <div className="between">
               <span className="vc gap10" style={{ fontSize: 13 }}>
-                <span className="dotc" style={{ background: salud[1], width: 10, height: 10 }}></span>Salud de la clienta
+                <span className="dotc" style={{ background: salud[1], width: 10, height: 10 }} />Salud de la clienta
               </span>
               <span style={{ fontWeight: 600, fontSize: 13, color: salud[1] }}>{salud[0]}</span>
             </div>
@@ -213,11 +218,11 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
             <div className="kpi-mini"><span className="l">Visitas</span><span className="v">{c.visitas}</span></div>
             <div className="kpi-mini"><span className="l">Gasto total</span><span className="v gold-text">{mxn(c.gasto)}</span></div>
             <div className="kpi-mini"><span className="l">Ticket prom.</span><span className="v">{mxn(c.ticket)}</span></div>
-            <div className="kpi-mini"><span className="l">Antigüedad</span><span className="v">2.3<span style={{ fontSize: 13, color: 'var(--text-3)' }}> años</span></span></div>
+            <div className="kpi-mini"><span className="l">Ciclo</span><span className="v">{c.ciclo}<span style={{ fontSize: 13, color: 'var(--text-3)' }}> sem</span></span></div>
           </div>
         </div>
 
-        {/* Contenido tabs */}
+        {/* Tabs */}
         <div className="card">
           <div className="tabs" style={{ padding: '0 8px' }}>
             {['Historial', 'Fórmulas de color', 'Preferencias', 'Antes / Después'].map(t => (
@@ -225,66 +230,70 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
             ))}
           </div>
           <div className="card-pad">
+
             {tab === 'Historial' && (
-              <table className="table" style={{ marginTop: -6 }}>
-                <thead>
-                  <tr><th>Fecha</th><th>Servicio / Productos</th><th>Estilista</th><th className="num">Total</th><th>Estado</th></tr>
-                </thead>
-                <tbody>
-                  {historial.map((h, i) => (
-                    <tr key={i} style={{ cursor: 'default' }}>
-                      <td className="muted">
-                        {h.f}
-                        {h.ticket && <span className="num" style={{ color: 'var(--gold)', marginLeft: 8, fontSize: 11.5 }}>{h.ticket}</span>}
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{h.srv}</td>
-                      <td className="muted">{h.est}</td>
-                      <td className="num" style={{ fontWeight: 600 }}>{mxn(h.total)}</td>
-                      <td><EstadoBadge k={h.estado} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {tab === 'Fórmulas de color' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {([['Base · 08 Jun 2026', '7.1 (40g) + 9.1 (20g) · Oxidante 20 vol · 35 min', '#8a7355'], ['Mechas · 02 Mar 2026', 'Decolorante + 0.31 matiz ceniza · 25 min', '#b9a989'], ['Tono · 12 May 2026', '6.0 raíz + gloss perla · 20 vol · 30 min', '#6e5a44']] as [string, string, string][]).map(([t, f, col], i) => (
-                  <div key={i} className="card" style={{ background: 'var(--surface)', padding: 16 }}>
-                    <div className="between">
-                      <div className="vc gap12">
-                        <span style={{ width: 30, height: 30, borderRadius: 8, background: col, border: '1px solid var(--line-soft)', display: 'inline-block' }}></span>
-                        <span style={{ fontWeight: 600, fontSize: 13.5 }}>{t}</span>
-                      </div>
-                      <button className="btn sm ghost"><Ic n="copy" /></button>
-                    </div>
-                    <div className="muted" style={{ fontSize: 13, marginTop: 10 }}>{f}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {tab === 'Preferencias' && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                {['Tono ceniza', 'Sin amoniaco', 'Café de bienvenida', 'Música relajada', 'Cita matutina', 'Alérgica a PPD', 'Prefiere a Valeria', 'Agua mineral'].map(p => (
-                  <span key={p} className="chip"><Ic n="check" />{p}</span>
-                ))}
-                <div className="field w100 mt14">
-                  <label>Notas del equipo</label>
-                  <div className="card" style={{ background: 'var(--surface)', padding: 14, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-                    Clienta VIP, muy puntual. Le gusta agendar los lunes por la mañana. Festeja su cumpleaños el 14 de agosto — enviar promo especial. Recomendó a 3 amigas este año.
-                  </div>
+              ventasCl.length > 0 ? (
+                <table className="table" style={{ marginTop: -6 }}>
+                  <thead>
+                    <tr><th>Fecha</th><th>Servicio / Productos</th><th>Estilista</th><th className="num">Total</th><th>Estado</th></tr>
+                  </thead>
+                  <tbody>
+                    {ventasCl.map((h, i) => (
+                      <tr key={i} style={{ cursor: 'default' }}>
+                        <td className="muted">
+                          {h.f}
+                          {h.ticket && <span className="num" style={{ color: 'var(--gold)', marginLeft: 8, fontSize: 11.5 }}>{h.ticket}</span>}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{h.srv}</td>
+                        <td className="muted">{h.est}</td>
+                        <td className="num" style={{ fontWeight: 600 }}>{mxn(h.total)}</td>
+                        <td><EstadoBadge k={h.estado} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-4)' }}>
+                  <Ic n="receipt" size={32} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
+                  <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Sin historial de ventas</div>
+                  <div style={{ fontSize: 12.5 }}>Las visitas registradas en Ventas aparecerán aquí</div>
                 </div>
+              )
+            )}
+
+            {tab === 'Fórmulas de color' && (
+              <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-4)' }}>
+                <Ic n="paint-brush" size={32} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
+                <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Sin fórmulas registradas</div>
+                <div style={{ fontSize: 12.5, marginBottom: 18 }}>Guarda las fórmulas de color para cada visita</div>
+                <button className="btn gold sm" onClick={() => toast('Función disponible al conectar Supabase')}>
+                  <Ic n="plus" />Agregar fórmula
+                </button>
               </div>
             )}
+
+            {tab === 'Preferencias' && (
+              <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-4)' }}>
+                <Ic n="sliders" size={32} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
+                <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Sin preferencias registradas</div>
+                <div style={{ fontSize: 12.5, marginBottom: 18 }}>Alergias, horarios favoritos, notas del equipo</div>
+                <button className="btn gold sm" onClick={() => toast('Función disponible al conectar Supabase')}>
+                  <Ic n="plus" />Agregar nota
+                </button>
+              </div>
+            )}
+
             {tab === 'Antes / Después' && (
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
-                {(['Balayage · Jun', 'Color · May', 'Keratina · Mar'] as string[]).map((l, i) => (
-                  <div key={i} className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <div className="imgph" style={{ minHeight: 130 }}><Ic n="image" /><span>ANTES</span><span style={{ opacity: .6 }}>{l}</span></div>
-                    <div className="imgph" style={{ minHeight: 130 }}><Ic n="image" /><span>DESPUÉS</span><span style={{ opacity: .6 }}>{l}</span></div>
-                  </div>
-                ))}
+              <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-4)' }}>
+                <Ic n="camera" size={32} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
+                <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Sin fotos</div>
+                <div style={{ fontSize: 12.5, marginBottom: 18 }}>Sube comparativas de antes y después por visita</div>
+                <button className="btn gold sm" onClick={() => toast('Función disponible al conectar Supabase')}>
+                  <Ic n="upload" />Subir foto
+                </button>
               </div>
             )}
+
           </div>
         </div>
       </div>
@@ -292,6 +301,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, editCl, setEditCl }: {
   )
 }
 
+// ─── Vista de retención ──────────────────────────────────────────────────────
 function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
   const { data } = useStore()
 
@@ -331,57 +341,66 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
-        {/* Recompra inteligente */}
         <div className="card" style={{ gridColumn: '1 / -1' }}>
-          <CardHead title="Le toca volver · recompra" sub="Según el ciclo de cada servicio" right={<span className="badge pay"><span className="d"></span>{recompra.length} clientas</span>} />
-          <table className="table" style={{ marginTop: 6 }}>
-            <thead><tr><th>Clienta</th><th>Servicio habitual</th><th>Última visita</th><th>Sugerida</th><th>Estado</th><th></th></tr></thead>
-            <tbody>
-              {recompra.map(({ c, i }) => (
-                <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => onPerfil(c)}>
-                  <td><div className="cell-name"><Avatar ini={c.ini} size="sm" /><div className="nm">{c.nombre}</div></div></td>
-                  <td className="muted">{c.fav} · cada {c.ciclo} sem</td>
-                  <td className="muted">hace {i.dias} días</td>
-                  <td className="muted">{i.proxStr.replace(' 2026', '')}</td>
-                  <td>
-                    {i.recompra === 'atrasada'
-                      ? <span className="badge canc"><span className="d"></span>Atrasada</span>
-                      : <span className="badge pend"><span className="d"></span>Le toca</span>}
-                  </td>
-                  <td onClick={e => e.stopPropagation()}>
-                    <button className="btn sm line" onClick={() => toast('Mensaje de WhatsApp enviado')}><Ic n="whatsapp-logo" />Reagendar</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <CardHead title="Le toca volver · recompra" sub="Según el ciclo de cada servicio"
+            right={<span className="badge pay"><span className="d" />{recompra.length} clientas</span>} />
+          {recompra.length > 0 ? (
+            <table className="table" style={{ marginTop: 6 }}>
+              <thead><tr><th>Clienta</th><th>Servicio habitual</th><th>Última visita</th><th>Sugerida</th><th>Estado</th><th></th></tr></thead>
+              <tbody>
+                {recompra.map(({ c, i }) => (
+                  <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => onPerfil(c)}>
+                    <td><div className="cell-name"><Avatar ini={c.ini} size="sm" /><div className="nm">{c.nombre}</div></div></td>
+                    <td className="muted">{c.fav} · cada {c.ciclo} sem</td>
+                    <td className="muted">hace {i.dias} días</td>
+                    <td className="muted">{i.proxStr.replace(' 2026', '')}</td>
+                    <td>
+                      {i.recompra === 'atrasada'
+                        ? <span className="badge canc"><span className="d" />Atrasada</span>
+                        : <span className="badge pend"><span className="d" />Le toca</span>}
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <button className="btn sm line" onClick={() => toast('Mensaje de WhatsApp enviado')}><Ic n="whatsapp-logo" />Reagendar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="card-pad" style={{ textAlign: 'center', color: 'var(--text-4)', padding: '28px 0' }}>
+              <Ic n="check-circle" size={28} style={{ display: 'block', margin: '0 auto 8px', color: 'var(--st-conf)' }} />
+              Todas las clientas al día
+            </div>
+          )}
         </div>
 
-        {/* Riesgo de fuga */}
         <div className="card">
           <CardHead title="Riesgo de fuga" sub="Clientas que podrías estar perdiendo" />
           <div className="card-pad" style={{ paddingTop: 8 }}>
-            {riesgo.map(({ c, i }) => (
+            {riesgo.length > 0 ? riesgo.map(({ c, i }) => (
               <div key={c.id} className="list-item" style={{ padding: '13px 0', cursor: 'pointer' }} onClick={() => onPerfil(c)}>
                 <Avatar ini={c.ini} size="sm" />
                 <div className="f1" style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13.5 }}>{c.nombre}</div>
                   <div className="vc gap8" style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 3 }}>
                     {i.riesgo === 'fuga'
-                      ? <span className="badge canc"><span className="d"></span>En fuga</span>
-                      : <span className="badge pend"><span className="d"></span>En riesgo</span>}
+                      ? <span className="badge canc"><span className="d" />En fuga</span>
+                      : <span className="badge pend"><span className="d" />En riesgo</span>}
                     <span>Sin venir hace {i.dias} días</span>
                   </div>
                 </div>
               </div>
-            ))}
-            <button className="btn line w100 mt14" style={{ justifyContent: 'center' }} onClick={() => toast('Campaña de reactivación enviada')}>
-              <Ic n="sparkle" />Campaña de reactivación
-            </button>
+            )) : (
+              <div style={{ textAlign: 'center', color: 'var(--text-4)', padding: '20px 0', fontSize: 13 }}>Sin clientas en riesgo</div>
+            )}
+            {riesgo.length > 0 && (
+              <button className="btn line w100 mt14" style={{ justifyContent: 'center' }} onClick={() => toast('Disponible al conectar Supabase')}>
+                <Ic n="sparkle" />Campaña de reactivación
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Cumpleaños */}
         <div className="card">
           <CardHead title="Próximos cumpleaños" sub="Detalle especial = clienta feliz" />
           <div className="card-pad" style={{ paddingTop: 8 }}>
@@ -407,6 +426,7 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
   )
 }
 
+// ─── Pantalla principal CRM ─────────────────────────────────────────────────
 export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   const { data, deleteClienta } = useStore()
   const [q, setQ] = useState('')
@@ -417,6 +437,15 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   const [editCl, setEditCl] = useState<Partial<Clienta> | null>(null)
 
   const filtros = ['Todas', 'VIP', 'Frecuente', 'Activa', 'Nueva', 'Inactiva']
+
+  // Conteos reales por estado
+  const cuentas: Record<string, number> = {
+    VIP:      data.clientas.filter(c => c.estado === 'VIP').length,
+    Frecuente:data.clientas.filter(c => c.estado === 'Frecuente').length,
+    Activa:   data.clientas.filter(c => c.estado === 'Activa').length,
+    Nueva:    data.clientas.filter(c => c.estado === 'Nueva').length,
+    Inactiva: data.clientas.filter(c => c.estado === 'Inactiva').length,
+  }
 
   const rows = useMemo(() => {
     let r = data.clientas.filter(c =>
@@ -433,7 +462,9 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   }, [q, filtro, sort, data.clientas])
 
   const toggleSort = (k: keyof Clienta) => setSort(s => s.k === k ? { k, dir: -s.dir } : { k, dir: 1 })
-  const Caret = ({ k }: { k: keyof Clienta }) => sort.k === k ? <span className="caret">{sort.dir === 1 ? '▲' : '▼'}</span> : <span className="caret">↕</span>
+  const Caret = ({ k }: { k: keyof Clienta }) => (
+    <span className="caret">{sort.k === k ? (sort.dir === 1 ? '▲' : '▼') : '↕'}</span>
+  )
 
   if (perfil) return (
     <ClientaPerfil
@@ -441,6 +472,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
       onBack={() => setPerfil(null)}
       onEdit={() => setEditCl(perfil)}
       onDelete={() => { deleteClienta(perfil.id); setPerfil(null) }}
+      onNavigate={onNavigate}
       editCl={editCl}
       setEditCl={setEditCl}
     />
@@ -451,31 +483,42 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
       <div className="between" style={{ marginBottom: 22 }}>
         <div>
           <h1 className="display" style={{ fontSize: 26, margin: 0 }}>CRM de clientas</h1>
-          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{data.clientas.length} clientas registradas · 6 nuevas este mes</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+            {data.clientas.length} clientas registradas · {cuentas.Nueva} nuevas
+          </div>
         </div>
         <div className="vc gap12">
           <Seg opts={['Clientas', 'Retención']} value={vista} onChange={setVista} />
-          <button className="btn ghost" onClick={() => toast('Importar clientas desde CSV')}><Ic n="upload-simple" />Importar</button>
+          <button className="btn ghost" onClick={() => toast('Importar clientas desde CSV — disponible con Supabase')}><Ic n="upload-simple" />Importar</button>
           <button className="btn gold" onClick={() => setEditCl({})}><Ic n="plus" />Nueva clienta</button>
         </div>
       </div>
 
       {vista === 'Retención' ? <CRMRetencion onPerfil={setPerfil} /> : (
         <>
-          {/* Mini KPIs */}
+          {/* Mini KPIs calculados */}
           <div className="grid" style={{ gridTemplateColumns: 'repeat(5,1fr)', marginBottom: 18 }}>
-            {([['VIP', 3, 'crown-simple', 'var(--gold)'], ['Frecuentes', 3, 'repeat', 'var(--st-frec)'], ['Activas', 3, 'check-circle', 'var(--st-conf)'], ['Nuevas', 1, 'user-plus', '#8FB2D8'], ['Inactivas', 2, 'user-minus', 'var(--st-canc)']] as [string, number, string, string][]).map(([l, n, ic, c]) => (
-              <div key={l} className="card card-pad vc gap12" style={{ cursor: 'pointer' }} onClick={() => setFiltro(l === 'Frecuentes' ? 'Frecuente' : l === 'Activas' ? 'Activa' : l === 'Nuevas' ? 'Nueva' : l === 'Inactivas' ? 'Inactiva' : 'VIP')}>
-                <div className="ico" style={{ width: 38, height: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line-soft)', color: c }}>
+            {([
+              ['VIP',       'VIP',       'crown-simple',  'var(--gold)'],
+              ['Frecuente', 'Frecuentes','repeat',        'var(--st-frec)'],
+              ['Activa',    'Activas',   'check-circle',  'var(--st-conf)'],
+              ['Nueva',     'Nuevas',    'user-plus',     '#8FB2D8'],
+              ['Inactiva',  'Inactivas', 'user-minus',    'var(--st-canc)'],
+            ] as [string, string, string, string][]).map(([key, label, ic, color]) => (
+              <div key={key} className="card card-pad vc gap12" style={{ cursor: 'pointer' }}
+                onClick={() => setFiltro(key)}>
+                <div className="ico" style={{ width: 38, height: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line-soft)', color }}>
                   <Ic n={ic} />
                 </div>
-                <div className="kpi-mini"><span className="v" style={{ fontSize: 20 }}>{n}</span><span className="l">{l}</span></div>
+                <div className="kpi-mini">
+                  <span className="v" style={{ fontSize: 20 }}>{cuentas[key]}</span>
+                  <span className="l">{label}</span>
+                </div>
               </div>
             ))}
           </div>
 
           <div className="card">
-            {/* Toolbar */}
             <div className="card-pad between" style={{ paddingBottom: 16, flexWrap: 'wrap', gap: 14 }}>
               <div className="search" style={{ width: 320 }}>
                 <Ic n="magnifying-glass" />
@@ -483,7 +526,9 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
               </div>
               <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
                 {filtros.map(f => (
-                  <button key={f} className="chip" style={filtro === f ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}} onClick={() => setFiltro(f)}>{f}</button>
+                  <button key={f} className="chip"
+                    style={filtro === f ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}}
+                    onClick={() => setFiltro(f)}>{f}</button>
                 ))}
               </div>
             </div>
@@ -521,27 +566,32 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
                       <td className="num muted">{c.tel}</td>
                       <td className="muted">
                         <span className="vc" style={{ gap: 7 }} title={visitTip}>
-                          <span className="dotc" style={{ background: visitCol }}></span>{c.ultima}
+                          <span className="dotc" style={{ background: visitCol }} />{c.ultima}
                         </span>
                       </td>
                       <td className="num" style={{ fontWeight: 600 }}>{mxn(c.ticket)}</td>
                       <td className="muted">{c.fav}</td>
                       <td>
                         <span className="vc" style={{ gap: 7, fontSize: 12.5 }}>
-                          <span className="dotc" style={{ background: e.color }}></span>{e.nombre.split(' ')[0]}
+                          <span className="dotc" style={{ background: e.color }} />{e.nombre.split(' ')[0]}
                         </span>
                       </td>
                       <td><Ic n="caret-right" /></td>
                     </tr>
                   )
                 })}
+                {rows.length === 0 && (
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-4)' }}>Sin resultados</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </>
       )}
 
-      {editCl !== null && <ClientaModal c={editCl} onClose={() => setEditCl(null)} onSaved={() => setEditCl(null)} />}
+      {editCl !== null && (
+        <ClientaModal c={editCl} onClose={() => setEditCl(null)} onSaved={() => setEditCl(null)} />
+      )}
     </div>
   )
 }
