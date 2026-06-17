@@ -24,7 +24,8 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   const proximas = citasHoy.filter(a => ['conf', 'pay', 'pend'].includes(a.estado)).slice(0, 6)
 
   // — Ventas —
-  const ventasHoy = data.ventas.filter(v => v.fecha.toLowerCase().includes('hoy'))
+  const todayStr = hoy.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+  const ventasHoy = data.ventas.filter(v => v.fecha.startsWith(todayStr))
   const totalHoy = ventasHoy.reduce((s, v) => s + ventaCalc.total(v), 0)
   const totalSemana = data.ventas7.reduce((s, d) => s + d.v, 0)
   const totalMes = data.finanzas.ingresosServicio + data.finanzas.ingresosProducto

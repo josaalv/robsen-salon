@@ -106,7 +106,8 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const saldo = (v: Venta) => Math.max(0, totalVenta(v) - (v.anticipo || 0))
   const comisionVenta = (v: Venta) => v.lineas.reduce((s, l) => s + Math.round(totalLinea(l) * (l.com || 0) / 100), 0)
 
-  const hoyVentas = ventas.filter(v => v.fecha.startsWith('15 Jun') || v.fecha.startsWith('Hoy'))
+  const todayStr = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+  const hoyVentas = ventas.filter(v => v.fecha.startsWith(todayStr))
   const totalHoy = hoyVentas.reduce((s, v) => s + totalVenta(v), 0)
   const ticketProm = hoyVentas.length ? Math.round(totalHoy / hoyVentas.length) : 0
   const comisionesHoy = hoyVentas.reduce((s, v) => s + comisionVenta(v), 0)
@@ -134,7 +135,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     ].filter(Boolean).join(' · ')
   }
 
-  const nextTicket = '#' + (1043 + ventas.filter(v => v.fecha.startsWith('Hoy')).length)
+  const nextTicket = '#' + (1043 + hoyVentas.length)
 
   return (
     <div>

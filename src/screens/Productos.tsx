@@ -558,13 +558,20 @@ interface VenderModalProps {
   onClose: () => void
 }
 
-const METODOS_PAGO = ['Efectivo', 'Tarjeta', 'Transferencia', 'Mixto']
-
 function VenderModal({ productos, sel: initialSel, estilistas, clientas, onConfirm, onClose }: VenderModalProps) {
+  const { data: storeData } = useStore()
+  const mp = storeData.config?.metodospago
+  const metodosPago = [
+    mp?.efectivo && 'Efectivo',
+    mp?.tarjeta && 'Tarjeta',
+    mp?.transferencia && 'Transferencia',
+    mp?.credito && 'Crédito',
+  ].filter(Boolean) as string[]
+
   const [sel, setSel] = useState<Producto>(initialSel)
   const [cant, setCant] = useState(1)
   const [cliente, setCliente] = useState('')
-  const [pago, setPago] = useState('Efectivo')
+  const [pago, setPago] = useState(metodosPago[0] || 'Efectivo')
   const [est, setEst] = useState('')
 
   const total = sel.precio * cant
@@ -679,7 +686,7 @@ function VenderModal({ productos, sel: initialSel, estilistas, clientas, onConfi
           <div>
             <label className="label" style={{ marginBottom: 10 }}>Método de pago</label>
             <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
-              {METODOS_PAGO.map(m => (
+              {metodosPago.map(m => (
                 <button
                   key={m}
                   className="chip"

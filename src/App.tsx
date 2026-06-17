@@ -100,8 +100,8 @@ function AppShell() {
       <aside className="sidebar">
         <div className="brand">
           {logo
-            ? <img src={logo} alt="Robsen" className="brand-logo-img" />
-            : <div className="logo">Robsen</div>}
+            ? <img src={logo} alt={data.config?.nombre || 'Robsen'} className="brand-logo-img" />
+            : <div className="logo">{data.config?.nombre || 'Robsen'}</div>}
           <div className="sub">Salón &amp; Spa · Interno</div>
         </div>
         <nav className="nav">

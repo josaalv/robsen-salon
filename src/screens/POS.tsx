@@ -28,11 +28,19 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
   const [q, setQ] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [cliente, setCliente] = useState('')
-  const [pago, setPago] = useState('Tarjeta')
   const [desc, setDesc] = useState(0)
   const [anticipo, setAnticipo] = useState(0)
 
   const ticket = nextTicket || ('#' + (1043 + data.ventas.length))
+  const comisiones = data.config?.comisiones || {}
+  const metodosPago = data.config?.metodospago
+  const pagoOpts = [
+    metodosPago?.tarjeta && 'Tarjeta',
+    metodosPago?.efectivo && 'Efectivo',
+    metodosPago?.transferencia && 'Transferencia',
+    metodosPago?.credito && 'Crédito',
+  ].filter(Boolean) as string[]
+  const [pago, setPago] = useState(pagoOpts[0] || 'Tarjeta')
 
   const catalogo: Record<string, CartItem[]> = {
     Servicios: data.servicios.map(s => ({
@@ -42,7 +50,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       precio: s.precio,
       sub: s.cat + ' · ' + s.dur + ' min',
       prof: s.prof,
-      com: 30,
+      com: comisiones[s.cat] ?? 30,
       cant: 1,
       est: null,
     })),
@@ -53,7 +61,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       precio: p.precio,
       sub: p.marca + ' · ' + p.stock + ' en stock',
       stock: p.stock,
-      com: 10,
+      com: comisiones['_producto'] ?? 10,
       cant: 1,
       est: null,
     })),
@@ -94,7 +102,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
     const venta: Venta = {
       id: 'v' + Date.now(),
       ticket,
-      fecha: 'Hoy · ahora',
+      fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
       cliente: cliente || 'Venta de mostrador',
       clienteId: '',
       pago,
@@ -234,9 +242,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
                 <div className="field f1">
                   <label style={{ fontSize: 11 }}>Pago</label>
                   <select className="select" value={pago} onChange={e => setPago(e.target.value)} style={{ padding: '8px 28px 8px 10px' }}>
-                    <option>Tarjeta</option>
-                    <option>Efectivo</option>
-                    <option>Transferencia</option>
+                    {pagoOpts.map(m => <option key={m}>{m}</option>)}
                   </select>
                 </div>
               </div>
