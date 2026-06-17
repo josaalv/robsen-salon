@@ -43,6 +43,7 @@ interface Bloqueo {
   h: string
   fin: string
   nota: string
+  fecha?: string  // 'YYYY-MM-DD' — undefined = todos los días
 }
 
 // ─── Modal nueva/editar cita ────────────────────────────────────────────────
@@ -95,7 +96,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
     const sS = toMin(slot), sE = sS + srv.dur
     if (sE > END * 60) return false
     if (citasDelDia.some(a => { const aS = toMin(a.h); return sS < aS + a.dur && sE > aS })) return false
-    if (bloqueos.filter(b => b.est === est).some(b => {
+    if (bloqueos.filter(b => b.est === est && (!b.fecha || b.fecha === selectedDate)).some(b => {
       const bS = toMin(b.h), bE = toMin(b.fin)
       return sS < bE && sE > bS
     })) return false
@@ -236,7 +237,27 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
 // ─── Modal bloquear horario ─────────────────────────────────────────────────
 function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: Bloqueo) => void }) {
   const { data } = useStore()
+
+  const todayBase = new Date()
+  todayBase.setHours(0, 0, 0, 0)
+  const todayIso = dateToIso(todayBase)
+  const tomorrowIso = dateToIso(new Date(todayBase.getTime() + 86400000))
+
+  const fechasList: { iso: string; label: string }[] = []
+  for (let i = 0; fechasList.length < 15; i++) {
+    const d = new Date(todayBase.getTime() + i * 86400000)
+    if (d.getDay() === 0) continue
+    const iso = dateToIso(d)
+    const label = iso === todayIso
+      ? `Hoy · ${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
+      : iso === tomorrowIso
+        ? `Mañana · ${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
+        : `${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_CORTOS[d.getMonth()]}`
+    fechasList.push({ iso, label })
+  }
+
   const [est, setEst] = useState(data.estilistas[0].id)
+  const [selectedDate, setSelectedDate] = useState(todayIso)
   const [inicio, setInicio] = useState('12:00')
   const [fin, setFin] = useState('13:00')
   const [nota, setNota] = useState('')
@@ -251,7 +272,7 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
   }
 
   const guardar = () => {
-    onSaved({ id: 'b' + Date.now(), est, h: inicio, fin, nota: nota.trim() || 'Bloqueado' })
+    onSaved({ id: 'b' + Date.now(), est, h: inicio, fin, nota: nota.trim() || 'Bloqueado', fecha: selectedDate })
     toast('Horario bloqueado')
     onClose()
   }
@@ -260,7 +281,7 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
 
   return (
     <div className="rb-modal-bg" onClick={onClose}>
-      <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw' }}>
+      <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: '94vw' }}>
         <div className="card-head">
           <div>
             <div className="eyebrow">Bloquear tiempo</div>
@@ -269,11 +290,19 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
           <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
         </div>
         <div className="card-pad" style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="field">
-            <label>Estilista</label>
-            <select className="select" value={est} onChange={e => setEst(e.target.value)}>
-              {data.estilistas.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-            </select>
+          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div className="field">
+              <label>Estilista</label>
+              <select className="select" value={est} onChange={e => setEst(e.target.value)}>
+                {data.estilistas.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Fecha</label>
+              <select className="select" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}>
+                {fechasList.map(f => <option key={f.iso} value={f.iso}>{f.label}</option>)}
+              </select>
+            </div>
           </div>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className="field">
@@ -295,7 +324,8 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
               placeholder="Descanso, reunión, capacitación…" />
           </div>
           <div className="card" style={{ background: 'var(--surface)', padding: 12, fontSize: 13, color: 'var(--text-3)' }}>
-            Duración: <b style={{ color: 'var(--text)' }}>{durMin} min</b> · de {inicio} a {fin}
+            <b style={{ color: 'var(--text)' }}>{fechasList.find(f => f.iso === selectedDate)?.label}</b>
+            {' · '}{inicio} – {fin} · <b style={{ color: 'var(--text)' }}>{durMin} min</b>
           </div>
         </div>
         <hr className="hr" />
@@ -603,8 +633,8 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                 <div key={e.id} style={{ position: 'relative', borderLeft: '1px solid var(--line-soft)' }}>
                   {horas.map(h => <div key={h} style={{ height: PXH, borderBottom: '1px solid var(--line-soft)' }} />)}
 
-                  {/* Bloqueos */}
-                  {bloqueos.filter(b => b.est === e.id).map(b => (
+                  {/* Bloqueos del día */}
+                  {bloqueos.filter(b => b.est === e.id && (!b.fecha || b.fecha === todayIso)).map(b => (
                     <div
                       key={b.id}
                       title={`${b.nota} · ${b.h}–${b.fin} (clic para quitar)`}
