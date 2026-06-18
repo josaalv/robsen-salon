@@ -54,7 +54,7 @@ const mapConfig = (r: any): SalonConfig => ({
   iva: r.iva,
   metodospago: r.metodospago,
   acento: r.acento,
-  comisiones: {},
+  comisiones: r.comisiones || {},
   notifs: r.notifs,
 })
 
@@ -63,7 +63,8 @@ const toConfigRow = (c: SalonConfig) => ({
   dias_abiertos: c.diasAbiertos,
   nombre: c.nombre, direccion: c.direccion, tel: c.tel, whatsapp: c.whatsapp,
   anticipo_pct: c.anticipoPct, requerir_anticipo: c.requerirAnticipo,
-  iva: c.iva, metodospago: c.metodospago, acento: c.acento, notifs: c.notifs,
+  iva: c.iva, metodospago: c.metodospago, acento: c.acento,
+  comisiones: c.comisiones, notifs: c.notifs,
 })
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
@@ -179,6 +180,7 @@ export const db = {
     if (patch.estado    !== undefined) row.estado    = patch.estado
     if (patch.anticipo  !== undefined) row.anticipo  = patch.anticipo
     if (patch.desc      !== undefined) row.descuento = patch.desc
+    if (patch.pago      !== undefined) row.pago      = patch.pago
     if (Object.keys(row).length) await supabase.from('ventas').update(row).eq('id', id)
   },
 

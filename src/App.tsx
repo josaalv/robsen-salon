@@ -201,12 +201,13 @@ function AppShell() {
 function AgendaPop({ onClose, go, citas, estilistas }: any) {
   const proximas = citas.slice(0, 5)
   const ESTADOS: Record<string, string> = { pend:'Pendiente', conf:'Confirmada', pay:'Anticipo pagado', done:'Completada', canc:'Cancelada' }
+  const hoyStr = new Date().toLocaleDateString('es-MX', { day:'numeric', month:'short' })
   return (
     <>
       <div style={{ position:'fixed', inset:0, zIndex:40 }} onClick={onClose} />
       <div className="card gold-edge top-pop" onClick={(e) => e.stopPropagation()}>
         <div className="card-head" style={{ padding:'16px 18px 0' }}>
-          <div><div className="eyebrow">Hoy · 17 jun</div><h3 style={{ marginTop:4, fontSize:17 }}>Próximas citas</h3></div>
+          <div><div className="eyebrow">Hoy · {hoyStr}</div><h3 style={{ marginTop:4, fontSize:17 }}>Próximas citas</h3></div>
           <span className="badge neutral">{citas.length}</span>
         </div>
         <div style={{ padding:'12px 18px 8px', maxHeight:320, overflowY:'auto' }}>
@@ -242,36 +243,112 @@ function AgendaPop({ onClose, go, citas, estilistas }: any) {
 }
 
 function NotifPop({ onClose, go }: any) {
-  const [items, setItems] = useState([
-    { id:'n1', ic:'warning',      tone:'bad',  t:'3 citas sin confirmar',      s:'Para hoy · Isabela, Mariana y Paulina', to:'whatsapp', leido:false },
-    { id:'n2', ic:'package',      tone:'warn', t:'Stock bajo en 2 productos',  s:'Bain Satin y Oxidante 20 vol',          to:'productos', leido:false },
-    { id:'n3', ic:'hand-coins',   tone:'warn', t:'5 pagos pendientes de cobro',s:'Saldo por cobrar · $7,310',             to:'ventas',   leido:false },
-    { id:'n4', ic:'cash-register',tone:'info', t:'Venta registrada #1042',     s:'Ana Sofía Beltrán · $3,520',            to:'ventas',   leido:true },
-    { id:'n5', ic:'user-minus',   tone:'warn', t:'8 clientas inactivas (+60 días)',s:'Sugerencia: campaña de reactivación',to:'whatsapp', leido:true },
-  ])
-  const sinLeer = items.filter(i => !i.leido).length
+  const { data } = useStore()
+  const [leidas, setLeidas] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('rb_notif_leidas') || '[]')) }
+    catch { return new Set() }
+  })
+
+  const items = React.useMemo(() => {
+    const list: { id:string; ic:string; tone:string; t:string; s:string; to:string }[] = []
+
+    // Citas sin confirmar hoy
+    const sinConf = data.hoy.filter(c => c.estado === 'pend')
+    if (sinConf.length > 0) {
+      const nombres = sinConf.slice(0, 3).map(c => c.cl.split(' ')[0]).join(', ')
+      list.push({ id:'n_pend', ic:'warning', tone:'bad',
+        t:`${sinConf.length} cita${sinConf.length > 1 ? 's' : ''} sin confirmar`,
+        s:`Para hoy · ${nombres}${sinConf.length > 3 ? ' y más' : ''}`, to:'agenda' })
+    }
+
+    // Productos con stock bajo
+    const stockBajo = data.productos.filter(p => p.stock <= p.min && p.min > 0)
+    if (stockBajo.length > 0) {
+      const nombres = stockBajo.slice(0, 2).map(p => p.nombre).join(' y ')
+      list.push({ id:'n_stock', ic:'package', tone:'warn',
+        t:`Stock bajo en ${stockBajo.length} producto${stockBajo.length > 1 ? 's' : ''}`,
+        s:nombres + (stockBajo.length > 2 ? ` y ${stockBajo.length - 2} más` : ''), to:'productos' })
+    }
+
+    // Ventas con saldo pendiente
+    const pendPago = data.ventas.filter(v => v.estado === 'parcial' || v.estado === 'pendiente')
+    if (pendPago.length > 0) {
+      const saldoTotal = pendPago.reduce((s, v) => {
+        const total = v.lineas.reduce((a, l) => a + l.precio * l.cant, 0)
+        return s + Math.max(0, total - (v.desc || 0) - (v.anticipo || 0))
+      }, 0)
+      list.push({ id:'n_cobro', ic:'hand-coins', tone:'warn',
+        t:`${pendPago.length} pago${pendPago.length > 1 ? 's' : ''} pendiente${pendPago.length > 1 ? 's' : ''} de cobro`,
+        s:`Saldo por cobrar · $${saldoTotal.toLocaleString('es-MX')}`, to:'ventas' })
+    }
+
+    // Clientas inactivas +60 días
+    const ahora = Date.now()
+    const inactivas = data.clientas.filter(c => {
+      if (!c.ultima) return false
+      const partes = c.ultima.split(' ')
+      const d = parseInt(partes[0])
+      const MESES: Record<string, number> = { ene:0, feb:1, mar:2, abr:3, may:4, jun:5, jul:6, ago:7, sep:8, oct:9, nov:10, dic:11 }
+      const m = MESES[partes[1]?.toLowerCase()]
+      const y = partes[2] ? parseInt(partes[2]) : new Date().getFullYear()
+      if (isNaN(d) || m === undefined) return false
+      const diff = (ahora - new Date(y, m, d).getTime()) / 86400000
+      return diff > 60
+    })
+    if (inactivas.length > 0) {
+      list.push({ id:'n_inact', ic:'user-minus', tone:'warn',
+        t:`${inactivas.length} clienta${inactivas.length > 1 ? 's' : ''} inactiva${inactivas.length > 1 ? 's' : ''} (+60 días)`,
+        s:'Sugerencia: campaña de reactivación', to:'whatsapp' })
+    }
+
+    // Última venta registrada
+    if (data.ventas.length > 0) {
+      const v = data.ventas[0]
+      const total = v.lineas.reduce((s, l) => s + l.precio * l.cant, 0) - (v.desc || 0)
+      list.push({ id:`n_venta_${v.id}`, ic:'cash-register', tone:'info',
+        t:`Venta registrada ${v.ticket}`,
+        s:`${v.cliente} · $${total.toLocaleString('es-MX')}`, to:'ventas' })
+    }
+
+    return list
+  }, [data.hoy, data.ventas, data.productos, data.clientas])
+
+  const sinLeer = items.filter(n => !leidas.has(n.id)).length
   const toneCol: Record<string, string> = { bad:'var(--st-canc)', warn:'var(--st-pend)', info:'var(--gold)' }
+
+  const marcarLeidas = () => {
+    const all = new Set(items.map(n => n.id))
+    setLeidas(all)
+    localStorage.setItem('rb_notif_leidas', JSON.stringify([...all]))
+  }
+
   return (
     <>
       <div style={{ position:'fixed', inset:0, zIndex:40 }} onClick={onClose} />
       <div className="card gold-edge top-pop" onClick={e => e.stopPropagation()}>
         <div className="card-head" style={{ padding:'16px 18px 0' }}>
           <div><div className="eyebrow">{sinLeer} sin leer</div><h3 style={{ marginTop:4, fontSize:17 }}>Notificaciones</h3></div>
-          <button className="btn sm ghost" onClick={() => setItems(its => its.map(i => ({ ...i, leido:true })))}>Marcar leídas</button>
+          <button className="btn sm ghost" onClick={marcarLeidas}>Marcar leídas</button>
         </div>
         <div style={{ padding:'12px 12px 8px', maxHeight:360, overflowY:'auto' }}>
-          {items.map(n => (
-            <div key={n.id} onClick={() => { go(n.to); onClose() }} style={{ display:'flex', gap:12, padding:'12px 10px', borderRadius:10, cursor:'pointer', background:n.leido ? 'transparent' : 'rgba(200,161,74,0.05)' }}>
-              <div style={{ width:34, height:34, flex:'0 0 34px', borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', background:'var(--surface-2)', border:'1px solid var(--line-soft)', color:toneCol[n.tone] }}>
-                <Ic n={n.ic} />
+          {items.length === 0 && (
+            <div style={{ textAlign:'center', padding:'24px 0', color:'var(--text-3)', fontSize:13 }}>Todo en orden</div>
+          )}
+          {items.map(n => {
+            const leido = leidas.has(n.id)
+            return (
+              <div key={n.id} onClick={() => { go(n.to); onClose() }} style={{ display:'flex', gap:12, padding:'12px 10px', borderRadius:10, cursor:'pointer', background:leido ? 'transparent' : 'rgba(200,161,74,0.05)' }}>
+                <div style={{ width:34, height:34, flex:'0 0 34px', borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', background:'var(--surface-2)', border:'1px solid var(--line-soft)', color:toneCol[n.tone] }}>
+                  <Ic n={n.ic} />
+                </div>
+                <div className="f1" style={{ minWidth:0 }}>
+                  <div style={{ fontWeight:600, fontSize:13 }}>{n.t}</div>
+                  <div className="dim" style={{ fontSize:11.5, marginTop:2 }}>{n.s}</div>
+                </div>
+                {!leido && <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--gold)', marginTop:6, flex:'0 0 7px' }} />}
               </div>
-              <div className="f1" style={{ minWidth:0 }}>
-                <div style={{ fontWeight:600, fontSize:13 }}>{n.t}</div>
-                <div className="dim" style={{ fontSize:11.5, marginTop:2 }}>{n.s}</div>
-              </div>
-              {!n.leido && <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--gold)', marginTop:6, flex:'0 0 7px' }} />}
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </>

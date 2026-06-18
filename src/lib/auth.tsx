@@ -16,7 +16,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   })
 
   const login = (u: Usuario) => {
-    localStorage.setItem('rb_user', JSON.stringify(u))
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { pass: _p, ...safeUser } = u
+    localStorage.setItem('rb_user', JSON.stringify(safeUser))
     setUser(u)
   }
   const logout = () => {
