@@ -6,7 +6,7 @@ import { mxn, ventaCalc } from '../lib/helpers'
 
 const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const DIAS_ES  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
-const HOY = new Date(2026, 5, 18)
+const HOY = new Date()
 
 const CAT_COLORS: Record<string, string> = {
   'Colorimetría':'#C8A14A','Mechas':'#E8CE8A','Tratamientos':'#93B58C',
@@ -17,7 +17,7 @@ function parseFecha(s: string): Date {
   const dateStr = s.split(' · ')[0].trim()
   const [dd, mon] = dateStr.split(' ')
   const m = MESES_ES.indexOf(mon)
-  return new Date(2026, m < 0 ? 5 : m, parseInt(dd) || 1)
+  return new Date(HOY.getFullYear(), m < 0 ? HOY.getMonth() : m, parseInt(dd) || 1)
 }
 
 export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void }) {
@@ -130,7 +130,22 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
         </div>
         <div className="vc gap12">
           <Seg opts={['Semana', 'Mes', 'Año']} value={periodo} onChange={setPeriodo} />
-          <button className="btn ghost" onClick={() => toast('Reporte exportado (PDF)')}><Ic n="export" />Exportar</button>
+          <button className="btn ghost" onClick={() => {
+            const encabezado = 'Ticket,Fecha,Cliente,Tipo,Pago,Subtotal,Descuento,Anticipo,Total,Estado'
+            const filas = ventasFiltradas.map(v => {
+              const sub = v.lineas.reduce((s,l)=>s+l.precio*l.cant,0)
+              const total = sub - v.desc
+              const tipos = [...new Set(v.lineas.map(l=>l.tipo))].join('+')
+              return [v.ticket,v.fecha,`"${v.cliente}"`,tipos,v.pago,sub,v.desc,v.anticipo,total,v.estado].join(',')
+            })
+            const csv = [encabezado,...filas].join('\n')
+            const fecha = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
+            a.download = `finanzas-${periodo.toLowerCase()}-${fecha.replace(/\s/g,'-')}.csv`
+            a.click()
+            toast(`Reporte exportado · ${ventasFiltradas.length} ventas`)
+          }}><Ic n="export" />Exportar CSV</button>
         </div>
       </div>
 

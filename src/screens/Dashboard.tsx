@@ -63,8 +63,21 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
           </div>
         </div>
         <div className="vc gap12">
-          <button className="btn ghost" onClick={() => toast('Exportar reportes — disponible con Supabase conectado')}>
-            <Ic n="export" />Exportar
+          <button className="btn ghost" onClick={() => {
+            const enc = 'Ticket,Fecha,Cliente,Total,Pago,Estado'
+            const filas = data.ventas.map(v => {
+              const total = v.lineas.reduce((s,l)=>s+l.precio*l.cant,0) - v.desc
+              return [v.ticket,v.fecha,`"${v.cliente}"`,total,v.pago,v.estado].join(',')
+            })
+            const csv = [enc,...filas].join('\n')
+            const fecha = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
+            a.download = `reporte-${fecha.replace(/\s/g,'-')}.csv`
+            a.click()
+            toast(`Reporte exportado · ${data.ventas.length} ventas`)
+          }}>
+            <Ic n="export" />Exportar CSV
           </button>
           <button className="btn gold" onClick={() => onNavigate('agenda')}>
             <Ic n="plus" />Nueva cita

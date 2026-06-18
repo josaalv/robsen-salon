@@ -6,7 +6,7 @@ import { mxn } from '../lib/helpers'
 import type { Servicio, Estilista } from '../types'
 
 const DIAS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-const HOY = new Date(2026, 5, 18)
+const HOY = new Date()
 
 function generateSlots(start: number, end: number, slotMin: number): string[] {
   const slots: string[] = []
@@ -91,11 +91,15 @@ export function ScreenBooking() {
     const y = selectedDay.date.getFullYear()
     const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
     const dy = String(selectedDay.date.getDate()).padStart(2, '0')
+    const telLimpio = clienteTel.trim() || undefined
+    const emailLimpio = clienteEmail.trim() || undefined
     upsertCitaFutura({
       id: 'cf' + Date.now(),
       h: hora,
       dur: srv.dur,
       cl: clienteNombre.trim(),
+      tel: telLimpio,
+      email: emailLimpio,
       srv: srv.nombre,
       servicioId: srv.id,
       est: prof === 'any' ? (srv.prof[0] || 'e1') : prof,

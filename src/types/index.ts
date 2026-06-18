@@ -14,6 +14,7 @@ export interface Estilista {
   color: string
   ini: string
   com?: number
+  horarios?: boolean[]  // [Lun,Mar,Mié,Jue,Vie,Sáb,Dom]
 }
 
 export interface Servicio {
@@ -51,6 +52,8 @@ export interface Cita {
   dur: number
   cl: string
   clienteId?: string
+  tel?: string
+  email?: string
   srv: string
   servicioId?: string
   est: string

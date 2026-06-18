@@ -68,14 +68,24 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
   )
 }
 
+const DEFAULT_HORARIO = [true, true, true, true, true, true, false]
+
 function HorariosModal({ onClose }: { onClose: () => void }) {
-  const { data } = useStore()
+  const { data, upsertEstilista } = useStore()
   const [horarios, setHorarios] = useState<Record<string, boolean[]>>(() =>
-    Object.fromEntries(data.estilistas.map(e => [e.id, [true, true, true, true, true, true, false]]))
+    Object.fromEntries(data.estilistas.map(e => [e.id, e.horarios || [...DEFAULT_HORARIO]]))
   )
 
   const toggle = (estId: string, day: number) => {
     setHorarios(h => ({ ...h, [estId]: h[estId].map((v, i) => i === day ? !v : v) }))
+  }
+
+  const guardar = () => {
+    data.estilistas.forEach(e => {
+      upsertEstilista({ ...e, horarios: horarios[e.id] || [...DEFAULT_HORARIO] })
+    })
+    toast('Horarios guardados')
+    onClose()
   }
 
   return (
@@ -118,7 +128,7 @@ function HorariosModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className="card-pad" style={{ paddingTop: 14 }}>
         <div className="vc gap8">
-          <button className="btn gold" onClick={() => { toast('Horarios guardados'); onClose() }}><Ic n="check" />Guardar horarios</button>
+          <button className="btn gold" onClick={guardar}><Ic n="check" />Guardar horarios</button>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
         </div>
       </div>
@@ -237,12 +247,17 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
             </div>
             <div className="eyebrow mt24" style={{ marginBottom: 12 }}>Disponibilidad</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[['Lun – Vie', '09:00 – 19:00', true], ['Sábado', '09:00 – 16:00', true], ['Domingo', 'Descanso', false]].map(([d, h, on]) => (
-                <div key={String(d)} className="between" style={{ fontSize: 13 }}>
-                  <span className="muted">{d}</span>
-                  <span style={{ fontWeight: 600, color: on ? 'var(--text)' : 'var(--text-4)' }}>{h}</span>
-                </div>
-              ))}
+              {DIAS.map((d, i) => {
+                const on = (e.horarios || DEFAULT_HORARIO)[i]
+                return (
+                  <div key={d} className="between" style={{ fontSize: 13 }}>
+                    <span className="muted">{d}</span>
+                    <span style={{ fontWeight: 600, color: on ? 'var(--text)' : 'var(--text-4)' }}>
+                      {on ? '09:00 – 19:00' : 'Descanso'}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
             <button className="btn ghost w100 mt18" style={{ justifyContent: 'center' }} onClick={() => setEditor(e)}>
               <Ic n="sliders-horizontal" />Editar perfil y comisión

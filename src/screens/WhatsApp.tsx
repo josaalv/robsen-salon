@@ -6,7 +6,7 @@ import { mxn } from '../lib/helpers'
 import type { Clienta } from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const HOY = new Date(2026, 5, 18)
+const HOY = new Date()
 const MESES: Record<string, number> = { Ene:0,Feb:1,Mar:2,Abr:3,May:4,Jun:5,Jul:6,Ago:7,Sep:8,Oct:9,Nov:10,Dic:11 }
 
 function diasDesde(ultima: string): number {
@@ -107,18 +107,29 @@ function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+const WA_CONTACTADOS_KEY = 'rb_wa_contactados'
+
+function loadContactados(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(WA_CONTACTADOS_KEY) || '[]')) } catch { return new Set() }
+}
+function saveContactados(s: Set<string>) {
+  localStorage.setItem(WA_CONTACTADOS_KEY, JSON.stringify([...s]))
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:string)=>void }) {
   const { data } = useStore()
   const [sec, setSec] = useState('hoy_pend')
-  const [contactados, setContactados] = useState<Set<string>>(new Set())
+  const [contactados, setContactados] = useState<Set<string>>(loadContactados)
   const [selItem, setSelItem] = useState<Item|null>(null)
   const [msgEdit, setMsgEdit] = useState('')
   const [showNueva, setShowNueva] = useState(false)
   const [soloNoContactados, setSoloNoContactados] = useState(false)
 
   // ─── Build all section items ───────────────────────────────────────────────
-  const MANANA_STR = '2026-06-19'
+  const hoy = new Date()
+  const mañana = new Date(hoy); mañana.setDate(hoy.getDate() + 1)
+  const MANANA_STR = `${mañana.getFullYear()}-${String(mañana.getMonth()+1).padStart(2,'0')}-${String(mañana.getDate()).padStart(2,'0')}`
 
   const todos = useMemo((): Record<string, Item[]> => {
     const clByNombre = (nombre: string) => data.clientas.find(c => c.nombre === nombre)
@@ -206,6 +217,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
   const marcar = (id: string) => setContactados(prev => {
     const next = new Set(prev)
     next.has(id) ? next.delete(id) : next.add(id)
+    saveContactados(next)
     return next
   })
 
@@ -445,8 +457,8 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
           </div>
 
           {contactados.size>0 && (
-            <button className="btn ghost sm" style={{ justifyContent:'center' }} onClick={()=>setContactados(new Set())}>
-              <Ic n="arrow-counter-clockwise" size={13}/>Limpiar {contactados.size} marcado{contactados.size>1?'s':''}
+            <button className="btn ghost sm" style={{ justifyContent:'center' }} onClick={()=>{ const s=new Set<string>(); saveContactados(s); setContactados(s) }}>
+              <Ic n="arrow-counter-clockwise" size={13}/>Limpiar {contactados.size} marcado{contactados.size!==1?'s':''}
             </button>
           )}
         </div>

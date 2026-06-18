@@ -348,12 +348,22 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
 }
 
 // ─── Detalle de cita ────────────────────────────────────────────────────────
+function waLink(tel: string, msg: string): string {
+  const digits = tel.replace(/\D/g, '')
+  const num = digits.startsWith('52') ? digits : '52' + digits
+  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
+}
+
 function ApptDetail({ a, onClose, onEdit, onDelete }: {
   a: Cita; onClose: () => void; onEdit: () => void; onDelete: () => void
 }) {
   const { data, upsertCita } = useStore()
   const e = data.estilistas.find(est => est.id === a.est) || data.estilistas[0]
   const saldo = Math.max(0, a.total - (a.ant || 0))
+  const clientaTel = a.tel
+    || (a.clienteId ? data.clientas.find(c => c.id === a.clienteId)?.tel : undefined)
+    || data.clientas.find(c => c.nombre === a.cl)?.tel
+    || ''
 
   return (
     <div className="card gold-edge" style={{ position: 'sticky', top: 92 }}>
@@ -385,6 +395,17 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
             <div className="f1">
               <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Fecha</div>
               <div style={{ fontWeight: 600, fontSize: 13.5 }}>{a.fecha}</div>
+            </div>
+          </div>
+        )}
+        {clientaTel && (
+          <div className="list-item" style={{ padding: '11px 0' }}>
+            <div className="ico" style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.08)', border: '1px solid var(--line)', color: 'var(--gold)' }}>
+              <Ic n="phone" />
+            </div>
+            <div className="f1">
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Teléfono</div>
+              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{clientaTel}</div>
             </div>
           </div>
         )}
@@ -422,7 +443,9 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
               <Ic n="check-circle" />Sin saldo pendiente
             </div>
           )}
-          <button className="btn ghost" title="WhatsApp" onClick={() => toast('Abriendo WhatsApp...')}><Ic n="whatsapp-logo" /></button>
+          {clientaTel
+            ? <a className="btn ghost" title="WhatsApp" href={waLink(clientaTel, `Hola ${a.cl.split(' ')[0]} 💛 Tu cita de ${a.srv} es hoy a las ${a.h}. ¡Te esperamos!`)} target="_blank" rel="noreferrer"><Ic n="whatsapp-logo" /></a>
+            : <button className="btn ghost" title="Sin teléfono" style={{ opacity: .4 }} disabled><Ic n="whatsapp-logo" /></button>}
           <button className="btn ghost" title="Editar" onClick={onEdit}><Ic n="pencil-simple" /></button>
           <button className="btn ghost" title="Eliminar" style={{ color: 'var(--st-canc)' }} onClick={onDelete}><Ic n="trash" /></button>
         </div>

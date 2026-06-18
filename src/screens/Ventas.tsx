@@ -6,6 +6,12 @@ import { mxn, ventaCalc } from '../lib/helpers'
 import { POSBuilder } from './POS'
 import type { Venta } from '../types'
 
+function waLink(tel: string, msg: string): string {
+  const digits = tel.replace(/\D/g, '')
+  const num = digits.startsWith('52') ? digits : '52' + digits
+  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
+}
+
 function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
   const { data, updateVenta } = useStore()
   const subtotal = ventaCalc.subtotal(v)
@@ -15,11 +21,44 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
   const pagoOpts = Object.entries(data.config?.metodospago || {})
     .filter(([, v]) => v).map(([k]) => k.charAt(0).toUpperCase() + k.slice(1))
   const [pagoSaldo, setPagoSaldo] = useState(pagoOpts[0] || 'Efectivo')
+  const clientaTel = (v.clienteId
+    ? data.clientas.find(c => c.id === v.clienteId)?.tel
+    : data.clientas.find(c => c.nombre === v.cliente)?.tel) || ''
 
   const cobrarSaldo = () => {
     updateVenta(v.id, { estado: 'pagada', anticipo: ventaCalc.total(v) })
     toast('Saldo cobrado · venta marcada como pagada')
     onClose()
+  }
+
+  const imprimirTicket = () => {
+    const lineas = v.lineas.map(l => `  ${l.cant > 1 ? l.cant + 'x ' : ''}${l.nombre.padEnd(28)} ${mxn(l.precio * l.cant)}`).join('\n')
+    const html = `<html><head><meta charset="utf-8"><style>
+      body{font-family:monospace;font-size:13px;margin:0;padding:20px;max-width:320px}
+      h2{text-align:center;font-size:16px;margin:0 0 4px}
+      .c{text-align:center}.hr{border-top:1px dashed #000;margin:10px 0}
+      .r{display:flex;justify-content:space-between}
+    </style></head><body>
+      <h2>Robsen Salón &amp; Spa</h2>
+      <div class="c" style="font-size:11px;margin-bottom:12px">Guadalajara · RFC pendiente</div>
+      <div class="hr"></div>
+      <div class="r"><span>${v.ticket}</span><span>${v.fecha}</span></div>
+      <div style="margin:4px 0 2px;font-weight:bold">${v.cliente}</div>
+      <div class="hr"></div>
+      <pre style="margin:0">${lineas}</pre>
+      <div class="hr"></div>
+      ${v.desc > 0 ? `<div class="r"><span>Descuento</span><span>-${mxn(v.desc)}</span></div>` : ''}
+      ${v.anticipo > 0 ? `<div class="r"><span>Anticipo</span><span>-${mxn(v.anticipo)}</span></div>` : ''}
+      <div class="r" style="font-weight:bold;font-size:15px;margin-top:6px"><span>TOTAL</span><span>${mxn(ventaCalc.total(v))}</span></div>
+      <div class="r" style="margin-top:4px;font-size:11px"><span>Pago: ${v.pago}</span><span>${v.estado === 'parcial' ? 'Saldo: ' + mxn(ventaCalc.saldo(v)) : 'Pagado'}</span></div>
+      <div class="hr"></div>
+      <div class="c" style="font-size:11px">¡Gracias por tu visita! 💛</div>
+    </body></html>`
+    const win = window.open('', '_blank', 'width=360,height=600')
+    if (!win) return
+    win.document.write(html)
+    win.document.close()
+    win.onload = () => { win.print(); win.close() }
   }
 
   const tipoBadge: Record<string, [string, string]> = {
@@ -110,8 +149,10 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
             </div>
           </div>
           <div className="vc gap8">
-            <button className="btn gold f1" style={{ justifyContent: 'center' }} onClick={() => toast('Imprimiendo ticket...')}><Ic n="printer" />Imprimir ticket</button>
-            <button className="btn ghost" onClick={() => toast('Enviando por WhatsApp...')}><Ic n="whatsapp-logo" />Enviar</button>
+            <button className="btn gold f1" style={{ justifyContent: 'center' }} onClick={imprimirTicket}><Ic n="printer" />Imprimir ticket</button>
+            {clientaTel
+              ? <a className="btn ghost" href={waLink(clientaTel, `Hola ${v.cliente.split(' ')[0]} 💛 Tu ticket ${v.ticket} por ${mxn(ventaCalc.total(v))} quedó registrado. ¡Gracias!`)} target="_blank" rel="noreferrer"><Ic n="whatsapp-logo" />Enviar</a>
+              : <button className="btn ghost" style={{ opacity: .4 }} disabled><Ic n="whatsapp-logo" />Sin tel</button>}
           </div>
         </div>
       </div>
