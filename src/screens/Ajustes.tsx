@@ -55,8 +55,13 @@ function AjustesPerfil({ user }: { user: Usuario }) {
 
   const cambiarPw = () => {
     if (!pwActual || !pwNueva || !pwConf) { toast('Completa todos los campos de contraseña'); return }
+    const correcta = user.pass || 'robsen2026'
+    if (pwActual !== correcta) { toast('La contraseña actual es incorrecta'); return }
+    if (pwNueva.length < 8) { toast('La nueva contraseña debe tener al menos 8 caracteres'); return }
     if (pwNueva !== pwConf) { toast('Las contraseñas no coinciden'); return }
-    if (pwNueva.length < 8) { toast('La contraseña debe tener al menos 8 caracteres'); return }
+    const updated = { ...user, pass: pwNueva }
+    upsertUsuario(updated)
+    login(updated)
     toast('Contraseña actualizada correctamente')
     setPwActual(''); setPwNueva(''); setPwConf('')
   }
@@ -418,13 +423,17 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
   const [rol, setRol] = useState<RolUsuario>(usr?.rol || 'recepcion')
   const [color, setColor] = useState(usr?.color || COLORES_USR[0])
   const [activo, setActivo] = useState(usr?.activo !== false)
+  const [newPass, setNewPass] = useState('')
+  const [showPass, setShowPass] = useState(false)
 
   const save = () => {
     if (!nombre.trim()) { toast('El nombre es requerido'); return }
     if (!email.trim() || !email.includes('@')) { toast('Ingresa un correo válido'); return }
+    if (newPass && newPass.length < 8) { toast('La contraseña debe tener al menos 8 caracteres'); return }
     const id = usr?.id || 'u' + Date.now()
     const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
-    upsertUsuario({ id, nombre: nombre.trim(), email, tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—' })
+    const pass = newPass || usr?.pass || 'robsen2026'
+    upsertUsuario({ id, nombre: nombre.trim(), email, tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—', pass })
     toast(isNew ? 'Usuario creado' : 'Usuario actualizado')
     onClose()
   }
@@ -449,6 +458,15 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
           </div>
           <div className="field"><label>Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" /></div>
           <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
+        </div>
+        <div className="field">
+          <label>{isNew ? 'Contraseña inicial' : 'Nueva contraseña'} <span className="dim" style={{ fontWeight: 400 }}>{isNew ? '' : '(dejar vacío para no cambiar)'}</span></label>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <input className="input" type={showPass ? 'text' : 'password'} value={newPass} onChange={e => setNewPass(e.target.value)} placeholder={isNew ? 'Mín. 8 caracteres (default: robsen2026)' : '••••••••'} style={{ paddingRight: 42 }} />
+            <button type="button" onClick={() => setShowPass(v => !v)} style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+              <Ic n={showPass ? 'eye-slash' : 'eye'} size={16} />
+            </button>
+          </div>
         </div>
         <div className="field">
           <label>Color de identificación</label>
