@@ -5,6 +5,12 @@ import { useStore } from '../data/store'
 
 interface ChatMsg { dir: 'in' | 'out'; txt: string; ts: string }
 
+function waUrl(tel: string, msg: string): string {
+  const digits = tel.replace(/\D/g, '')
+  const num = digits.startsWith('52') ? digits : '52' + digits
+  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
+}
+
 function EstadoMsg({ estado }: { estado: string }) {
   if (estado === 'enviado') return <Ic n="check" size={14} style={{ color: 'var(--text-3)' }} />
   if (estado === 'entregado') return <Ic n="checks" size={14} style={{ color: 'var(--text-2)' }} />
@@ -115,9 +121,15 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
   const enviar = () => {
     if (!draft.trim() || !sel) return
     const ts = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
-    setChats(c => ({ ...c, [sel.id]: [...(c[sel.id] || []), { dir: 'out', txt: draft.trim(), ts }] }))
+    const msg = draft.trim()
+    setChats(c => ({ ...c, [sel.id]: [...(c[sel.id] || []), { dir: 'out', txt: msg, ts }] }))
     setDraft('')
-    toast('Mensaje enviado por WhatsApp')
+    const clienta = data.clientas.find(c => c.nombre === sel.cl)
+    if (clienta?.tel) {
+      window.open(waUrl(clienta.tel, msg), '_blank')
+    } else {
+      toast('Copia el mensaje y búscala en WhatsApp')
+    }
   }
 
   const extra = sel ? (chats[sel.id] || []) : []
@@ -207,15 +219,32 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
                 <Avatar ini={sel.cl} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{sel.cl}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-3)' }}>
-                    <span>WhatsApp</span>
-                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#25D366' }} />
-                    <span style={{ color: '#25D366' }}>en línea</span>
-                  </div>
+                  {(() => {
+                    const cl = data.clientas.find(c => c.nombre === sel.cl)
+                    return cl?.tel
+                      ? <span style={{ color: '#25D366', fontWeight: 600 }}>{cl.tel}</span>
+                      : <span style={{ color: 'var(--text-4)' }}>Sin teléfono</span>
+                  })()}
                 </div>
-                <button className="btn ghost sm" onClick={() => onNavigate('crm')}>
-                  <Ic n="user" size={14} /> Ver perfil
-                </button>
+                <div className="vc gap8">
+                  {(() => {
+                    const cl = data.clientas.find(c => c.nombre === sel.cl)
+                    return cl?.tel ? (
+                      <a
+                        href={waUrl(cl.tel, '')}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn ghost sm"
+                        style={{ color: '#25D366', borderColor: '#25D36644' }}
+                      >
+                        <Ic n="whatsapp-logo" size={14} /> Abrir WA
+                      </a>
+                    ) : null
+                  })()}
+                  <button className="btn ghost sm" onClick={() => onNavigate('crm')}>
+                    <Ic n="user" size={14} /> Ver perfil
+                  </button>
+                </div>
               </div>
 
               {/* Chat bubbles */}
@@ -265,22 +294,30 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
               </div>
 
               {/* Input area */}
-              <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line-soft)', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button className="btn icon ghost" style={{ flexShrink: 0 }}>
-                  <Ic n="paperclip" size={18} />
-                </button>
-                <input
-                  ref={inputRef}
-                  className="input"
-                  style={{ flex: 1 }}
-                  placeholder="Escribe un mensaje..."
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() } }}
-                />
-                <button className="btn icon" style={{ background: 'var(--gold-grad)', flexShrink: 0 }} onClick={enviar}>
-                  <Ic n="paper-plane" size={18} style={{ color: '#1a1108' }} />
-                </button>
+              <div style={{ borderTop: '1px solid var(--line-soft)' }}>
+                <div style={{ padding: '6px 14px 2px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Ic n="whatsapp-logo" size={12} style={{ color: '#25D366' }} />
+                  <span className="dim" style={{ fontSize: 11 }}>Enviar abre WhatsApp Web con el mensaje listo — solo toca Enviar</span>
+                </div>
+                <div style={{ padding: '6px 14px 10px', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    ref={inputRef}
+                    className="input"
+                    style={{ flex: 1 }}
+                    placeholder="Escribe un mensaje o usa una plantilla…"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() } }}
+                  />
+                  <button
+                    className="btn"
+                    style={{ background: '#25D366', color: '#fff', flexShrink: 0, gap: 6 }}
+                    onClick={enviar}
+                    disabled={!draft.trim()}
+                  >
+                    <Ic n="whatsapp-logo" size={16} />Enviar
+                  </button>
+                </div>
               </div>
             </>
           ) : (

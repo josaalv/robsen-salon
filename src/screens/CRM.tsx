@@ -5,6 +5,17 @@ import { useStore } from '../data/store'
 import { mxn, helpers } from '../lib/helpers'
 import type { Clienta, EstadoClienta } from '../types'
 
+function waUrl(tel: string, msg: string): string {
+  const digits = tel.replace(/\D/g, '')
+  const num = digits.startsWith('52') ? digits : '52' + digits
+  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
+}
+
+function abrirWA(tel: string | undefined, msg: string) {
+  if (!tel) { toast('Esta clienta no tiene teléfono registrado'); return }
+  window.open(waUrl(tel, msg), '_blank')
+}
+
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 function fechaHoy() {
   const d = new Date()
@@ -425,7 +436,13 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
             <ClienteBadge estado={c.estado} />
             <div className="vc gap8 mt14" style={{ justifyContent: 'center' }}>
               <button className="btn gold sm" onClick={() => onNavigate('agenda')}><Ic n="calendar-plus" />Agendar</button>
-              <button className="btn ghost sm" onClick={() => toast('Abriendo WhatsApp...')}><Ic n="whatsapp-logo" />Mensaje</button>
+              <button
+                className="btn sm"
+                style={{ background: '#25D366', color: '#fff', border: 'none' }}
+                onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 `)}
+              >
+                <Ic n="whatsapp-logo" />Mensaje
+              </button>
             </div>
           </div>
           <hr className="hr" />
@@ -592,7 +609,13 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
                         : <span className="badge pend"><span className="d" />Le toca</span>}
                     </td>
                     <td onClick={e => e.stopPropagation()}>
-                      <button className="btn sm line" onClick={() => toast('Mensaje de WhatsApp enviado')}><Ic n="whatsapp-logo" />Reagendar</button>
+                      <button
+                        className="btn sm"
+                        style={{ background: '#25D366', color: '#fff', border: 'none' }}
+                        onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 En Robsen Salón llevamos tiempo sin verte. Tu ${c.fav} te espera — ¿agendamos? 🗓`)}
+                      >
+                        <Ic n="whatsapp-logo" />Reagendar
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -626,9 +649,9 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
               <div style={{ textAlign: 'center', color: 'var(--text-4)', padding: '20px 0', fontSize: 13 }}>Sin clientas en riesgo</div>
             )}
             {riesgo.length > 0 && (
-              <button className="btn line w100 mt14" style={{ justifyContent: 'center' }} onClick={() => toast('Disponible al conectar Supabase')}>
-                <Ic n="sparkle" />Campaña de reactivación
-              </button>
+              <div className="dim mt14" style={{ fontSize: 11.5, textAlign: 'center', lineHeight: 1.5 }}>
+                Toca el nombre de cada clienta y usa el botón <b>Mensaje</b> para contactarla por WhatsApp.
+              </div>
             )}
           </div>
         </div>
@@ -647,7 +670,13 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
                     {c.cumple} · {i.cumpleDias === 0 ? '¡hoy!' : 'en ' + i.cumpleDias + ' días'}
                   </div>
                 </div>
-                <button className="btn sm line" onClick={() => toast('Felicitación enviada por WhatsApp')}><Ic n="whatsapp-logo" />Felicitar</button>
+                <button
+                className="btn sm"
+                style={{ background: '#25D366', color: '#fff', border: 'none' }}
+                onClick={() => abrirWA(c.tel, `¡Feliz cumpleaños ${c.nombre.split(' ')[0]}! 🎂 Todo el equipo de Robsen Salón te desea un día increíble. Tienes un regalo especial esperándote 🎁`)}
+              >
+                <Ic n="whatsapp-logo" />Felicitar
+              </button>
               </div>
             ))}
             {!cumples.length && <div className="dim center" style={{ padding: 24 }}>Sin cumpleaños en los próximos 30 días</div>}
