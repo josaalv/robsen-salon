@@ -29,12 +29,18 @@ const ALL = NAV.flatMap(g => g.items)
 
 function AppShell() {
   const { user, logout } = useAuth()
-  const { data } = useStore()
+  const { data, loadFromSupabase } = useStore()
   const [route, setRoute] = useState('dashboard')
   const [menuOpen, setMenuOpen] = useState(false)
   const [topPop, setTopPop] = useState<'agenda' | 'notif' | null>(null)
   const [logo, setLogo] = useState(() => localStorage.getItem('rb_logo') || '')
   const [Screen, setScreen] = useState<React.ComponentType<any> | null>(null)
+
+  // Sincronizar desde Supabase al iniciar
+  useEffect(() => {
+    loadFromSupabase().catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const handler = () => setLogo(localStorage.getItem('rb_logo') || '')

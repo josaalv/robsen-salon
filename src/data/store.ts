@@ -1,13 +1,17 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { defaultData } from './mockData'
+import { db } from '../lib/db'
 import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario, Plantilla } from '../types'
 
 const STORAGE_KEY = 'rb_data_v3'
 
 interface Store {
   data: RBData
+  syncing: boolean
   resetData: () => void
+  loadFromSupabase: () => Promise<boolean>
+  migrateToSupabase: () => Promise<boolean>
   updateConfig: (patch: Partial<SalonConfig>) => void
   upsertCita: (cita: Partial<Cita> & { id: string }) => void
   deleteCita: (id: string) => void
@@ -33,202 +37,306 @@ export const useStore = create<Store>()(
   persist(
     (set, get) => ({
       data: defaultData,
+      syncing: false,
 
       resetData: () => set({ data: defaultData }),
 
-      updateConfig: (patch) => set(s => ({
-        data: { ...s.data, config: { ...s.data.config, ...patch } }
-      })),
+      // ─── Cargar desde Supabase al iniciar sesión ─────────────────────────
+      loadFromSupabase: async () => {
+        set({ syncing: true })
+        const result = await db.loadAll()
+        set({ syncing: false })
+        if (!result) return false
 
-      upsertCita: (cita) => set(s => {
-        const hoy = s.data.hoy
-        const idx = hoy.findIndex(c => c.id === cita.id)
-        const newHoy = idx >= 0
-          ? hoy.map((c, i) => i === idx ? { ...c, ...cita } : c)
-          : [...hoy, cita as Cita].sort((a, b) => a.h.localeCompare(b.h))
-        return { data: { ...s.data, hoy: newHoy } }
-      }),
+        set(s => ({
+          data: {
+            ...s.data,
+            ...(result.config ? { config: result.config } : {}),
+            ...(result.estilistas.length  ? { estilistas: result.estilistas }   : {}),
+            ...(result.servicios.length   ? { servicios: result.servicios }     : {}),
+            ...(result.clientas.length    ? { clientas: result.clientas }       : {}),
+            ...(result.ventas.length      ? { ventas: result.ventas }           : {}),
+            ...(result.productos.length   ? { productos: result.productos }     : {}),
+            ...(result.plantillas.length  ? { plantillas: result.plantillas }   : {}),
+            ...(result.usuarios.length    ? { usuarios: result.usuarios }       : {}),
+            ...(result.movimientos.length ? { movimientos: result.movimientos } : {}),
+            hoy:          result.citas.hoy,
+            citasFuturas: result.citas.futuras,
+          }
+        }))
+        return true
+      },
 
-      deleteCita: (id) => set(s => ({
-        data: { ...s.data, hoy: s.data.hoy.filter(c => c.id !== id) }
-      })),
+      // ─── Migrar datos locales a Supabase ─────────────────────────────────
+      migrateToSupabase: async () => {
+        set({ syncing: true })
+        const ok = await db.seedAll(get().data)
+        set({ syncing: false })
+        return ok
+      },
 
-      upsertCitaFutura: (cita) => set(s => {
-        const futuras = s.data.citasFuturas || []
-        const idx = futuras.findIndex(c => c.id === cita.id)
-        const newFuturas = idx >= 0
-          ? futuras.map((c, i) => i === idx ? { ...c, ...cita } : c)
-          : [...futuras, cita as Cita].sort((a, b) => {
-              const fd = (a.fecha || '').localeCompare(b.fecha || '')
-              return fd !== 0 ? fd : a.h.localeCompare(b.h)
-            })
-        return { data: { ...s.data, citasFuturas: newFuturas } }
-      }),
+      updateConfig: (patch) => {
+        set(s => ({ data: { ...s.data, config: { ...s.data.config, ...patch } } }))
+        const cfg = get().data.config
+        db.saveConfig(cfg).catch(() => {})
+      },
 
-      deleteCitaFutura: (id) => set(s => ({
-        data: { ...s.data, citasFuturas: (s.data.citasFuturas || []).filter(c => c.id !== id) }
-      })),
+      upsertCita: (cita) => {
+        let merged: Cita
+        set(s => {
+          const hoy = s.data.hoy
+          const idx = hoy.findIndex(c => c.id === cita.id)
+          merged = idx >= 0 ? { ...hoy[idx], ...cita } : cita as Cita
+          const newHoy = idx >= 0
+            ? hoy.map((c, i) => i === idx ? merged : c)
+            : [...hoy, merged].sort((a, b) => a.h.localeCompare(b.h))
+          return { data: { ...s.data, hoy: newHoy } }
+        })
+        db.upsertCita(merged!).catch(() => {})
+      },
 
-      upsertClienta: (c) => set(s => {
-        const clientas = s.data.clientas
-        const idx = clientas.findIndex(x => x.id === c.id)
-        const newClientas = idx >= 0
-          ? clientas.map((x, i) => i === idx ? { ...x, ...c } : x)
-          : [...clientas, c as Clienta]
-        return { data: { ...s.data, clientas: newClientas } }
-      }),
+      deleteCita: (id) => {
+        set(s => ({ data: { ...s.data, hoy: s.data.hoy.filter(c => c.id !== id) } }))
+        db.deleteCita(id).catch(() => {})
+      },
 
-      deleteClienta: (id) => set(s => ({
-        data: { ...s.data, clientas: s.data.clientas.filter(c => c.id !== id) }
-      })),
-
-      upsertServicio: (srv) => set(s => {
-        const servicios = s.data.servicios
-        const idx = servicios.findIndex(x => x.id === srv.id)
-        const newSrv = idx >= 0
-          ? servicios.map((x, i) => i === idx ? { ...x, ...srv } : x)
-          : [...servicios, srv as Servicio]
-        return { data: { ...s.data, servicios: newSrv } }
-      }),
-
-      deleteServicio: (id) => set(s => ({
-        data: { ...s.data, servicios: s.data.servicios.filter(x => x.id !== id) }
-      })),
-
-      upsertProducto: (p) => set(s => {
-        const productos = s.data.productos
-        const idx = productos.findIndex(x => x.id === p.id)
-        const newP = idx >= 0
-          ? productos.map((x, i) => i === idx ? { ...x, ...p } : x)
-          : [...productos, p as Producto]
-        return { data: { ...s.data, productos: newP } }
-      }),
-
-      deleteProducto: (id) => set(s => ({
-        data: { ...s.data, productos: s.data.productos.filter(x => x.id !== id) }
-      })),
-
-      upsertEstilista: (e) => set(s => {
-        const estilistas = s.data.estilistas
-        const idx = estilistas.findIndex(x => x.id === e.id)
-        const newE = idx >= 0
-          ? estilistas.map((x, i) => i === idx ? { ...x, ...e } : x)
-          : [...estilistas, e as Estilista]
-        return { data: { ...s.data, estilistas: newE } }
-      }),
-
-      deleteEstilista: (id) => set(s => ({
-        data: { ...s.data, estilistas: s.data.estilistas.filter(x => x.id !== id) }
-      })),
-
-      addVenta: (v) => set(s => {
-        let productos = [...s.data.productos]
-        const movs: Movimiento[] = []
-        const txs: Transaccion[] = []
-
-        v.lineas.forEach((l: LineaVenta) => {
-          if (l.tipo === 'producto') {
-            const idx = productos.findIndex(p => p.nombre === l.nombre)
-            if (idx >= 0) {
-              productos = productos.map((p, i) => i === idx ? { ...p, stock: p.stock - l.cant, vendidos: p.vendidos + l.cant } : p)
-              movs.push({
-                id: 'mv' + Date.now() + Math.random(),
-                fecha: new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
-                prod: l.nombre,
-                tipo: 'salida',
-                cant: l.cant,
-                motivo: 'Venta · ' + v.ticket,
-                ref: v.id,
+      upsertCitaFutura: (cita) => {
+        let merged: Cita
+        set(s => {
+          const futuras = s.data.citasFuturas || []
+          const idx = futuras.findIndex(c => c.id === cita.id)
+          merged = idx >= 0 ? { ...futuras[idx], ...cita } : cita as Cita
+          const newFuturas = idx >= 0
+            ? futuras.map((c, i) => i === idx ? merged : c)
+            : [...futuras, merged].sort((a, b) => {
+                const fd = (a.fecha || '').localeCompare(b.fecha || '')
+                return fd !== 0 ? fd : a.h.localeCompare(b.h)
               })
+          return { data: { ...s.data, citasFuturas: newFuturas } }
+        })
+        db.upsertCita(merged!).catch(() => {})
+      },
+
+      deleteCitaFutura: (id) => {
+        set(s => ({ data: { ...s.data, citasFuturas: (s.data.citasFuturas || []).filter(c => c.id !== id) } }))
+        db.deleteCita(id).catch(() => {})
+      },
+
+      upsertClienta: (c) => {
+        let merged: Clienta
+        set(s => {
+          const clientas = s.data.clientas
+          const idx = clientas.findIndex(x => x.id === c.id)
+          merged = idx >= 0 ? { ...clientas[idx], ...c } : c as Clienta
+          const newClientas = idx >= 0
+            ? clientas.map((x, i) => i === idx ? merged : x)
+            : [...clientas, merged]
+          return { data: { ...s.data, clientas: newClientas } }
+        })
+        db.upsertClienta(merged!).catch(() => {})
+      },
+
+      deleteClienta: (id) => {
+        set(s => ({ data: { ...s.data, clientas: s.data.clientas.filter(c => c.id !== id) } }))
+        db.deleteClienta(id).catch(() => {})
+      },
+
+      upsertServicio: (srv) => {
+        let merged: Servicio
+        set(s => {
+          const servicios = s.data.servicios
+          const idx = servicios.findIndex(x => x.id === srv.id)
+          merged = idx >= 0 ? { ...servicios[idx], ...srv } : srv as Servicio
+          const newSrv = idx >= 0
+            ? servicios.map((x, i) => i === idx ? merged : x)
+            : [...servicios, merged]
+          return { data: { ...s.data, servicios: newSrv } }
+        })
+        db.upsertServicio(merged!).catch(() => {})
+      },
+
+      deleteServicio: (id) => {
+        set(s => ({ data: { ...s.data, servicios: s.data.servicios.filter(x => x.id !== id) } }))
+        db.deleteServicio(id).catch(() => {})
+      },
+
+      upsertProducto: (p) => {
+        let merged: Producto
+        set(s => {
+          const productos = s.data.productos
+          const idx = productos.findIndex(x => x.id === p.id)
+          merged = idx >= 0 ? { ...productos[idx], ...p } : p as Producto
+          const newP = idx >= 0
+            ? productos.map((x, i) => i === idx ? merged : x)
+            : [...productos, merged]
+          return { data: { ...s.data, productos: newP } }
+        })
+        db.upsertProducto(merged!).catch(() => {})
+      },
+
+      deleteProducto: (id) => {
+        set(s => ({ data: { ...s.data, productos: s.data.productos.filter(x => x.id !== id) } }))
+        db.deleteProducto(id).catch(() => {})
+      },
+
+      upsertEstilista: (e) => {
+        let merged: Estilista
+        set(s => {
+          const estilistas = s.data.estilistas
+          const idx = estilistas.findIndex(x => x.id === e.id)
+          merged = idx >= 0 ? { ...estilistas[idx], ...e } : e as Estilista
+          const newE = idx >= 0
+            ? estilistas.map((x, i) => i === idx ? merged : x)
+            : [...estilistas, merged]
+          return { data: { ...s.data, estilistas: newE } }
+        })
+        db.upsertEstilista(merged!).catch(() => {})
+      },
+
+      deleteEstilista: (id) => {
+        set(s => ({ data: { ...s.data, estilistas: s.data.estilistas.filter(x => x.id !== id) } }))
+        db.deleteEstilista(id).catch(() => {})
+      },
+
+      addVenta: (v) => {
+        let syncProductos: Producto[] = []
+        let syncClienta: Clienta | null = null
+        const syncMovs: Movimiento[] = []
+        const syncTxs: Transaccion[] = []
+
+        set(s => {
+          let productos = [...s.data.productos]
+          const movs: Movimiento[] = []
+          const txs: Transaccion[] = []
+
+          v.lineas.forEach((l: LineaVenta) => {
+            if (l.tipo === 'producto') {
+              const idx = productos.findIndex(p => p.nombre === l.nombre)
+              if (idx >= 0) {
+                productos = productos.map((p, i) => i === idx
+                  ? { ...p, stock: p.stock - l.cant, vendidos: p.vendidos + l.cant } : p)
+                movs.push({
+                  id: 'mv' + Date.now() + Math.random(),
+                  fecha: new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
+                  prod: l.nombre, tipo: 'salida', cant: l.cant,
+                  motivo: 'Venta · ' + v.ticket, ref: v.id,
+                })
+              }
+            }
+          })
+
+          const productLines = v.lineas.filter(l => l.tipo === 'producto')
+          if (productLines.length > 0) {
+            txs.push({
+              id: 'tx' + Date.now(), ticket: v.ticket, fecha: v.fecha, cliente: v.cliente,
+              est: v.lineas.find(l => l.est)?.est || '',
+              items: productLines.map(l => ({ n: l.nombre, q: l.cant, p: l.precio })),
+              total: productLines.reduce((s, l) => s + l.precio * l.cant, 0),
+              pago: v.pago, tipo: v.lineas.some(l => l.tipo === 'servicio') ? 'mixto' : 'producto',
+            })
+          }
+
+          let clientas = [...s.data.clientas]
+          if (v.clienteId) {
+            const idx = clientas.findIndex(c => c.id === v.clienteId)
+            if (idx >= 0) {
+              const cl = clientas[idx]
+              const totalVenta = v.lineas.reduce((sum, l) => sum + l.precio * l.cant, 0) - (v.desc || 0)
+              const newVisitas = cl.visitas + 1
+              const newGasto = cl.gasto + totalVenta
+              syncClienta = {
+                ...cl, visitas: newVisitas, gasto: newGasto,
+                ticket: Math.round(newGasto / newVisitas),
+                ultima: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' + new Date().getFullYear(),
+              }
+              clientas = clientas.map((c, i) => i !== idx ? c : syncClienta!)
+            }
+          }
+
+          // Productos que cambiaron
+          syncProductos = productos.filter((p, i) => s.data.productos[i]?.stock !== p.stock)
+          syncMovs.push(...movs)
+          syncTxs.push(...txs)
+
+          return {
+            data: {
+              ...s.data,
+              ventas: [v, ...s.data.ventas],
+              productos, clientas,
+              movimientos: [...movs, ...s.data.movimientos],
+              transacciones: [...txs, ...s.data.transacciones],
             }
           }
         })
 
-        const productLines = v.lineas.filter(l => l.tipo === 'producto')
-        if (productLines.length > 0) {
-          txs.push({
-            id: 'tx' + Date.now(),
-            ticket: v.ticket,
-            fecha: v.fecha,
-            cliente: v.cliente,
-            est: v.lineas.find(l => l.est)?.est || '',
-            items: productLines.map(l => ({ n: l.nombre, q: l.cant, p: l.precio })),
-            total: productLines.reduce((s, l) => s + l.precio * l.cant, 0),
-            pago: v.pago,
-            tipo: v.lineas.some(l => l.tipo === 'servicio') ? 'mixto' : 'producto',
-          })
-        }
+        // Supabase sync (fire-and-forget)
+        db.addVenta(v).catch(() => {})
+        syncProductos.forEach(p => db.upsertProducto(p).catch(() => {}))
+        if (syncClienta) db.upsertClienta(syncClienta).catch(() => {})
+        syncMovs.forEach(m => db.addMovimiento(m).catch(() => {}))
+      },
 
-        // Update clienta stats when sale has a linked clienteId
-        let clientas = [...s.data.clientas]
-        if (v.clienteId) {
-          const idx = clientas.findIndex(c => c.id === v.clienteId)
-          if (idx >= 0) {
-            const cl = clientas[idx]
-            const totalVenta = v.lineas.reduce((sum, l) => sum + l.precio * l.cant, 0) - (v.desc || 0)
-            const newVisitas = cl.visitas + 1
-            const newGasto = cl.gasto + totalVenta
-            clientas = clientas.map((c, i) => i !== idx ? c : {
-              ...cl,
-              visitas: newVisitas,
-              gasto: newGasto,
-              ticket: Math.round(newGasto / newVisitas),
-              ultima: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' + new Date().getFullYear(),
-            })
+      updateVenta: (id, patch) => {
+        set(s => ({ data: { ...s.data, ventas: s.data.ventas.map(v => v.id === id ? { ...v, ...patch } : v) } }))
+        db.updateVenta(id, patch).catch(() => {})
+      },
+
+      upsertUsuario: (u) => {
+        let merged: Usuario
+        set(s => {
+          const usuarios = s.data.usuarios
+          const idx = usuarios.findIndex(x => x.id === u.id)
+          merged = idx >= 0 ? { ...usuarios[idx], ...u } : u as Usuario
+          const newU = idx >= 0
+            ? usuarios.map((x, i) => i === idx ? merged : x)
+            : [...usuarios, merged]
+          return { data: { ...s.data, usuarios: newU } }
+        })
+        db.upsertUsuario(merged!).catch(() => {})
+      },
+
+      upsertPlantilla: (p) => {
+        let merged: Plantilla
+        set(s => {
+          const plantillas = s.data.plantillas
+          const idx = plantillas.findIndex(x => x.id === p.id)
+          merged = idx >= 0 ? { ...plantillas[idx], ...p } : p as Plantilla
+          const newP = idx >= 0
+            ? plantillas.map((x, i) => i === idx ? merged : x)
+            : [...plantillas, merged]
+          return { data: { ...s.data, plantillas: newP } }
+        })
+        db.upsertPlantilla(merged!).catch(() => {})
+      },
+
+      ajustarStock: (productoId, cant, motivo) => {
+        let syncProd: Producto | null = null
+        const syncMov: Movimiento[] = []
+
+        set(s => {
+          const prod = s.data.productos.find(p => p.id === productoId)
+          if (!prod) return {}
+          const newStock = Math.max(0, prod.stock + cant)
+          const updated = { ...prod, stock: newStock }
+          syncProd = updated
+          const ahora = new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' })
+          const mov: Movimiento = {
+            id: 'mv' + Date.now(), fecha: ahora, prod: prod.nombre,
+            tipo: cant > 0 ? 'entrada' : 'salida', cant: Math.abs(cant), motivo, ref: 'manual',
           }
-        }
-
-        return {
-          data: {
-            ...s.data,
-            ventas: [v, ...s.data.ventas],
-            productos,
-            clientas,
-            movimientos: [...movs, ...s.data.movimientos],
-            transacciones: [...txs, ...s.data.transacciones],
+          syncMov.push(mov)
+          return {
+            data: {
+              ...s.data,
+              productos: s.data.productos.map(p => p.id === productoId ? updated : p),
+              movimientos: [mov, ...s.data.movimientos],
+            }
           }
-        }
-      }),
+        })
 
-      updateVenta: (id, patch) => set(s => ({
-        data: { ...s.data, ventas: s.data.ventas.map(v => v.id === id ? { ...v, ...patch } : v) }
-      })),
-
-      upsertUsuario: (u) => set(s => {
-        const usuarios = s.data.usuarios
-        const idx = usuarios.findIndex(x => x.id === u.id)
-        const newU = idx >= 0
-          ? usuarios.map((x, i) => i === idx ? { ...x, ...u } : x)
-          : [...usuarios, u as Usuario]
-        return { data: { ...s.data, usuarios: newU } }
-      }),
-
-      upsertPlantilla: (p) => set(s => {
-        const plantillas = s.data.plantillas
-        const idx = plantillas.findIndex(x => x.id === p.id)
-        const newP = idx >= 0
-          ? plantillas.map((x, i) => i === idx ? { ...x, ...p } : x)
-          : [...plantillas, p as Plantilla]
-        return { data: { ...s.data, plantillas: newP } }
-      }),
-
-      ajustarStock: (productoId, cant, motivo) => set(s => {
-        const prod = s.data.productos.find(p => p.id === productoId)
-        if (!prod) return {}
-        const newStock = Math.max(0, prod.stock + cant)
-        const productos = s.data.productos.map(p => p.id === productoId ? { ...p, stock: newStock } : p)
-        const ahora = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
-        const mov: Movimiento = {
-          id: 'mv' + Date.now(),
-          fecha: ahora,
-          prod: prod.nombre,
-          tipo: cant > 0 ? 'entrada' : 'salida',
-          cant: Math.abs(cant),
-          motivo,
-          ref: 'manual',
-        }
-        return { data: { ...s.data, productos, movimientos: [mov, ...s.data.movimientos] } }
-      }),
+        if (syncProd) db.upsertProducto(syncProd).catch(() => {})
+        syncMov.forEach(m => db.addMovimiento(m).catch(() => {}))
+      },
 
       venderProducto: (productoId, cant, clienta, pago, estId) => {
         const { data, addVenta } = get()
@@ -236,15 +344,9 @@ export const useStore = create<Store>()(
         if (!prod || prod.stock < cant) return
         const ticket = '#' + (1043 + data.ventas.length)
         const venta: Venta = {
-          id: 'v' + Date.now(),
-          ticket,
+          id: 'v' + Date.now(), ticket,
           fecha: new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
-          cliente: clienta || 'Mostrador',
-          clienteId: '',
-          pago,
-          estado: 'pagada',
-          desc: 0,
-          anticipo: 0,
+          cliente: clienta || 'Mostrador', clienteId: '', pago, estado: 'pagada', desc: 0, anticipo: 0,
           lineas: [{ tipo: 'producto', nombre: prod.nombre, est: estId, cant, precio: prod.precio, com: 10 }],
         }
         addVenta(venta)

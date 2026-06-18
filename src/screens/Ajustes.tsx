@@ -668,7 +668,15 @@ function applyTema(t: string) {
 }
 
 function AjustesApariencia() {
-  const { data, updateConfig, resetData } = useStore()
+  const { data, updateConfig, resetData, migrateToSupabase, syncing } = useStore()
+  const [migStatus, setMigStatus] = useState<'idle'|'ok'|'err'>('idle')
+
+  const handleMigrate = async () => {
+    if (!confirm('¿Subir todos los datos actuales a Supabase? Los datos existentes en la nube serán sobreescritos.')) return
+    const ok = await migrateToSupabase()
+    setMigStatus(ok ? 'ok' : 'err')
+    toast(ok ? 'Datos migrados a Supabase correctamente' : 'Error al migrar — revisa la consola')
+  }
   const ACENTOS = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8834A', '#5B8DB8']
   const [acento, setAcento] = useState(data.config.acento || ACENTOS[0])
   const [tema, setTema] = useState(() => localStorage.getItem('rb_tema') || 'Oscuro')
@@ -734,6 +742,23 @@ function AjustesApariencia() {
             <option value="en">English (coming soon)</option>
           </select>
         </SettingRow>
+      </div>
+      <div className="card card-pad" style={{ borderColor: 'rgba(147,181,140,0.3)' }}>
+        <div className="eyebrow" style={{ marginBottom: 4, color: 'var(--st-conf)' }}>Supabase · Base de datos en la nube</div>
+        <div className="between" style={{ paddingTop: 12 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13.5 }}>Migrar datos a Supabase</div>
+            <div className="dim" style={{ fontSize: 12, marginTop: 3 }}>
+              Sube clientas, citas, ventas, productos y configuración a la nube. Después de migrar, cada cambio se sincroniza automáticamente.
+            </div>
+            {migStatus === 'ok'  && <div style={{ fontSize: 12, color: 'var(--st-conf)', marginTop: 6 }}>✓ Migración completada · los datos ya están en Supabase</div>}
+            {migStatus === 'err' && <div style={{ fontSize: 12, color: 'var(--st-canc)', marginTop: 6 }}>✗ Error — verifica las credenciales en .env.local</div>}
+          </div>
+          <button className="btn gold" onClick={handleMigrate} disabled={syncing} style={{ flexShrink: 0 }}>
+            <Ic n={syncing ? 'spinner' : 'cloud-arrow-up'} />
+            {syncing ? 'Subiendo…' : 'Migrar ahora'}
+          </button>
+        </div>
       </div>
       <div className="card card-pad" style={{ borderColor: 'rgba(199,123,123,0.3)' }}>
         <div className="eyebrow" style={{ marginBottom: 8, color: 'var(--st-canc)' }}>Zona de peligro</div>
