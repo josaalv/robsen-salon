@@ -150,6 +150,7 @@ export interface Usuario {
   tel: string
   activo: boolean
   ultimo: string
+  pass?: string
 }
 
 export interface Rol {

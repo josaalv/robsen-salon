@@ -1,29 +1,45 @@
 import React, { useState } from 'react'
 import { Avatar } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
-import { usuarios, roles } from '../data/mockData'
+import { roles } from '../data/mockData'
+import { useStore } from '../data/store'
+import { db } from '../lib/db'
 import type { Usuario } from '../types'
 
 export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
-  const [rol, setRol] = useState<string>('admin')
+  const { data } = useStore()
   const [email, setEmail] = useState('roberto@robsen.com.mx')
-  const [pass, setPass] = useState('robsen2026')
+  const [pass, setPass] = useState('')
   const [ver, setVer] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const usuarioPorRol = (r: string) => usuarios.find(u => u.rol === r) || usuarios[0]
-
-  const pickRol = (r: string) => {
-    setRol(r)
-    const u = usuarioPorRol(r)
-    setEmail(u.email)
+  const entrar = async () => {
+    setError('')
+    if (!email.trim() || !pass.trim()) {
+      setError('Ingresa tu correo y contraseña.')
+      return
+    }
+    setLoading(true)
+    try {
+      // 1. Buscar en store (localStorage persisted)
+      let usuarios = data.usuarios
+      // 2. Si está vacío, intentar cargar desde Supabase directamente
+      if (!usuarios.length) {
+        const fromDb = await db.getUsuarios()
+        if (fromDb.length) usuarios = fromDb
+      }
+      const u = usuarios.find(x => x.email.toLowerCase() === email.trim().toLowerCase())
+      if (!u) { setError('No existe una cuenta con ese correo.'); return }
+      if (!u.activo) { setError('Esta cuenta está desactivada.'); return }
+      if (u.pass && u.pass !== pass) { setError('Contraseña incorrecta.'); return }
+      onLogin(u)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const entrar = () => {
-    const u = usuarioPorRol(rol)
-    onLogin(u)
-  }
-
-  const rolActual = roles[rol]
+  const handleKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') entrar() }
 
   return (
     <div className="book-wrap">
@@ -60,7 +76,7 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
             <label>Correo electrónico</label>
             <div className="search" style={{ width: '100%', borderRadius: 'var(--r-sm)', padding: '11px 14px' }}>
               <Ic n="envelope-simple" />
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@robsen.com.mx" />
+              <input value={email} onChange={e => { setEmail(e.target.value); setError('') }} onKeyDown={handleKey} placeholder="tu@robsen.com.mx" />
             </div>
           </div>
 
@@ -68,28 +84,24 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
             <label>Contraseña</label>
             <div className="search" style={{ width: '100%', borderRadius: 'var(--r-sm)', padding: '11px 14px' }}>
               <Ic n="lock-simple" />
-              <input type={ver ? 'text' : 'password'} value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" />
+              <input type={ver ? 'text' : 'password'} value={pass} onChange={e => { setPass(e.target.value); setError('') }} onKeyDown={handleKey} placeholder="••••••••" />
               <span style={{ cursor: 'pointer', color: 'var(--text-3)' }} onClick={() => setVer(v => !v)}>
                 <Ic n={ver ? 'eye-slash' : 'eye'} />
               </span>
             </div>
           </div>
 
-          <div className="between" style={{ marginBottom: 22, fontSize: 12.5 }}>
-            <label className="vc gap8" style={{ cursor: 'pointer', color: 'var(--text-2)' }}>
-              <span style={{ width: 16, height: 16, borderRadius: 4, border: '1px solid var(--line)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)' }}>
-                <Ic n="check" w="bold" />
-              </span>
-              Recordarme
-            </label>
-            <a style={{ color: 'var(--gold)', textDecoration: 'none', cursor: 'pointer' }}>¿Olvidaste tu contraseña?</a>
-          </div>
+          {error && (
+            <div style={{ background: 'rgba(220,80,80,0.1)', border: '1px solid rgba(220,80,80,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--st-canc)', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Ic n="warning-circle" /> {error}
+            </div>
+          )}
 
-          <button className="btn gold w100" style={{ justifyContent: 'center', padding: '13px' }} onClick={entrar}>
-            <Ic n="sign-in" />Entrar como {rolActual?.nombre || 'Administrador'}
+          <button className="btn gold w100" style={{ justifyContent: 'center', padding: '13px', marginBottom: 8 }} onClick={entrar} disabled={loading}>
+            {loading ? <><Ic n="spinner" />Verificando…</> : <><Ic n="sign-in" />Entrar</>}
           </button>
 
-          {/* Acceso rápido demo por rol */}
+          {/* Acceso rápido demo */}
           <div style={{ marginTop: 28 }}>
             <div className="vc gap12" style={{ marginBottom: 12 }}>
               <hr className="hr" style={{ flex: 1 }} />
@@ -97,20 +109,21 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
               <hr className="hr" style={{ flex: 1 }} />
             </div>
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {Object.values(roles).map(r => {
-                const u = usuarioPorRol(r.id)
+              {data.usuarios.filter(u => u.activo).map(u => {
+                const r = roles[u.rol]
                 return (
-                  <div key={r.id} className={'opt-card' + (rol === r.id ? ' sel' : '')} style={{ padding: '12px 14px' }} onClick={() => pickRol(r.id)}>
+                  <div key={u.id} className="opt-card" style={{ padding: '12px 14px' }}
+                    onClick={() => { setEmail(u.email); setPass(u.pass || 'robsen2026'); setError('') }}>
                     <Avatar ini={u.ini} color={u.color} size="sm" />
                     <div className="f1" style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{r.nombre}</div>
-                      <div className="dim" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.desc}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{r?.nombre || u.rol}</div>
+                      <div className="dim" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nombre}</div>
                     </div>
-                    <div className="check" style={{ width: 18, height: 18 }}><Ic n="check" w="bold" /></div>
                   </div>
                 )
               })}
             </div>
+            <p className="dim" style={{ fontSize: 11, textAlign: 'center', marginTop: 10 }}>Contraseña demo: <strong>robsen2026</strong></p>
           </div>
         </div>
       </div>
