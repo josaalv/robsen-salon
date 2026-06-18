@@ -50,7 +50,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       precio: s.precio,
       sub: s.cat + ' · ' + s.dur + ' min',
       prof: s.prof,
-      com: comisiones[s.cat] ?? 30,
+      com: comisiones[s.id] ?? comisiones[s.cat] ?? 30,
       cant: 1,
       est: null,
     })),

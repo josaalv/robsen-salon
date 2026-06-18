@@ -278,90 +278,125 @@ function AjustesComisiones() {
   }, {})
   const cats = Object.keys(bycat).sort()
 
-  const [comisiones, setComisiones] = useState<Record<string, number>>({ ...data.config.comisiones })
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [coms, setComs] = useState<Record<string, number>>({ ...data.config.comisiones })
+
+  const effectiveVal = (s: { id: string; cat: string }) =>
+    coms[s.id] !== undefined ? coms[s.id] : (coms[s.cat] ?? 25)
+
+  const hasOverride = (s: { id: string; cat: string }) =>
+    coms[s.id] !== undefined && coms[s.id] !== (coms[s.cat] ?? 25)
 
   const setVal = (key: string, val: number) =>
-    setComisiones(prev => ({ ...prev, [key]: Math.min(100, Math.max(0, val)) }))
+    setComs(prev => ({ ...prev, [key]: Math.min(100, Math.max(0, val)) }))
 
-  const toggle = (cat: string) => setExpanded(e => ({ ...e, [cat]: !e[cat] }))
+  const resetSrv = (s: { id: string }) =>
+    setComs(prev => { const n = { ...prev }; delete n[s.id]; return n })
+
+  const setAllInCat = (cat: string, val: number) =>
+    setComs(prev => {
+      const n = { ...prev }
+      bycat[cat].forEach(s => { n[s.id] = val })
+      return n
+    })
 
   const guardar = () => {
-    updateConfig({ comisiones })
+    updateConfig({ comisiones: coms })
     toast('Comisiones actualizadas')
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div className="card card-pad">
-        <div className="eyebrow" style={{ marginBottom: 4 }}>Servicios — comisión por categoría</div>
-        <div className="dim" style={{ fontSize: 12, marginBottom: 16 }}>
-          Haz clic en una categoría para ver sus servicios. El porcentaje aplica a todas las líneas de ese tipo en cada venta.
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Comisión por servicio</div>
+        <div className="dim" style={{ fontSize: 12, marginBottom: 20 }}>
+          Configura la comisión de cada servicio individualmente. Los grupos son solo organización visual.
+          Un input en dorado indica que el valor fue personalizado respecto al grupo.
         </div>
-        {cats.map((cat, i) => {
+        {cats.map((cat, ci) => {
           const servicios = bycat[cat]
-          const pct = comisiones[cat] ?? 25
-          const open = expanded[cat]
+          const catDefault = coms[cat] ?? 25
           return (
-            <div key={cat} style={{ borderBottom: i < cats.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
-              <div
-                className="between"
-                style={{ padding: '13px 0', cursor: 'pointer', userSelect: 'none' }}
-                onClick={() => toggle(cat)}
-              >
+            <div key={cat} style={{ marginBottom: ci < cats.length - 1 ? 20 : 0 }}>
+              {/* Category header */}
+              <div className="between" style={{ padding: '7px 0 10px', borderBottom: '2px solid var(--line)' }}>
                 <div className="vc gap10">
-                  <span style={{ color: 'var(--text-3)', display: 'flex', transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none' }}>
-                    <Ic n="caret-right" size={13} />
-                  </span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13.5 }}>{cat}</div>
-                    <div className="dim" style={{ fontSize: 11.5 }}>{servicios.length} servicio{servicios.length !== 1 ? 's' : ''}</div>
+                  <span className="eyebrow" style={{ fontSize: 10.5, letterSpacing: '.18em' }}>{cat}</span>
+                  <span className="dim" style={{ fontSize: 11, marginTop: 1 }}>{servicios.length} servicios</span>
+                </div>
+                <div className="vc gap6">
+                  <span className="dim" style={{ fontSize: 11 }}>Aplicar a todos:</span>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <input
+                      className="input num" type="number" min="0" max="100"
+                      style={{ width: 60, textAlign: 'right', padding: '5px 8px', fontSize: 12 }}
+                      value={catDefault}
+                      onChange={e => {
+                        const v = Math.min(100, Math.max(0, +e.target.value))
+                        setComs(prev => ({ ...prev, [cat]: v }))
+                      }}
+                    />
+                    <span className="dim" style={{ fontSize: 11 }}>%</span>
+                    <button
+                      className="btn ghost sm"
+                      style={{ padding: '5px 10px', fontSize: 11 }}
+                      onClick={() => setAllInCat(cat, catDefault)}
+                    >
+                      Aplicar
+                    </button>
                   </div>
                 </div>
-                <div className="vc gap8" onClick={e => e.stopPropagation()}>
-                  <input
-                    className="input num" type="number" min="0" max="100"
-                    style={{ width: 72, textAlign: 'right', padding: '7px 10px' }}
-                    value={pct}
-                    onChange={e => setVal(cat, +e.target.value)}
-                  />
-                  <span className="muted" style={{ minWidth: 14 }}>%</span>
-                </div>
               </div>
-              {open && (
-                <div style={{ paddingLeft: 28, paddingBottom: 10 }}>
-                  {servicios.map(s => (
-                    <div key={s.id} className="between" style={{ padding: '7px 0', borderTop: '1px solid var(--line-soft)' }}>
-                      <div>
-                        <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{s.nombre}</span>
-                        <span className="dim" style={{ fontSize: 11, marginLeft: 8 }}>{s.dur} min</span>
-                      </div>
-                      <div className="vc gap10">
-                        <span className="num" style={{ fontSize: 12 }}>{mxn(s.precio)}</span>
-                        <span className="dim" style={{ fontSize: 11.5 }}>→ {mxn(Math.round(s.precio * pct / 100))} com.</span>
+              {/* Service rows */}
+              {servicios.map(s => {
+                const val = effectiveVal(s)
+                const override = hasOverride(s)
+                return (
+                  <div key={s.id} className="between" style={{ padding: '11px 0 11px 10px', borderBottom: '1px solid var(--line-soft)' }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{s.nombre}</span>
+                      <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
+                        {s.dur} min · {mxn(s.precio)}
+                        {override && <span style={{ color: 'var(--gold)', marginLeft: 6 }}>personalizada</span>}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="vc gap6">
+                      <span className="num dim" style={{ fontSize: 11.5 }}>≈ {mxn(Math.round(s.precio * val / 100))}</span>
+                      {override && (
+                        <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => resetSrv(s)} title="Restaurar al valor del grupo">
+                          <Ic n="arrow-counter-clockwise" size={13} />
+                        </button>
+                      )}
+                      <input
+                        className="input num" type="number" min="0" max="100"
+                        style={{ width: 68, textAlign: 'right', padding: '7px 10px', borderColor: override ? 'var(--gold)' : undefined }}
+                        value={val}
+                        onChange={e => setVal(s.id, +e.target.value)}
+                      />
+                      <span className="muted" style={{ minWidth: 14 }}>%</span>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )
         })}
       </div>
+
       <div className="card card-pad">
         <div className="eyebrow" style={{ marginBottom: 4 }}>Productos (retail)</div>
-        <SettingRow title="Comisión por venta de producto" desc="Aplica a todas las líneas tipo 'producto' en ventas." last>
+        <SettingRow title="Comisión por venta de producto" desc="Aplica a todas las líneas de tipo 'producto' en ventas." last>
           <div className="vc gap8">
             <input
               className="input num" type="number" min="0" max="100"
-              style={{ width: 72, textAlign: 'right' }}
-              value={comisiones['_producto'] ?? 10}
+              style={{ width: 68, textAlign: 'right' }}
+              value={coms['_producto'] ?? 10}
               onChange={e => setVal('_producto', +e.target.value)}
             />
             <span className="muted">%</span>
           </div>
         </SettingRow>
       </div>
+
       <button className="btn gold" style={{ alignSelf: 'flex-start' }} onClick={guardar}>
         <Ic n="check" />Guardar comisiones
       </button>
@@ -421,9 +456,22 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
         </div>
         <div className="field">
           <label>Color de identificación</label>
-          <div className="vc gap8">
+          <div className="vc gap10">
             {COLORES_USR.map(c => (
-              <div key={c} onClick={() => setColor(c)} style={{ width: 30, height: 30, borderRadius: '50%', background: c, cursor: 'pointer', outline: color === c ? `3px solid ${c}` : '3px solid transparent', outlineOffset: 2 }} />
+              <div
+                key={c}
+                onClick={() => setColor(c)}
+                style={{
+                  width: 32, height: 32, borderRadius: '50%', background: c, cursor: 'pointer',
+                  boxShadow: color === c
+                    ? `0 0 0 2px var(--panel), 0 0 0 4px ${c}`
+                    : '0 0 0 2px transparent',
+                  transition: 'box-shadow .15s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                {color === c && <Ic n="check" size={14} style={{ color: '#1a1208', fontWeight: 700 }} />}
+              </div>
             ))}
           </div>
         </div>
@@ -628,6 +676,7 @@ function AjustesApariencia() {
   const ACENTOS = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8834A', '#5B8DB8']
   const [acento, setAcento] = useState(data.config.acento || ACENTOS[0])
   const [tema, setTema] = useState(() => localStorage.getItem('rb_tema') || 'Oscuro')
+  const [idioma, setIdioma] = useState(() => localStorage.getItem('rb_idioma') || 'es')
 
   useEffect(() => { applyTema(tema) }, [])
 
@@ -635,6 +684,15 @@ function AjustesApariencia() {
     setTema(t)
     localStorage.setItem('rb_tema', t)
     applyTema(t)
+  }
+
+  const handleIdioma = (lang: string) => {
+    setIdioma(lang)
+    localStorage.setItem('rb_idioma', lang)
+    document.documentElement.lang = lang
+    toast(lang === 'en'
+      ? 'Language saved — English UI in progress, content remains in Spanish'
+      : 'Idioma configurado: Español (México)')
   }
 
   const handleAccento = (c: string) => {
@@ -674,9 +732,10 @@ function AjustesApariencia() {
             ))}
           </div>
         </SettingRow>
-        <SettingRow title="Idioma" last>
-          <select className="select" style={{ width: 160 }}>
-            <option>Español (México)</option><option>English</option>
+        <SettingRow title="Idioma" desc="Afecta la preferencia de idioma del sistema. Contenido siempre en español por ahora." last>
+          <select className="select" style={{ width: 180 }} value={idioma} onChange={e => handleIdioma(e.target.value)}>
+            <option value="es">Español (México)</option>
+            <option value="en">English (coming soon)</option>
           </select>
         </SettingRow>
       </div>
