@@ -22,17 +22,17 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
     }
     setLoading(true)
     try {
-      // 1. Buscar en store (localStorage persisted)
+      // 1. Intentar cargar desde Supabase primero para tener datos frescos
       let usuarios = data.usuarios
-      // 2. Si está vacío, intentar cargar desde Supabase directamente
-      if (!usuarios.length) {
-        const fromDb = await db.getUsuarios()
-        if (fromDb.length) usuarios = fromDb
-      }
+      const fromDb = await db.getUsuarios()
+      if (fromDb.length) usuarios = fromDb
+
       const u = usuarios.find(x => x.email.toLowerCase() === email.trim().toLowerCase())
       if (!u) { setError('No existe una cuenta con ese correo.'); return }
       if (!u.activo) { setError('Esta cuenta está desactivada.'); return }
-      if (u.pass && u.pass !== pass) { setError('Contraseña incorrecta.'); return }
+      // Usar contraseña guardada o el default; siempre se exige coincidencia
+      const correctPass = u.pass || 'robsen2026'
+      if (pass !== correctPass) { setError('Contraseña incorrecta.'); return }
       onLogin(u)
     } finally {
       setLoading(false)
