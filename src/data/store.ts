@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { defaultData } from './mockData'
-import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario } from '../types'
+import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario, Plantilla } from '../types'
 
 const STORAGE_KEY = 'rb_data_v3'
 
@@ -25,6 +25,7 @@ interface Store {
   updateVenta: (id: string, patch: Partial<Venta>) => void
   venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => void
   upsertUsuario: (u: Partial<Usuario> & { id: string }) => void
+  upsertPlantilla: (p: Partial<Plantilla> & { id: string }) => void
   ajustarStock: (productoId: string, cant: number, motivo: string) => void
 }
 
@@ -200,6 +201,15 @@ export const useStore = create<Store>()(
           ? usuarios.map((x, i) => i === idx ? { ...x, ...u } : x)
           : [...usuarios, u as Usuario]
         return { data: { ...s.data, usuarios: newU } }
+      }),
+
+      upsertPlantilla: (p) => set(s => {
+        const plantillas = s.data.plantillas
+        const idx = plantillas.findIndex(x => x.id === p.id)
+        const newP = idx >= 0
+          ? plantillas.map((x, i) => i === idx ? { ...x, ...p } : x)
+          : [...plantillas, p as Plantilla]
+        return { data: { ...s.data, plantillas: newP } }
       }),
 
       ajustarStock: (productoId, cant, motivo) => set(s => {

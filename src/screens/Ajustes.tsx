@@ -28,7 +28,6 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   const [pwNueva, setPwNueva] = useState('')
   const [pwConf, setPwConf] = useState('')
   const [showPw, setShowPw] = useState(false)
-  const [twofa, setTwofa] = useState(false)
   const avatarRef = useRef<HTMLInputElement>(null)
   const [avatar, setAvatar] = useState(() => localStorage.getItem('rb_avatar_' + user.id) || '')
 
@@ -103,9 +102,6 @@ function AjustesPerfil({ user }: { user: Usuario }) {
           <div className="field"><label>Nueva contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwNueva} onChange={e => setPwNueva(e.target.value)} placeholder="Mín. 8 caracteres" /></div>
           <div className="field"><label>Confirmar contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwConf} onChange={e => setPwConf(e.target.value)} placeholder="••••••••" /></div>
         </div>
-        <SettingRow title="Autenticación en 2 pasos" desc="Agrega una capa extra de seguridad a tu cuenta." last>
-          <Switch on={twofa} onClick={() => setTwofa(v => !v)} />
-        </SettingRow>
         <button className="btn ghost sm mt14" onClick={cambiarPw}><Ic n="lock-key" />Actualizar contraseña</button>
       </div>
     </div>
@@ -557,7 +553,7 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
           </tbody>
         </table>
         <div style={{ padding: '12px 22px' }}>
-          <button className="btn ghost sm" onClick={() => toast('Edición de permisos — próximamente')}><Ic n="sliders" />Editar permisos</button>
+          <div className="dim" style={{ fontSize: 12 }}>Los permisos se gestionan por rol. Contacta al administrador para cambios de acceso.</div>
         </div>
       </div>
     </div>
@@ -601,7 +597,7 @@ function AjustesPagos() {
   const { data, updateConfig } = useStore()
   const cfg = data.config
   const [anticipoPct, setAnticipoPct] = useState(cfg.anticipoPct)
-  const [requerirAnticipo, setRequerirAnticipo] = useState(true)
+  const [requerirAnticipo, setRequerirAnticipo] = useState(cfg.requerirAnticipo ?? true)
   const [metodospago, setMetodospago] = useState({ ...cfg.metodospago })
   const [iva, setIva] = useState<0 | 16>(cfg.iva)
 
@@ -609,7 +605,7 @@ function AjustesPagos() {
     setMetodospago(m => ({ ...m, [k]: !m[k] }))
 
   const guardar = () => {
-    updateConfig({ anticipoPct, iva, metodospago })
+    updateConfig({ anticipoPct, requerirAnticipo, iva, metodospago })
     toast('Configuración de pagos guardada')
   }
 

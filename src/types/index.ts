@@ -196,6 +196,7 @@ export interface SalonConfig {
   whatsapp: string
 
   anticipoPct: number
+  requerirAnticipo: boolean
   iva: 0 | 16
   metodospago: { efectivo: boolean; tarjeta: boolean; transferencia: boolean; credito: boolean }
 

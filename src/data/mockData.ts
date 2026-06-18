@@ -174,6 +174,7 @@ export const defaultConfig: SalonConfig = {
   whatsapp: '33 3826 0774',
 
   anticipoPct: 35,
+  requerirAnticipo: true,
   iva: 0,
   metodospago: { efectivo: true, tarjeta: true, transferencia: true, credito: false },
 

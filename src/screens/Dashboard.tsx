@@ -74,10 +74,10 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
 
       {/* KPIs principales */}
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <Stat icon={<Ic n="currency-circle-dollar" />} label="Ventas de hoy"      value={mxn(totalHoy)}   delta="+12.4%" deltaDir="up" spark={data.ventas7.slice(-7).map(d => d.v)} />
-        <Stat icon={<Ic n="calendar-check" />}         label="Ventas de la semana" value={mxn(totalSemana)} delta="+8.1%"  deltaDir="up" spark={data.ventas7.map(d => d.v)} />
-        <Stat icon={<Ic n="chart-line-up" />}          label="Ventas del mes"      value={mxn(totalMes)}   delta="+5.6%"  deltaDir="up" spark={data.ventasMes.slice(-6).map(d => d.v)} />
-        <Stat icon={<Ic n="receipt" />}                label="Ticket promedio"     value={mxn(ticketProm)} delta="+3.2%"  deltaDir="up" spark={[14,15,13,16,16,17]} />
+        <Stat icon={<Ic n="currency-circle-dollar" />} label="Ventas de hoy"      value={mxn(totalHoy)}   spark={data.ventas7.slice(-7).map(d => d.v)} />
+        <Stat icon={<Ic n="calendar-check" />}         label="Ventas de la semana" value={mxn(totalSemana)} spark={data.ventas7.map(d => d.v)} />
+        <Stat icon={<Ic n="chart-line-up" />}          label="Ventas del mes"      value={mxn(totalMes)}   spark={data.ventasMes.slice(-6).map(d => d.v)} />
+        <Stat icon={<Ic n="receipt" />}                label="Ticket promedio"     value={mxn(ticketProm)} spark={data.ventas7.map(d => d.v)} />
       </div>
 
       {/* KPIs secundarios */}
@@ -141,8 +141,8 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
                 </div>
               )}
               <div className="kpi-mini">
-                <span className="l">vs. periodo previo</span>
-                <span className="v" style={{ color:'var(--pos)' }}>+8.1%</span>
+                <span className="l">Citas hoy</span>
+                <span className="v">{citasHoy.length}</span>
               </div>
             </div>
             <BarChart data={chartData} h={210} highlightLast={false} />

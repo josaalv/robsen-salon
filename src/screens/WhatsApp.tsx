@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Avatar, Seg, Switch, CardHead, toast } from '../components/ui'
+import React, { useState, useRef } from 'react'
+import { Avatar, Seg, CardHead, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn } from '../lib/helpers'
 
 interface ChatMsg { dir: 'in' | 'out'; txt: string; ts: string }
 
@@ -11,6 +10,73 @@ function EstadoMsg({ estado }: { estado: string }) {
   if (estado === 'entregado') return <Ic n="checks" size={14} style={{ color: 'var(--text-2)' }} />
   if (estado === 'respondido') return <Ic n="checks" size={14} style={{ color: 'var(--st-conf)' }} />
   return null
+}
+
+function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
+  const { upsertPlantilla } = useStore()
+  const [nombre, setNombre] = useState('')
+  const [txt, setTxt] = useState('')
+  const ICONS = ['chat-text', 'calendar-check', 'clock-countdown', 'hand-coins', 'user-plus', 'gift', 'sparkle']
+  const [icon, setIcon] = useState('chat-text')
+
+  const save = () => {
+    if (!nombre.trim()) { toast('El nombre es requerido'); return }
+    if (!txt.trim()) { toast('El mensaje es requerido'); return }
+    upsertPlantilla({ id: 'pl' + Date.now(), nombre: nombre.trim(), icon, txt: txt.trim() })
+    toast('Plantilla guardada')
+    onClose()
+  }
+
+  return (
+    <Modal onClose={onClose} width={480}>
+      <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
+        <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Plantillas</div>
+            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>Nueva plantilla</h3>
+          </div>
+          <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}><Ic n="x" /></button>
+        </div>
+        <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="field">
+            <label className="label">Nombre de la plantilla</label>
+            <input className="input" value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej. Confirmación de cita" />
+          </div>
+          <div className="field">
+            <label className="label">Icono</label>
+            <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
+              {ICONS.map(ic => (
+                <button
+                  key={ic}
+                  className="btn ghost icon-btn"
+                  style={{ width: 36, height: 36, borderColor: icon === ic ? 'var(--gold)' : undefined, color: icon === ic ? 'var(--gold)' : undefined }}
+                  onClick={() => setIcon(ic)}
+                >
+                  <Ic n={ic} size={18} />
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label className="label">Mensaje</label>
+            <textarea
+              className="input"
+              rows={5}
+              placeholder="Usa {nombre}, {servicio}, {fecha}, {hora}, {estilista}, {dias} como variables"
+              value={txt}
+              onChange={e => setTxt(e.target.value)}
+              style={{ resize: 'vertical', fontFamily: 'var(--sans)', lineHeight: 1.6 }}
+            />
+            <div className="dim" style={{ fontSize: 11, marginTop: 6 }}>Variables disponibles: {'{nombre}'} {'{servicio}'} {'{fecha}'} {'{hora}'} {'{estilista}'} {'{dias}'}</div>
+          </div>
+        </div>
+        <div className="between card-pad" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 16 }}>
+          <button className="btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn gold" onClick={save}><Ic n="check" />Guardar plantilla</button>
+        </div>
+      </div>
+    </Modal>
+  )
 }
 
 export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void }) {
@@ -23,19 +89,25 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
   const [filtro, setFiltro] = useState('Pendientes')
   const [draft, setDraft] = useState('')
   const [chats, setChats] = useState<Record<string, ChatMsg[]>>({})
+  const [showNuevaPlantilla, setShowNuevaPlantilla] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const filtered = filtro === 'Todos' ? mensajes : filtro === 'Inactivas' ? mensajes.filter(m => m.tipo === 'inactiva') : mensajes.filter(m => m.estado !== 'respondido')
 
   const fillTpl = (txt: string) => {
     if (!sel) return
+    const cita = data.hoy.find(c => c.cl === sel.cl)
+    const clienta = data.clientas.find(c => c.nombre === sel.cl)
+    const diasInactiva = clienta?.ultima
+      ? Math.floor((Date.now() - new Date(clienta.ultima).getTime()) / 86400000)
+      : 60
     const t = txt
       .replace('{nombre}', sel.cl.split(' ')[0])
-      .replace('{servicio}', 'tu servicio')
+      .replace('{servicio}', cita?.srv || 'tu servicio')
       .replace('{fecha}', 'hoy')
-      .replace('{hora}', '11:00')
+      .replace('{hora}', cita?.h || '—')
       .replace('{estilista}', estilistas.find(e => e.id === sel.est)?.nombre.split(' ')[0] || '')
-      .replace('{dias}', '60')
+      .replace('{dias}', String(isNaN(diasInactiva) ? 60 : Math.max(0, diasInactiva)))
     setDraft(t)
     inputRef.current?.focus()
   }
@@ -50,16 +122,21 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
 
   const extra = sel ? (chats[sel.id] || []) : []
 
+  // Real KPIs from data
+  const kpis = [
+    { icon: 'chat-circle-dots', label: 'Mensajes pendientes',  val: mensajes.filter(m => m.estado !== 'respondido').length, color: 'var(--st-pend)' },
+    { icon: 'calendar-check',   label: 'Confirmaciones hoy',   val: data.hoy.filter(c => ['conf', 'pay'].includes(c.estado)).length, color: 'var(--st-conf)' },
+    { icon: 'clock-countdown',  label: 'Sin responder',        val: mensajes.filter(m => m.sin).length, color: 'var(--st-canc)' },
+    { icon: 'user-minus',       label: 'Inactivas 30/60/90',   val: data.clientas.filter(c => c.estado === 'Inactiva').length, color: 'var(--gold)' },
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {showNuevaPlantilla && <NuevaPlantillaModal onClose={() => setShowNuevaPlantilla(false)} />}
+
       {/* KPI row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-        {[
-          { icon: 'chat-circle-dots', label: 'Mensajes pendientes', val: 7, color: 'var(--st-pend)' },
-          { icon: 'calendar-check', label: 'Confirmaciones hoy', val: 14, color: 'var(--st-conf)' },
-          { icon: 'clock-countdown', label: 'Sin responder', val: 3, color: 'var(--st-canc)' },
-          { icon: 'user-minus', label: 'Inactivas 30/60/90', val: 8, color: 'var(--gold)' },
-        ].map(k => (
+        {kpis.map(k => (
           <div key={k.label} className="card" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 38, height: 38, borderRadius: 10, background: k.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Ic n={k.icon} size={20} style={{ color: k.color }} />
@@ -147,7 +224,6 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
                   <span className="dim" style={{ fontSize: 11, background: 'var(--surface-2)', padding: '3px 10px', borderRadius: 99 }}>Hoy</span>
                 </div>
 
-                {/* Outgoing initial bubble */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <div style={{ maxWidth: '75%', background: 'var(--gold)', color: '#1a1108', borderRadius: '14px 14px 4px 14px', padding: '10px 13px', fontSize: 13, lineHeight: 1.5 }}>
                     Hola {sel.cl.split(' ')[0]} 💛 Confirmamos tu cita de {estilistas.find(e => e.id === sel.est)?.nombre.split(' ')[0] || 'tu estilista'}. Responde CONFIRMO para apartar tu lugar.
@@ -155,7 +231,6 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
                   </div>
                 </div>
 
-                {/* Incoming response if respondido */}
                 {sel.estado === 'respondido' && (
                   <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
                     <div style={{ maxWidth: '75%', background: 'var(--surface-2)', borderRadius: '14px 14px 14px 4px', padding: '10px 13px', fontSize: 13, lineHeight: 1.5 }}>
@@ -165,14 +240,12 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
                   </div>
                 )}
 
-                {/* Sin respuesta indicator */}
                 {sel.sin && extra.length === 0 && (
                   <div style={{ textAlign: 'center', margin: '4px 0' }}>
                     <span className="dim" style={{ fontSize: 11 }}>Sin respuesta · enviado hace 2 h</span>
                   </div>
                 )}
 
-                {/* Extra bubbles */}
                 {extra.map((msg, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: msg.dir === 'out' ? 'flex-end' : 'flex-start' }}>
                     <div style={{
@@ -240,7 +313,7 @@ export function ScreenWhatsApp({ onNavigate }: { onNavigate: (r: string) => void
             ))}
           </div>
           <div style={{ padding: '10px 14px 14px' }}>
-            <button className="btn ghost w100" onClick={() => toast('Función próximamente disponible')}>
+            <button className="btn ghost w100" onClick={() => setShowNuevaPlantilla(true)}>
               <Ic n="plus" size={14} /> Nueva plantilla
             </button>
           </div>

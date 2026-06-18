@@ -1,25 +1,78 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Avatar } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn } from '../lib/helpers'
 import type { Servicio, Estilista } from '../types'
 
+const DIAS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+const HOY = new Date(2026, 5, 18)
+
+function generateSlots(start: number, end: number, slotMin: number): string[] {
+  const slots: string[] = []
+  for (let h = start; h < end; h++) {
+    for (let m = 0; m < 60; m += slotMin) {
+      slots.push(String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'))
+    }
+  }
+  return slots
+}
+
 export function ScreenBooking() {
-  const { data } = useStore()
+  const { data, upsertCitaFutura } = useStore()
+  const cfg = data.config
+
   const [step, setStep] = useState(1)
   const [srv, setSrv] = useState<Servicio | null>(null)
   const [prof, setProf] = useState<string | null>(null)
-  const [dia, setDia] = useState(12)
   const [hora, setHora] = useState<string | null>(null)
+
+  const [clienteNombre, setClienteNombre] = useState('')
+  const [clienteTel, setClienteTel] = useState('')
+  const [clienteEmail, setClienteEmail] = useState('')
+  const [clienteNotas, setClienteNotas] = useState('')
+
+  // Next 6 open days starting from tomorrow
+  const nextDays = useMemo(() => {
+    const days: { label: string; n: number; date: Date }[] = []
+    const d = new Date(HOY)
+    d.setDate(d.getDate() + 1)
+    while (days.length < 6) {
+      const dayIdx = (d.getDay() + 6) % 7
+      if (cfg.diasAbiertos[dayIdx]) {
+        days.push({ label: DIAS_SHORT[dayIdx], n: d.getDate(), date: new Date(d) })
+      }
+      d.setDate(d.getDate() + 1)
+    }
+    return days
+  }, [cfg.diasAbiertos])
+
+  const [diaIdx, setDiaIdx] = useState(0)
+  const selectedDay = nextDays[diaIdx] || nextDays[0]
 
   const online = data.servicios.filter(s => s.online)
   const profs: Estilista[] = srv
     ? srv.prof.map(id => data.estilistas.find(e => e.id === id)).filter((e): e is Estilista => Boolean(e))
     : []
-  const anticipo = srv?.anticipo ? Math.round(srv.precio * 0.35) : 0
-  const slots = ['09:00', '09:30', '10:30', '11:00', '12:30', '13:00', '14:00', '16:00', '17:00', '18:00']
-  const off = ['10:30', '14:00']
+
+  const anticipo = srv?.anticipo ? Math.round(srv.precio * cfg.anticipoPct / 100) : 0
+
+  const slots = useMemo(
+    () => generateSlots(cfg.agendaStart, cfg.agendaEnd, cfg.slotMin),
+    [cfg.agendaStart, cfg.agendaEnd, cfg.slotMin]
+  )
+
+  // Blocked slots: citasFuturas on the selected day for the chosen stylist
+  const off = useMemo(() => {
+    if (!selectedDay) return []
+    const y = selectedDay.date.getFullYear()
+    const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
+    const dy = String(selectedDay.date.getDate()).padStart(2, '0')
+    const fechaStr = `${y}-${mo}-${dy}`
+    return data.citasFuturas
+      .filter(c => c.fecha === fechaStr && (prof === 'any' || !prof || c.est === prof))
+      .map(c => c.h)
+  }, [selectedDay, data.citasFuturas, prof])
 
   const steps: [string, string][] = [
     ['Servicio', 'scissors'],
@@ -30,9 +83,36 @@ export function ScreenBooking() {
   ]
   const next = () => setStep(s => Math.min(5, s + 1))
   const back = () => setStep(s => Math.max(1, s - 1))
-  const canNext = (step === 1 && !!srv) || (step === 2 && !!prof) || (step === 3 && !!hora) || step === 4
+  const canNext = (step === 1 && !!srv) || (step === 2 && !!prof) || (step === 3 && !!hora)
 
-  const reset = () => { setStep(1); setSrv(null); setProf(null); setHora(null) }
+  const submitCita = () => {
+    if (!srv || !prof || !hora || !selectedDay) return
+    if (!clienteNombre.trim()) return
+    const y = selectedDay.date.getFullYear()
+    const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
+    const dy = String(selectedDay.date.getDate()).padStart(2, '0')
+    upsertCitaFutura({
+      id: 'cf' + Date.now(),
+      h: hora,
+      dur: srv.dur,
+      cl: clienteNombre.trim(),
+      srv: srv.nombre,
+      servicioId: srv.id,
+      est: prof === 'any' ? (srv.prof[0] || 'e1') : prof,
+      estado: 'pend',
+      total: srv.precio,
+      ant: anticipo,
+      notas: clienteNotas.trim() || undefined,
+      fecha: `${y}-${mo}-${dy}`,
+    })
+    next()
+  }
+
+  const reset = () => {
+    setStep(1); setSrv(null); setProf(null); setHora(null)
+    setClienteNombre(''); setClienteTel(''); setClienteEmail(''); setClienteNotas('')
+    setDiaIdx(0)
+  }
 
   return (
     <div className="book-wrap">
@@ -65,8 +145,8 @@ export function ScreenBooking() {
           </div>
         </div>
         <div style={{ position: 'relative', zIndex: 1, marginTop: 28, paddingTop: 18, borderTop: '1px solid var(--line)', fontSize: 11.5, color: 'var(--text-3)' }}>
-          <div className="vc gap8"><Ic n="map-pin" />Av. Enrique Díaz de León Nte 2093, GDL</div>
-          <div className="vc gap8 mt6"><Ic n="phone" />33 3826 0774</div>
+          <div className="vc gap8"><Ic n="map-pin" />{cfg.direccion}</div>
+          <div className="vc gap8 mt6"><Ic n="phone" />{cfg.tel}</div>
         </div>
       </div>
 
@@ -88,6 +168,7 @@ export function ScreenBooking() {
                       <div className="vc gap12 mt6" style={{ fontSize: 12, color: 'var(--text-3)' }}>
                         <span className="badge neutral" style={{ fontSize: 10.5 }}>{s.cat}</span>
                         <span className="vc" style={{ gap: 4 }}><Ic n="clock" />{s.dur} min</span>
+                        {s.anticipo && <span className="vc" style={{ gap: 4, color: 'var(--gold)' }}><Ic n="hand-coins" />Anticipo {cfg.anticipoPct}%</span>}
                       </div>
                     </div>
                     <div className="num gold-text serif" style={{ fontSize: 19, fontWeight: 600, marginRight: 6 }}>{mxn(s.precio)}</div>
@@ -132,14 +213,16 @@ export function ScreenBooking() {
               <h1 className="display" style={{ fontSize: 27, margin: '0 0 4px' }}>Fecha y hora</h1>
               <p className="muted" style={{ fontSize: 13.5, marginBottom: 22 }}>Selecciona el día y horario de tu preferencia.</p>
               <div className="vc gap8" style={{ marginBottom: 20, flexWrap: 'wrap' }}>
-                {([['Mié', 11], ['Jue', 12], ['Vie', 13], ['Sáb', 14], ['Lun', 16], ['Mar', 17]] as [string, number][]).map(([d, n]) => (
-                  <div key={n} className={'timeslot' + (dia === n ? ' sel' : '')} style={{ minWidth: 64 }} onClick={() => setDia(n)}>
-                    <div style={{ fontSize: 11, fontWeight: 600, opacity: .8 }}>{d}</div>
-                    <div className="serif" style={{ fontSize: 18 }}>{n}</div>
+                {nextDays.map((d, i) => (
+                  <div key={i} className={'timeslot' + (diaIdx === i ? ' sel' : '')} style={{ minWidth: 64 }} onClick={() => { setDiaIdx(i); setHora(null) }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, opacity: .8 }}>{d.label}</div>
+                    <div className="serif" style={{ fontSize: 18 }}>{d.n}</div>
                   </div>
                 ))}
               </div>
-              <div className="eyebrow" style={{ marginBottom: 12 }}>Horarios disponibles · Junio {dia}</div>
+              <div className="eyebrow" style={{ marginBottom: 12 }}>
+                Horarios disponibles · {selectedDay?.label} {selectedDay?.n} Jun
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
                 {slots.map(s => {
                   const dis = off.includes(s)
@@ -159,16 +242,28 @@ export function ScreenBooking() {
               <h1 className="display" style={{ fontSize: 27, margin: '0 0 4px' }}>Tus datos</h1>
               <p className="muted" style={{ fontSize: 13.5, marginBottom: 22 }}>Para confirmar tu cita y enviarte recordatorios por WhatsApp.</p>
               <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div className="field"><label>Nombre completo</label><input className="input" placeholder="Tu nombre" /></div>
-                <div className="field"><label>Teléfono (WhatsApp)</label><input className="input" placeholder="33 0000 0000" /></div>
-                <div className="field" style={{ gridColumn: '1 / -1' }}><label>Correo (opcional)</label><input className="input" placeholder="tucorreo@mail.com" /></div>
-                <div className="field" style={{ gridColumn: '1 / -1' }}><label>Notas para tu estilista (opcional)</label><textarea className="input" rows={2} placeholder="Alergias, preferencias, inspiración…"></textarea></div>
+                <div className="field">
+                  <label>Nombre completo</label>
+                  <input className="input" placeholder="Tu nombre" value={clienteNombre} onChange={e => setClienteNombre(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Teléfono (WhatsApp)</label>
+                  <input className="input" placeholder="33 0000 0000" value={clienteTel} onChange={e => setClienteTel(e.target.value)} />
+                </div>
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <label>Correo (opcional)</label>
+                  <input className="input" placeholder="tucorreo@mail.com" value={clienteEmail} onChange={e => setClienteEmail(e.target.value)} />
+                </div>
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <label>Notas para tu estilista (opcional)</label>
+                  <textarea className="input" rows={2} placeholder="Alergias, preferencias, inspiración…" value={clienteNotas} onChange={e => setClienteNotas(e.target.value)}></textarea>
+                </div>
               </div>
               {anticipo > 0 && (
                 <div className="card gold-edge mt18" style={{ padding: 18 }}>
                   <div className="vc gap12"><span style={{ color: 'var(--gold)' }}><Ic n="hand-coins" /></span><span style={{ fontWeight: 600 }}>Anticipo para apartar tu lugar</span></div>
                   <p className="muted" style={{ fontSize: 12.5, marginTop: 10, lineHeight: 1.55 }}>
-                    Este servicio requiere un anticipo de <b className="gold-text">{mxn(anticipo)}</b>, que se descuenta del total. El resto lo pagas en el salón.
+                    Este servicio requiere un anticipo de <b className="gold-text">{mxn(anticipo)}</b> ({cfg.anticipoPct}%), que se descuenta del total. El resto lo pagas en el salón.
                   </p>
                 </div>
               )}
@@ -199,9 +294,9 @@ export function ScreenBooking() {
                       <Ic n="user" />{prof === 'any' ? 'Sin preferencia' : data.estilistas.find(e => e.id === prof)?.nombre.split(' ')[0]}
                     </span>
                   )}
-                  {hora && (
+                  {hora && selectedDay && (
                     <span className="vc gap8" style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                      <Ic n="clock" />Jun {dia} · {hora}
+                      <Ic n="clock" />{selectedDay.label} {selectedDay.n} · {hora}
                     </span>
                   )}
                 </div>
@@ -226,8 +321,13 @@ export function ScreenBooking() {
               </button>
             )}
             {step === 4 && (
-              <button className="btn gold" onClick={next}>
-                <Ic n="check" />{anticipo > 0 ? `Pagar anticipo ${mxn(anticipo)}` : 'Solicitar cita'}
+              <button
+                className="btn gold"
+                disabled={!clienteNombre.trim() || !clienteTel.trim()}
+                style={{ opacity: clienteNombre.trim() && clienteTel.trim() ? 1 : .4, pointerEvents: clienteNombre.trim() && clienteTel.trim() ? 'auto' : 'none' }}
+                onClick={submitCita}
+              >
+                <Ic n="check" />{anticipo > 0 ? `Solicitar cita · anticipo ${mxn(anticipo)}` : 'Solicitar cita'}
               </button>
             )}
             {step === 5 && (
