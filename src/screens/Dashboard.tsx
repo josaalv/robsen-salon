@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Stat, CardHead, EstadoBadge, BarChart, Seg, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
@@ -7,6 +7,8 @@ import type { Usuario } from '../types'
 
 const DIAS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const MESES_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+const DIAS_SHORT_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 
 export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) => void; user: Usuario }) {
   const { data } = useStore()
@@ -27,10 +29,51 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   const todayStr = hoy.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
   const ventasHoy = data.ventas.filter(v => v.fecha.startsWith(todayStr))
   const totalHoy = ventasHoy.reduce((s, v) => s + ventaCalc.total(v), 0)
-  const totalSemana = data.ventas7.reduce((s, d) => s + d.v, 0)
-  const totalMes = data.finanzas.ingresosServicio + data.finanzas.ingresosProducto
-  const ticketProm = data.ventas.length ? Math.round(totalMes / data.ventas.length) : 0
-  const mejorDia = data.ventas7.reduce((a, b) => b.v > a.v ? b : a, data.ventas7[0])
+
+  // Últimos 7 días reales
+  const semanaData = useMemo(() => Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(hoy); d.setDate(hoy.getDate() - (6 - i))
+    const dStr = d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+    const total = data.ventas
+      .filter(v => v.fecha.toLowerCase().startsWith(dStr.toLowerCase()))
+      .reduce((s, v) => s + ventaCalc.total(v), 0)
+    return { d: DIAS_SHORT_ES[d.getDay()], v: total }
+  }), [data.ventas, hoy.toDateString()])
+
+  const totalSemana = semanaData.reduce((s, d) => s + d.v, 0)
+  const mejorDia = semanaData.length > 0 ? semanaData.reduce((a, b) => b.v > a.v ? b : a) : null
+
+  // Mes actual real
+  const mesActualStr = MESES_SHORT[hoy.getMonth()]
+  const ventasMesArr = data.ventas.filter(v => v.fecha.includes(mesActualStr))
+  const totalMes = ventasMesArr.reduce((s, v) => s + ventaCalc.total(v), 0)
+  const ticketProm = ventasMesArr.length ? Math.round(totalMes / ventasMesArr.length) : 0
+
+  const mesData = useMemo(() => {
+    const acc: Record<number, number> = {}
+    ventasMesArr.forEach(v => {
+      const day = parseInt(v.fecha.split(' ')[0])
+      if (!isNaN(day)) acc[day] = (acc[day] || 0) + ventaCalc.total(v)
+    })
+    const dias = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()
+    return Array.from({ length: dias }, (_, i) => ({ d: String(i + 1), v: acc[i + 1] || 0 }))
+  }, [data.ventas, hoy.getMonth()])
+
+  // Servicios más vendidos (real)
+  const servMasVendidos = useMemo(() => {
+    const acc: Record<string, { n: number; ingreso: number }> = {}
+    data.ventas.forEach(v => {
+      v.lineas.filter(l => l.tipo === 'servicio').forEach(l => {
+        if (!acc[l.nombre]) acc[l.nombre] = { n: 0, ingreso: 0 }
+        acc[l.nombre].n++
+        acc[l.nombre].ingreso += l.precio * l.cant
+      })
+    })
+    const rows = Object.entries(acc).map(([srv, d]) => ({ srv, ...d })).sort((a, b) => b.ingreso - a.ingreso).slice(0, 5)
+    return rows.length ? rows : data.servMasVendidos
+  }, [data.ventas])
+
+  const chartData = periodo === 'Semana' ? semanaData : mesData
 
   // — Clientas —
   const nuevas = data.clientas.filter(c => c.estado === 'Nueva').length
@@ -44,8 +87,6 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   const stockBajo = data.productos.filter(p => p.stock <= p.min && p.stock > 0)
 
   const getEst = (id: string) => data.estilistas.find(e => e.id === id) || data.estilistas[0]
-
-  const chartData = periodo === 'Semana' ? data.ventas7 : data.ventasMes
 
   return (
     <div>
@@ -87,10 +128,10 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
 
       {/* KPIs principales */}
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <Stat icon={<Ic n="currency-circle-dollar" />} label="Ventas de hoy"      value={mxn(totalHoy)}   spark={data.ventas7.slice(-7).map(d => d.v)} />
-        <Stat icon={<Ic n="calendar-check" />}         label="Ventas de la semana" value={mxn(totalSemana)} spark={data.ventas7.map(d => d.v)} />
-        <Stat icon={<Ic n="chart-line-up" />}          label="Ventas del mes"      value={mxn(totalMes)}   spark={data.ventasMes.slice(-6).map(d => d.v)} />
-        <Stat icon={<Ic n="receipt" />}                label="Ticket promedio"     value={mxn(ticketProm)} spark={data.ventas7.map(d => d.v)} />
+        <Stat icon={<Ic n="currency-circle-dollar" />} label="Ventas de hoy"      value={mxn(totalHoy)}   spark={semanaData.map(d => d.v)} />
+        <Stat icon={<Ic n="calendar-check" />}         label="Ventas de la semana" value={mxn(totalSemana)} spark={semanaData.map(d => d.v)} />
+        <Stat icon={<Ic n="chart-line-up" />}          label="Ventas del mes"      value={mxn(totalMes)}   spark={mesData.slice(-6).map(d => d.v)} />
+        <Stat icon={<Ic n="receipt" />}                label="Ticket promedio"     value={mxn(ticketProm)} spark={semanaData.map(d => d.v)} />
       </div>
 
       {/* KPIs secundarios */}
@@ -200,10 +241,10 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
         <div className="card">
           <CardHead title="Servicios más vendidos" sub="Este mes" />
           <div className="card-pad" style={{ paddingTop: 12 }}>
-            {data.servMasVendidos.map((s, i) => {
-              const max = data.servMasVendidos[0].ingreso
+            {servMasVendidos.map((s, i) => {
+              const max = servMasVendidos[0]?.ingreso || 1
               return (
-                <div key={i} style={{ padding:'11px 0', borderBottom: i < data.servMasVendidos.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
+                <div key={i} style={{ padding:'11px 0', borderBottom: i < servMasVendidos.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
                   <div className="between" style={{ marginBottom: 8 }}>
                     <div className="vc gap12">
                       <span style={{ fontFamily:'var(--serif)', color:'var(--gold)', fontSize:15, width:18 }}>{i + 1}</span>

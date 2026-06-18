@@ -26,7 +26,7 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
     : data.clientas.find(c => c.nombre === v.cliente)?.tel) || ''
 
   const cobrarSaldo = () => {
-    updateVenta(v.id, { estado: 'pagada', anticipo: ventaCalc.total(v) })
+    updateVenta(v.id, { estado: 'pagada', anticipo: ventaCalc.total(v), pago: pagoSaldo })
     toast('Saldo cobrado · venta marcada como pagada')
     onClose()
   }
@@ -39,8 +39,8 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
       .c{text-align:center}.hr{border-top:1px dashed #000;margin:10px 0}
       .r{display:flex;justify-content:space-between}
     </style></head><body>
-      <h2>Robsen Salón &amp; Spa</h2>
-      <div class="c" style="font-size:11px;margin-bottom:12px">Guadalajara · RFC pendiente</div>
+      <h2>${data.config?.nombre || 'Robsen Salón & Spa'}</h2>
+      <div class="c" style="font-size:11px;margin-bottom:12px">${data.config?.direccion || 'Guadalajara'}</div>
       <div class="hr"></div>
       <div class="r"><span>${v.ticket}</span><span>${v.fecha}</span></div>
       <div style="margin:4px 0 2px;font-weight:bold">${v.cliente}</div>

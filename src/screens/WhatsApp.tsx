@@ -363,7 +363,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
                         onClick={()=>marcar(item.id)}
                         title={done?'Desmarcar':'Marcar como contactado'}
                       >
-                        <Ic n={done?'check':'check'} size={13}/>
+                        <Ic n={done?'check-circle':'check'} size={13}/>
                       </button>
                     </div>
                   </div>

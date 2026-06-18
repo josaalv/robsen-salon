@@ -357,7 +357,11 @@ function waLink(tel: string, msg: string): string {
 function ApptDetail({ a, onClose, onEdit, onDelete }: {
   a: Cita; onClose: () => void; onEdit: () => void; onDelete: () => void
 }) {
-  const { data, upsertCita } = useStore()
+  const { data, upsertCita, upsertCitaFutura } = useStore()
+  const todayIso = dateToIso(new Date())
+  const esFutura = a.fecha && a.fecha !== todayIso
+  const saveCita = (patch: Partial<Cita>) =>
+    esFutura ? upsertCitaFutura({ ...a, ...patch }) : upsertCita({ ...a, ...patch })
   const e = data.estilistas.find(est => est.id === a.est) || data.estilistas[0]
   const saldo = Math.max(0, a.total - (a.ant || 0))
   const clientaTel = a.tel
@@ -435,7 +439,7 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
         <div className="vc gap8 mt14">
           {saldo > 0 && a.estado !== 'canc' ? (
             <button className="btn gold f1" style={{ justifyContent: 'center' }}
-              onClick={() => { upsertCita({ ...a, estado: 'done' }); toast('Saldo cobrado'); onClose() }}>
+              onClick={() => { saveCita({ estado: 'done' }); toast('Saldo cobrado'); onClose() }}>
               <Ic n="check" />Cobrar saldo {mxn(saldo)}
             </button>
           ) : (

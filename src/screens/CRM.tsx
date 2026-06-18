@@ -394,7 +394,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
   const e = data.estilistas.find(est => est.id === c.est) || data.estilistas[0]
 
   // Solo ventas reales de esta clienta
-  const ventasCl = data.ventas.filter(v => v.cliente === c.nombre).map(v => ({
+  const ventasCl = data.ventas.filter(v => c.id && v.clienteId === c.id || v.cliente === c.nombre).map(v => ({
     f: v.fecha,
     ticket: v.ticket,
     srv: v.lineas.map(l => (l.cant > 1 ? l.cant + '× ' : '') + l.nombre).join(', '),

@@ -118,7 +118,8 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
     })
   }, [ventasFiltradas, periodo, data.ventasMes])
 
-  const periodoLabel = periodo === 'Semana' ? 'Últimos 7 días' : periodo === 'Mes' ? 'Junio 2026' : 'Año 2026'
+  const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const periodoLabel = periodo === 'Semana' ? 'Últimos 7 días' : periodo === 'Mes' ? `${MESES_LARGO[HOY.getMonth()]} ${HOY.getFullYear()}` : `Año ${HOY.getFullYear()}`
 
   return (
     <div>

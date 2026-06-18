@@ -19,7 +19,7 @@ function generateSlots(start: number, end: number, slotMin: number): string[] {
 }
 
 export function ScreenBooking() {
-  const { data, upsertCitaFutura } = useStore()
+  const { data, upsertCitaFutura, upsertClienta } = useStore()
   const cfg = data.config
 
   const [step, setStep] = useState(1)
@@ -62,17 +62,28 @@ export function ScreenBooking() {
     [cfg.agendaStart, cfg.agendaEnd, cfg.slotMin]
   )
 
-  // Blocked slots: citasFuturas on the selected day for the chosen stylist
+  const MESES_SHORT_B = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
+  // Blocked slots: bloquea por duración, no solo inicio
   const off = useMemo(() => {
     if (!selectedDay) return []
     const y = selectedDay.date.getFullYear()
     const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
     const dy = String(selectedDay.date.getDate()).padStart(2, '0')
     const fechaStr = `${y}-${mo}-${dy}`
-    return data.citasFuturas
-      .filter(c => c.fecha === fechaStr && (prof === 'any' || !prof || c.est === prof))
-      .map(c => c.h)
-  }, [selectedDay, data.citasFuturas, prof])
+    const ocupadas = data.citasFuturas.filter(c => c.fecha === fechaStr && (prof === 'any' || !prof || c.est === prof))
+    const bloqueados = new Set<string>()
+    ocupadas.forEach(c => {
+      const [hh, mm] = c.h.split(':').map(Number)
+      const startMin = hh * 60 + mm
+      slots.forEach(s => {
+        const [sh, sm] = s.split(':').map(Number)
+        const sMin = sh * 60 + sm
+        if (sMin >= startMin && sMin < startMin + c.dur) bloqueados.add(s)
+      })
+    })
+    return Array.from(bloqueados)
+  }, [selectedDay, data.citasFuturas, prof, slots])
 
   const steps: [string, string][] = [
     ['Servicio', 'scissors'],
@@ -93,6 +104,7 @@ export function ScreenBooking() {
     const dy = String(selectedDay.date.getDate()).padStart(2, '0')
     const telLimpio = clienteTel.trim() || undefined
     const emailLimpio = clienteEmail.trim() || undefined
+    const estId = prof === 'any' ? (srv.prof[0] || 'e1') : prof
     upsertCitaFutura({
       id: 'cf' + Date.now(),
       h: hora,
@@ -102,13 +114,29 @@ export function ScreenBooking() {
       email: emailLimpio,
       srv: srv.nombre,
       servicioId: srv.id,
-      est: prof === 'any' ? (srv.prof[0] || 'e1') : prof,
+      est: estId,
       estado: 'pend',
       total: srv.precio,
       ant: anticipo,
       notas: clienteNotas.trim() || undefined,
       fecha: `${y}-${mo}-${dy}`,
     })
+    // Registrar o actualizar clienta en CRM
+    const nombreLimpio = clienteNombre.trim()
+    const existe = data.clientas.find(c =>
+      c.nombre.toLowerCase() === nombreLimpio.toLowerCase() ||
+      (telLimpio && c.tel.replace(/\D/g,'') === telLimpio.replace(/\D/g,''))
+    )
+    if (!existe && nombreLimpio) {
+      const ini = nombreLimpio.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+      upsertClienta({
+        id: 'cl' + Date.now(), nombre: nombreLimpio,
+        tel: telLimpio || '', estado: 'Nueva', ultima: '',
+        ticket: 0, fav: srv.nombre, est: estId,
+        visitas: 0, gasto: 0, ini, cumple: '', ciclo: 4,
+        notas: clienteEmail || undefined,
+      })
+    }
     next()
   }
 
@@ -225,7 +253,7 @@ export function ScreenBooking() {
                 ))}
               </div>
               <div className="eyebrow" style={{ marginBottom: 12 }}>
-                Horarios disponibles · {selectedDay?.label} {selectedDay?.n} Jun
+                Horarios disponibles · {selectedDay?.label} {selectedDay?.n} {selectedDay ? MESES_SHORT_B[selectedDay.date.getMonth()] : ''}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
                 {slots.map(s => {

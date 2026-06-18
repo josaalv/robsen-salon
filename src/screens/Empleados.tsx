@@ -72,6 +72,7 @@ const DEFAULT_HORARIO = [true, true, true, true, true, true, false]
 
 function HorariosModal({ onClose }: { onClose: () => void }) {
   const { data, upsertEstilista } = useStore()
+  const cfg = data.config
   const [horarios, setHorarios] = useState<Record<string, boolean[]>>(() =>
     Object.fromEntries(data.estilistas.map(e => [e.id, e.horarios || [...DEFAULT_HORARIO]]))
   )
@@ -117,7 +118,7 @@ function HorariosModal({ onClose }: { onClose: () => void }) {
                       onClick={() => toggle(e.id, day)}
                       style={{ height: 34, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 11, fontWeight: 600, background: on ? 'rgba(147,181,140,0.15)' : 'transparent', color: on ? 'var(--st-conf)' : 'var(--text-4)', border: `1px solid ${on ? 'rgba(147,181,140,0.3)' : 'var(--line-soft)'}` }}
                     >
-                      {on ? '9–19' : '—'}
+                      {on ? `${cfg.agendaStart}–${cfg.agendaEnd}` : '—'}
                     </div>
                   </td>
                 ))}
@@ -253,7 +254,7 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
                   <div key={d} className="between" style={{ fontSize: 13 }}>
                     <span className="muted">{d}</span>
                     <span style={{ fontWeight: 600, color: on ? 'var(--text)' : 'var(--text-4)' }}>
-                      {on ? '09:00 – 19:00' : 'Descanso'}
+                      {on ? `${String(data.config.agendaStart).padStart(2,'0')}:00 – ${String(data.config.agendaEnd).padStart(2,'0')}:00` : 'Descanso'}
                     </span>
                   </div>
                 )

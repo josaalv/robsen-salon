@@ -342,12 +342,14 @@ export const useStore = create<Store>()(
         const { data, addVenta } = get()
         const prod = data.productos.find(p => p.id === productoId)
         if (!prod || prod.stock < cant) return
-        const ticket = '#' + (1043 + data.ventas.length)
+        const ticket = '#' + (1000 + data.ventas.length + 1)
+        const clienteEncontrado = clienta ? data.clientas.find(c => c.nombre === clienta) : null
+        const com = (data.config.comisiones as Record<string, number>)['_producto'] ?? 10
         const venta: Venta = {
           id: 'v' + Date.now(), ticket,
           fecha: new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
-          cliente: clienta || 'Mostrador', clienteId: '', pago, estado: 'pagada', desc: 0, anticipo: 0,
-          lineas: [{ tipo: 'producto', nombre: prod.nombre, est: estId, cant, precio: prod.precio, com: 10 }],
+          cliente: clienta || 'Mostrador', clienteId: clienteEncontrado?.id || '', pago, estado: 'pagada', desc: 0, anticipo: 0,
+          lineas: [{ tipo: 'producto', nombre: prod.nombre, est: estId, cant, precio: prod.precio, com }],
         }
         addVenta(venta)
       },
