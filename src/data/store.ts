@@ -22,6 +22,7 @@ interface Store {
   upsertEstilista: (e: Partial<Estilista> & { id: string }) => void
   deleteEstilista: (id: string) => void
   addVenta: (v: Venta) => void
+  updateVenta: (id: string, patch: Partial<Venta>) => void
   venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => void
   upsertUsuario: (u: Partial<Usuario> & { id: string }) => void
 }
@@ -156,16 +157,40 @@ export const useStore = create<Store>()(
           })
         }
 
+        // Update clienta stats when sale has a linked clienteId
+        let clientas = [...s.data.clientas]
+        if (v.clienteId) {
+          const idx = clientas.findIndex(c => c.id === v.clienteId)
+          if (idx >= 0) {
+            const cl = clientas[idx]
+            const totalVenta = v.lineas.reduce((sum, l) => sum + l.precio * l.cant, 0) - (v.desc || 0)
+            const newVisitas = cl.visitas + 1
+            const newGasto = cl.gasto + totalVenta
+            clientas = clientas.map((c, i) => i !== idx ? c : {
+              ...cl,
+              visitas: newVisitas,
+              gasto: newGasto,
+              ticket: Math.round(newGasto / newVisitas),
+              ultima: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' + new Date().getFullYear(),
+            })
+          }
+        }
+
         return {
           data: {
             ...s.data,
             ventas: [v, ...s.data.ventas],
             productos,
+            clientas,
             movimientos: [...movs, ...s.data.movimientos],
             transacciones: [...txs, ...s.data.transacciones],
           }
         }
       }),
+
+      updateVenta: (id, patch) => set(s => ({
+        data: { ...s.data, ventas: s.data.ventas.map(v => v.id === id ? { ...v, ...patch } : v) }
+      })),
 
       upsertUsuario: (u) => set(s => {
         const usuarios = s.data.usuarios

@@ -115,6 +115,129 @@ function ClientaModal({ c, onClose, onSaved }: {
   )
 }
 
+function PreferenciasTab({ c }: { c: Clienta }) {
+  const { upsertClienta } = useStore()
+  const [notas, setNotas] = useState(c.notas || '')
+  const [saved, setSaved] = useState(false)
+
+  const guardar = () => {
+    upsertClienta({ ...c, notas })
+    setSaved(true)
+    toast('Preferencias guardadas')
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="eyebrow" style={{ marginBottom: 0 }}>Notas del equipo</div>
+      <div className="dim" style={{ fontSize: 12, marginTop: -8 }}>
+        Alergias, preferencias de horario, notas de sensibilidad, observaciones del servicio.
+      </div>
+      <textarea
+        className="input"
+        rows={6}
+        placeholder="Ej. Alergia a amonio · prefiere citas por la mañana · cabello teñido con henna previa…"
+        value={notas}
+        onChange={e => setNotas(e.target.value)}
+        style={{ resize: 'vertical', fontFamily: 'var(--sans)', lineHeight: 1.6 }}
+      />
+      <div className="vc gap8">
+        <button className="btn gold sm" onClick={guardar}>
+          <Ic n={saved ? 'check' : 'floppy-disk'} />{saved ? 'Guardado' : 'Guardar notas'}
+        </button>
+        {notas && <button className="btn ghost sm" onClick={() => { setNotas(''); upsertClienta({ ...c, notas: '' }) }}>Limpiar</button>}
+      </div>
+    </div>
+  )
+}
+
+function FormulaColorTab({ c }: { c: Clienta }) {
+  const { upsertClienta } = useStore()
+  const formulas = c.formulas || []
+  const [adding, setAdding] = useState(false)
+  const [srv, setSrv] = useState('')
+  const [formula, setFormula] = useState('')
+
+  const agregar = () => {
+    if (!formula.trim()) return
+    const newEntry = {
+      id: 'f' + Date.now(),
+      fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
+      srv: srv || 'Color',
+      formula: formula.trim(),
+    }
+    upsertClienta({ ...c, formulas: [newEntry, ...formulas] })
+    setFormula(''); setSrv(''); setAdding(false)
+    toast('Fórmula guardada')
+  }
+
+  const eliminar = (id: string) => {
+    upsertClienta({ ...c, formulas: formulas.filter(f => f.id !== id) })
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="between">
+        <div className="eyebrow">Historial de fórmulas de color</div>
+        <button className="btn gold sm" onClick={() => setAdding(v => !v)}>
+          <Ic n={adding ? 'x' : 'plus'} />{adding ? 'Cancelar' : 'Nueva fórmula'}
+        </button>
+      </div>
+
+      {adding && (
+        <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field">
+              <label>Servicio</label>
+              <input className="input" value={srv} onChange={e => setSrv(e.target.value)} placeholder="Ej. Balayage, Color permanente…" />
+            </div>
+            <div className="field">
+              <label>Fecha</label>
+              <input className="input" value={new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })} disabled style={{ opacity: 0.6 }} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Fórmula y técnica</label>
+            <textarea
+              className="input"
+              rows={4}
+              placeholder="Ej. Base: 6N 50g + 20vol · Mechas: 9.1 30g + 30vol · Tóner: 10P 20g · Tiempo: 35min"
+              value={formula}
+              onChange={e => setFormula(e.target.value)}
+              style={{ resize: 'vertical', fontFamily: 'var(--sans)', lineHeight: 1.6 }}
+            />
+          </div>
+          <button className="btn gold sm" style={{ alignSelf: 'flex-start' }} onClick={agregar} disabled={!formula.trim()}>
+            <Ic n="check" />Guardar fórmula
+          </button>
+        </div>
+      )}
+
+      {formulas.length > 0 ? formulas.map(f => (
+        <div key={f.id} className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="between">
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{f.srv}</div>
+              <div className="dim" style={{ fontSize: 11.5, marginTop: 2 }}>{f.fecha}</div>
+            </div>
+            <button className="icon-btn" style={{ width: 30, height: 30, color: 'var(--st-canc)' }} onClick={() => eliminar(f.id)}>
+              <Ic n="trash" size={14} />
+            </button>
+          </div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--text-2)', background: 'var(--surface-2)', padding: '10px 14px', borderRadius: 8, fontFamily: 'monospace' }}>
+            {f.formula}
+          </div>
+        </div>
+      )) : !adding && (
+        <div style={{ textAlign: 'center', padding: '28px 0', color: 'var(--text-4)' }}>
+          <Ic n="paint-brush" size={28} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
+          <div style={{ fontSize: 13 }}>Sin fórmulas registradas</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Perfil de clienta ───────────────────────────────────────────────────────
 function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEditCl }: {
   c: Clienta
@@ -262,25 +385,11 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
             )}
 
             {tab === 'Fórmulas de color' && (
-              <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-4)' }}>
-                <Ic n="paint-brush" size={32} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
-                <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Sin fórmulas registradas</div>
-                <div style={{ fontSize: 12.5, marginBottom: 18 }}>Guarda las fórmulas de color para cada visita</div>
-                <button className="btn gold sm" onClick={() => toast('Función disponible al conectar Supabase')}>
-                  <Ic n="plus" />Agregar fórmula
-                </button>
-              </div>
+              <FormulaColorTab c={c} />
             )}
 
             {tab === 'Preferencias' && (
-              <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-4)' }}>
-                <Ic n="sliders" size={32} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
-                <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Sin preferencias registradas</div>
-                <div style={{ fontSize: 12.5, marginBottom: 18 }}>Alergias, horarios favoritos, notas del equipo</div>
-                <button className="btn gold sm" onClick={() => toast('Función disponible al conectar Supabase')}>
-                  <Ic n="plus" />Agregar nota
-                </button>
-              </div>
+              <PreferenciasTab c={c} />
             )}
 
             {tab === 'Antes / Después' && (

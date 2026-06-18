@@ -40,6 +40,8 @@ export interface Clienta {
   ini: string
   cumple: string
   ciclo: number
+  notas?: string
+  formulas?: { id: string; fecha: string; srv: string; formula: string }[]
 }
 
 export interface Cita {

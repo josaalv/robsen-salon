@@ -104,7 +104,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       ticket,
       fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
       cliente: cliente || 'Venta de mostrador',
-      clienteId: '',
+      clienteId: data.clientas.find(c => c.nombre === cliente)?.id || '',
       pago,
       estado: anticipo > 0 && anticipo < total ? 'parcial' : 'pagada',
       desc,
