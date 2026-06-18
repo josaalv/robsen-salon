@@ -48,6 +48,14 @@ function AppShell() {
     }
   }, [data.config?.acento])
 
+  useEffect(() => {
+    const t = localStorage.getItem('rb_tema') || 'Oscuro'
+    const root = document.documentElement
+    if (t === 'Claro') root.setAttribute('data-theme', 'light')
+    else if (t === 'Automático' && !window.matchMedia('(prefers-color-scheme: dark)').matches)
+      root.setAttribute('data-theme', 'light')
+  }, [])
+
   useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null) }, [route])
 
   // Lazy-load screen

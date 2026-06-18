@@ -421,3 +421,108 @@ body {
 .gap8 { gap: 8px; } .gap12 { gap: 12px; } .gap16 { gap: 16px; } .gap24 { gap: 24px; }
 .f1   { flex: 1; } .center { text-align: center; } .w100 { width: 100%; }
 .scroll-y { overflow-y: auto; }
+
+/* ===== Tema Claro ===== */
+[data-theme="light"] {
+  --bg:        #F8F5F0;
+  --bg-2:      #F1EDE4;
+  --panel:     #FFFFFF;
+  --surface:   #FFFFFF;
+  --surface-2: #F5F0E8;
+  --surface-3: #EDE6DA;
+
+  --line:        rgba(140,100,30,0.18);
+  --line-soft:   rgba(0,0,0,0.09);
+  --line-strong: rgba(140,100,30,0.35);
+
+  --text:   #1C140A;
+  --text-2: #5A4A32;
+  --text-3: #8A7A60;
+  --text-4: #B8A888;
+
+  --sh:    0 4px 24px -8px rgba(0,0,0,0.12);
+  --sh-lg: 0 12px 40px -12px rgba(0,0,0,0.20);
+}
+
+[data-theme="light"] body {
+  background:
+    radial-gradient(1200px 700px at 78% -10%, rgba(200,161,74,0.07), transparent 60%),
+    radial-gradient(900px 600px at -5% 110%, rgba(200,161,74,0.04), transparent 55%),
+    var(--bg);
+}
+
+[data-theme="light"] .sidebar {
+  background: linear-gradient(180deg, #FFFFFF, #F8F4EE);
+  border-right-color: rgba(0,0,0,0.09);
+}
+
+[data-theme="light"] .topbar {
+  background: rgba(248,245,240,0.88);
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-thumb {
+  background: #C8BFB0;
+  border-color: transparent;
+}
+[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
+  background: #B8AFA0;
+}
+
+[data-theme="light"] .card {
+  background: linear-gradient(180deg, #FFFFFF, #F9F6F1);
+  border-color: rgba(0,0,0,0.09);
+}
+
+[data-theme="light"] .rb-modal-bg {
+  background: rgba(10,8,5,0.45);
+}
+
+[data-theme="light"] .nav-item:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+[data-theme="light"] .user-chip:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+[data-theme="light"] .search {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.12);
+}
+
+[data-theme="light"] .icon-btn {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.12);
+}
+
+[data-theme="light"] .input,
+[data-theme="light"] .select {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.15);
+  color: var(--text);
+}
+
+[data-theme="light"] .input:focus,
+[data-theme="light"] .select:focus {
+  border-color: var(--gold);
+}
+
+[data-theme="light"] .opt-card {
+  background: #FDFAF5;
+  border-color: rgba(0,0,0,0.1);
+}
+
+[data-theme="light"] .timeslot {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.1);
+}
+
+[data-theme="light"] .chip {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.12);
+}
+
+[data-theme="light"] .hr {
+  border-color: rgba(0,0,0,0.09);
+}

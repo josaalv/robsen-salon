@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { defaultData } from './mockData'
-import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig } from '../types'
+import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario } from '../types'
 
 const STORAGE_KEY = 'rb_data_v3'
 
@@ -23,6 +23,7 @@ interface Store {
   deleteEstilista: (id: string) => void
   addVenta: (v: Venta) => void
   venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => void
+  upsertUsuario: (u: Partial<Usuario> & { id: string }) => void
 }
 
 export const useStore = create<Store>()(
@@ -164,6 +165,15 @@ export const useStore = create<Store>()(
             transacciones: [...txs, ...s.data.transacciones],
           }
         }
+      }),
+
+      upsertUsuario: (u) => set(s => {
+        const usuarios = s.data.usuarios
+        const idx = usuarios.findIndex(x => x.id === u.id)
+        const newU = idx >= 0
+          ? usuarios.map((x, i) => i === idx ? { ...x, ...u } : x)
+          : [...usuarios, u as Usuario]
+        return { data: { ...s.data, usuarios: newU } }
       }),
 
       venderProducto: (productoId, cant, clienta, pago, estId) => {

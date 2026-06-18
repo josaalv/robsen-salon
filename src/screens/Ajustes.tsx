@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react'
-import { Avatar, Switch, CardHead, Seg, toast } from '../components/ui'
+import React, { useState, useRef, useEffect } from 'react'
+import { Avatar, Switch, CardHead, Seg, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import type { Usuario, SlotMinutos } from '../types'
+import { useAuth } from '../lib/auth'
+import { mxn } from '../lib/helpers'
+import type { Usuario, SlotMinutos, RolUsuario } from '../types'
 
 function SettingRow({ title, desc, children, last }: { title: string; desc?: string; children: React.ReactNode; last?: boolean }) {
   return (
@@ -18,41 +20,93 @@ function SettingRow({ title, desc, children, last }: { title: string; desc?: str
 
 // ─── Mi perfil ───────────────────────────────────────────────────────────────
 function AjustesPerfil({ user }: { user: Usuario }) {
+  const { upsertUsuario } = useStore()
+  const { login } = useAuth()
   const [nombre, setNombre] = useState(user.nombre)
   const [tel, setTel] = useState(user.tel || '')
+  const [pwActual, setPwActual] = useState('')
+  const [pwNueva, setPwNueva] = useState('')
+  const [pwConf, setPwConf] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [twofa, setTwofa] = useState(false)
+  const avatarRef = useRef<HTMLInputElement>(null)
+  const [avatar, setAvatar] = useState(() => localStorage.getItem('rb_avatar_' + user.id) || '')
+
+  const onAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) { toast('La imagen debe pesar menos de 2 MB'); return }
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const result = ev.target?.result as string
+      setAvatar(result)
+      localStorage.setItem('rb_avatar_' + user.id, result)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const guardar = () => {
+    if (!nombre.trim()) { toast('El nombre no puede estar vacío'); return }
+    const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+    const updated = { ...user, nombre: nombre.trim(), tel, ini }
+    upsertUsuario(updated)
+    login(updated)
+    toast('Perfil actualizado')
+  }
+
+  const cambiarPw = () => {
+    if (!pwActual || !pwNueva || !pwConf) { toast('Completa todos los campos de contraseña'); return }
+    if (pwNueva !== pwConf) { toast('Las contraseñas no coinciden'); return }
+    if (pwNueva.length < 8) { toast('La contraseña debe tener al menos 8 caracteres'); return }
+    toast('Contraseña actualizada correctamente')
+    setPwActual(''); setPwNueva(''); setPwConf('')
+  }
+
+  const rolBadgeClass: Record<string, string> = { admin: 'vip', gerente: 'pay', recepcion: 'conf', estilista: 'done' }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div className="card card-pad">
         <div className="eyebrow" style={{ marginBottom: 16 }}>Información personal</div>
         <div className="vc gap16" style={{ marginBottom: 20 }}>
-          <Avatar ini={user.ini} color={user.color} size="lg" />
-          <button className="btn ghost sm"><Ic n="camera" />Cambiar foto</button>
-          <span className="badge vip" style={{ fontSize: 11.5 }}>{user.rol}</span>
+          {avatar
+            ? <img src={avatar} alt={user.ini} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--line)' }} />
+            : <Avatar ini={user.ini} color={user.color} size="lg" />}
+          <input ref={avatarRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={onAvatarFile} />
+          <button className="btn ghost sm" onClick={() => avatarRef.current?.click()}><Ic n="camera" />{avatar ? 'Cambiar foto' : 'Subir foto'}</button>
+          {avatar && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} onClick={() => { setAvatar(''); localStorage.removeItem('rb_avatar_' + user.id) }}><Ic n="trash" /></button>}
+          <span className={'badge ' + (rolBadgeClass[user.rol] || 'neutral')} style={{ fontSize: 11.5 }}>{user.rol}</span>
         </div>
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div className="field"><label>Nombre completo</label><input className="input" value={nombre} onChange={e => setNombre(e.target.value)} /></div>
           <div className="field"><label>Rol</label><input className="input" value={user.rol} disabled style={{ opacity: 0.6 }} /></div>
           <div className="field"><label>Correo electrónico</label><input className="input" value={user.email} disabled style={{ opacity: 0.6 }} /></div>
-          <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} /></div>
+          <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
+        </div>
+        <div className="vc gap8 mt14">
+          <button className="btn gold" onClick={guardar}><Ic n="check" />Guardar cambios</button>
+          <button className="btn ghost" onClick={() => { setNombre(user.nombre); setTel(user.tel || '') }}>Cancelar</button>
         </div>
       </div>
       <div className="card card-pad">
-        <div className="eyebrow" style={{ marginBottom: 16 }}>Seguridad</div>
-        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <div className="field"><label>Contraseña actual</label><input className="input" type={showPw ? 'text' : 'password'} placeholder="••••••••" /></div>
-          <div className="field"><label>Nueva contraseña</label><input className="input" type={showPw ? 'text' : 'password'} placeholder="••••••••" /></div>
-          <div className="field"><label>Confirmar contraseña</label><input className="input" type={showPw ? 'text' : 'password'} placeholder="••••••••" /></div>
+        <div className="eyebrow" style={{ marginBottom: 16 }}>Cambiar contraseña</div>
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <div className="field">
+            <label>Contraseña actual</label>
+            <div style={{ position: 'relative' }}>
+              <input className="input" type={showPw ? 'text' : 'password'} value={pwActual} onChange={e => setPwActual(e.target.value)} placeholder="••••••••" style={{ paddingRight: 42 }} />
+              <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+                <Ic n={showPw ? 'eye-slash' : 'eye'} size={16} />
+              </button>
+            </div>
+          </div>
+          <div className="field"><label>Nueva contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwNueva} onChange={e => setPwNueva(e.target.value)} placeholder="Mín. 8 caracteres" /></div>
+          <div className="field"><label>Confirmar contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwConf} onChange={e => setPwConf(e.target.value)} placeholder="••••••••" /></div>
         </div>
         <SettingRow title="Autenticación en 2 pasos" desc="Agrega una capa extra de seguridad a tu cuenta." last>
           <Switch on={twofa} onClick={() => setTwofa(v => !v)} />
         </SettingRow>
-      </div>
-      <div className="vc gap8">
-        <button className="btn gold" onClick={() => toast('Cambios guardados')}><Ic n="check" />Guardar cambios</button>
-        <button className="btn ghost" onClick={() => toast('Cambios descartados')}>Cancelar</button>
+        <button className="btn ghost sm mt14" onClick={cambiarPw}><Ic n="lock-key" />Actualizar contraseña</button>
       </div>
     </div>
   )
@@ -216,11 +270,21 @@ function AjustesAgenda() {
 // ─── Comisiones ───────────────────────────────────────────────────────────────
 function AjustesComisiones() {
   const { data, updateConfig } = useStore()
-  const cats = [...new Set(data.servicios.map(s => s.cat))].sort()
+
+  const bycat = data.servicios.reduce<Record<string, typeof data.servicios>>((acc, s) => {
+    if (!acc[s.cat]) acc[s.cat] = []
+    acc[s.cat].push(s)
+    return acc
+  }, {})
+  const cats = Object.keys(bycat).sort()
+
   const [comisiones, setComisiones] = useState<Record<string, number>>({ ...data.config.comisiones })
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const setVal = (key: string, val: number) =>
     setComisiones(prev => ({ ...prev, [key]: Math.min(100, Math.max(0, val)) }))
+
+  const toggle = (cat: string) => setExpanded(e => ({ ...e, [cat]: !e[cat] }))
 
   const guardar = () => {
     updateConfig({ comisiones })
@@ -230,24 +294,59 @@ function AjustesComisiones() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div className="card card-pad">
-        <div className="eyebrow" style={{ marginBottom: 4 }}>% de comisión por categoría de servicio</div>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Servicios — comisión por categoría</div>
         <div className="dim" style={{ fontSize: 12, marginBottom: 16 }}>
-          Se aplica automáticamente al calcular comisiones en cada venta de servicio.
+          Haz clic en una categoría para ver sus servicios. El porcentaje aplica a todas las líneas de ese tipo en cada venta.
         </div>
-        {cats.map((cat, i) => (
-          <div key={cat} className="between" style={{ padding: '12px 0', borderBottom: i < cats.length - 1 ? '1px solid var(--line-soft)' : 'none', fontSize: 13 }}>
-            <span style={{ fontWeight: 600 }}>{cat}</span>
-            <div className="vc gap8">
-              <input
-                className="input num" type="number" min="0" max="100"
-                style={{ width: 76, textAlign: 'right' }}
-                value={comisiones[cat] ?? 25}
-                onChange={e => setVal(cat, +e.target.value)}
-              />
-              <span className="muted" style={{ minWidth: 14 }}>%</span>
+        {cats.map((cat, i) => {
+          const servicios = bycat[cat]
+          const pct = comisiones[cat] ?? 25
+          const open = expanded[cat]
+          return (
+            <div key={cat} style={{ borderBottom: i < cats.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
+              <div
+                className="between"
+                style={{ padding: '13px 0', cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => toggle(cat)}
+              >
+                <div className="vc gap10">
+                  <span style={{ color: 'var(--text-3)', display: 'flex', transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none' }}>
+                    <Ic n="caret-right" size={13} />
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13.5 }}>{cat}</div>
+                    <div className="dim" style={{ fontSize: 11.5 }}>{servicios.length} servicio{servicios.length !== 1 ? 's' : ''}</div>
+                  </div>
+                </div>
+                <div className="vc gap8" onClick={e => e.stopPropagation()}>
+                  <input
+                    className="input num" type="number" min="0" max="100"
+                    style={{ width: 72, textAlign: 'right', padding: '7px 10px' }}
+                    value={pct}
+                    onChange={e => setVal(cat, +e.target.value)}
+                  />
+                  <span className="muted" style={{ minWidth: 14 }}>%</span>
+                </div>
+              </div>
+              {open && (
+                <div style={{ paddingLeft: 28, paddingBottom: 10 }}>
+                  {servicios.map(s => (
+                    <div key={s.id} className="between" style={{ padding: '7px 0', borderTop: '1px solid var(--line-soft)' }}>
+                      <div>
+                        <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{s.nombre}</span>
+                        <span className="dim" style={{ fontSize: 11, marginLeft: 8 }}>{s.dur} min</span>
+                      </div>
+                      <div className="vc gap10">
+                        <span className="num" style={{ fontSize: 12 }}>{mxn(s.precio)}</span>
+                        <span className="dim" style={{ fontSize: 11.5 }}>→ {mxn(Math.round(s.precio * pct / 100))} com.</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       <div className="card card-pad">
         <div className="eyebrow" style={{ marginBottom: 4 }}>Productos (retail)</div>
@@ -255,7 +354,7 @@ function AjustesComisiones() {
           <div className="vc gap8">
             <input
               className="input num" type="number" min="0" max="100"
-              style={{ width: 76, textAlign: 'right' }}
+              style={{ width: 72, textAlign: 'right' }}
               value={comisiones['_producto'] ?? 10}
               onChange={e => setVal('_producto', +e.target.value)}
             />
@@ -271,16 +370,91 @@ function AjustesComisiones() {
 }
 
 // ─── Usuarios y roles ─────────────────────────────────────────────────────────
+const COLORES_USR = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8834A']
+const ROLES_LIST: { val: RolUsuario; label: string }[] = [
+  { val: 'admin', label: 'Administrador' },
+  { val: 'gerente', label: 'Gerente' },
+  { val: 'recepcion', label: 'Recepcionista' },
+  { val: 'estilista', label: 'Estilista' },
+]
+
+function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; selfId: string; onClose: () => void }) {
+  const { upsertUsuario } = useStore()
+  const isNew = !usr?.id
+  const [nombre, setNombre] = useState(usr?.nombre || '')
+  const [email, setEmail] = useState(usr?.email || '')
+  const [tel, setTel] = useState(usr?.tel || '')
+  const [rol, setRol] = useState<RolUsuario>(usr?.rol || 'recepcion')
+  const [color, setColor] = useState(usr?.color || COLORES_USR[0])
+  const [activo, setActivo] = useState(usr?.activo !== false)
+
+  const save = () => {
+    if (!nombre.trim()) { toast('El nombre es requerido'); return }
+    if (!email.trim() || !email.includes('@')) { toast('Ingresa un correo válido'); return }
+    const id = usr?.id || 'u' + Date.now()
+    const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+    upsertUsuario({ id, nombre: nombre.trim(), email, tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—' })
+    toast(isNew ? 'Usuario creado' : 'Usuario actualizado')
+    onClose()
+  }
+
+  return (
+    <Modal onClose={onClose} width={480}>
+      <div className="card-head">
+        <div>
+          <div className="eyebrow">{isNew ? 'Nuevo usuario' : 'Editar usuario'}</div>
+          <h3 style={{ marginTop: 4 }}>Acceso al sistema</h3>
+        </div>
+        <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
+      </div>
+      <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div className="field"><label>Nombre completo</label><input className="input" value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej. Valeria Mendoza" /></div>
+          <div className="field">
+            <label>Rol</label>
+            <select className="select" value={rol} onChange={e => setRol(e.target.value as RolUsuario)}>
+              {ROLES_LIST.map(r => <option key={r.val} value={r.val}>{r.label}</option>)}
+            </select>
+          </div>
+          <div className="field"><label>Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" /></div>
+          <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
+        </div>
+        <div className="field">
+          <label>Color de identificación</label>
+          <div className="vc gap8">
+            {COLORES_USR.map(c => (
+              <div key={c} onClick={() => setColor(c)} style={{ width: 30, height: 30, borderRadius: '50%', background: c, cursor: 'pointer', outline: color === c ? `3px solid ${c}` : '3px solid transparent', outlineOffset: 2 }} />
+            ))}
+          </div>
+        </div>
+        {usr?.id && usr.id !== selfId && (
+          <SettingRow title="Cuenta activa" desc="Un usuario inactivo no puede iniciar sesión." last>
+            <Switch on={activo} onClick={() => setActivo(v => !v)} />
+          </SettingRow>
+        )}
+        <div className="vc gap8 mt6">
+          <button className="btn gold f1" style={{ justifyContent: 'center' }} onClick={save}><Ic n="check" />{isNew ? 'Crear usuario' : 'Guardar cambios'}</button>
+          <button className="btn ghost" onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function AjustesUsuarios({ user }: { user: Usuario }) {
   const { data } = useStore()
+  const [modal, setModal] = useState<Partial<Usuario> | null | false>(false)
   const rolBadge: Record<string, string> = { admin: 'vip', gerente: 'pay', recepcion: 'conf', estilista: 'done' }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {modal !== false && (
+        <UsuarioModal usr={modal} selfId={user.id} onClose={() => setModal(false)} />
+      )}
       <div className="card">
         <div className="card-head">
           <div><div className="eyebrow">Accesos al sistema</div><h3 style={{ marginTop: 4 }}>Usuarios del equipo</h3></div>
-          <button className="btn gold sm" onClick={() => toast('Invitación enviada por correo')}><Ic n="user-plus" />Invitar usuario</button>
+          <button className="btn gold sm" onClick={() => setModal(null)}><Ic n="user-plus" />Nuevo usuario</button>
         </div>
         <table className="table" style={{ marginTop: 6 }}>
           <thead>
@@ -288,7 +462,7 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
           </thead>
           <tbody>
             {data.usuarios.map(u => (
-              <tr key={u.id}>
+              <tr key={u.id} style={{ cursor: 'pointer' }} onClick={() => setModal(u)}>
                 <td>
                   <div className="cell-name">
                     <Avatar ini={u.ini} color={u.color} size="sm" />
@@ -299,11 +473,11 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
                   </div>
                 </td>
                 <td><span className={'badge ' + (rolBadge[u.rol] || 'neutral')}>{u.rol}</span></td>
-                <td className="muted">{u.ultimo || 'Nunca'}</td>
+                <td className="muted">{u.ultimo || '—'}</td>
                 <td>
                   <span className={'badge ' + (u.activo ? 'conf' : 'canc')}>{u.activo ? 'Activo' : 'Inactivo'}</span>
                 </td>
-                <td><button className="icon-btn" onClick={() => toast('Opciones de usuario')}><Ic n="dots-three-vertical" /></button></td>
+                <td><Ic n="caret-right" /></td>
               </tr>
             ))}
           </tbody>
@@ -437,12 +611,31 @@ function AjustesPagos() {
 }
 
 // ─── Apariencia ───────────────────────────────────────────────────────────────
+function applyTema(t: string) {
+  const root = document.documentElement
+  if (t === 'Claro') {
+    root.setAttribute('data-theme', 'light')
+  } else if (t === 'Oscuro') {
+    root.removeAttribute('data-theme')
+  } else {
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) root.removeAttribute('data-theme')
+    else root.setAttribute('data-theme', 'light')
+  }
+}
+
 function AjustesApariencia() {
   const { data, updateConfig, resetData } = useStore()
-  const [tema, setTema] = useState('Oscuro')
-  const [densidad, setDensidad] = useState('Cómoda')
   const ACENTOS = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8834A', '#5B8DB8']
   const [acento, setAcento] = useState(data.config.acento || ACENTOS[0])
+  const [tema, setTema] = useState(() => localStorage.getItem('rb_tema') || 'Oscuro')
+
+  useEffect(() => { applyTema(tema) }, [])
+
+  const handleTema = (t: string) => {
+    setTema(t)
+    localStorage.setItem('rb_tema', t)
+    applyTema(t)
+  }
 
   const handleAccento = (c: string) => {
     setAcento(c)
@@ -462,10 +655,10 @@ function AjustesApariencia() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div className="card card-pad">
         <div className="eyebrow" style={{ marginBottom: 4 }}>Personalización</div>
-        <SettingRow title="Tema de la interfaz">
-          <Seg opts={['Oscuro', 'Claro', 'Automático']} value={tema} onChange={setTema} />
+        <SettingRow title="Tema de la interfaz" desc="Oscuro usa el diseño original; Claro invierte los fondos para ambientes iluminados.">
+          <Seg opts={['Oscuro', 'Claro', 'Automático']} value={tema} onChange={handleTema} />
         </SettingRow>
-        <SettingRow title="Color de acento" desc="Cambia el color principal de la interfaz en tiempo real. Se guarda automáticamente.">
+        <SettingRow title="Color de acento" desc="Cambia el color principal en tiempo real. Se guarda automáticamente.">
           <div className="vc gap8">
             {ACENTOS.map(c => (
               <div
@@ -480,9 +673,6 @@ function AjustesApariencia() {
               />
             ))}
           </div>
-        </SettingRow>
-        <SettingRow title="Densidad de la interfaz">
-          <Seg opts={['Compacta', 'Cómoda']} value={densidad} onChange={setDensidad} />
         </SettingRow>
         <SettingRow title="Idioma" last>
           <select className="select" style={{ width: 160 }}>
