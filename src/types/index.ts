@@ -13,6 +13,7 @@ export interface Estilista {
   rol: string
   color: string
   ini: string
+  com?: number
 }
 
 export interface Servicio {
