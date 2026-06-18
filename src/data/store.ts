@@ -25,6 +25,7 @@ interface Store {
   updateVenta: (id: string, patch: Partial<Venta>) => void
   venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => void
   upsertUsuario: (u: Partial<Usuario> & { id: string }) => void
+  ajustarStock: (productoId: string, cant: number, motivo: string) => void
 }
 
 export const useStore = create<Store>()(
@@ -199,6 +200,24 @@ export const useStore = create<Store>()(
           ? usuarios.map((x, i) => i === idx ? { ...x, ...u } : x)
           : [...usuarios, u as Usuario]
         return { data: { ...s.data, usuarios: newU } }
+      }),
+
+      ajustarStock: (productoId, cant, motivo) => set(s => {
+        const prod = s.data.productos.find(p => p.id === productoId)
+        if (!prod) return {}
+        const newStock = Math.max(0, prod.stock + cant)
+        const productos = s.data.productos.map(p => p.id === productoId ? { ...p, stock: newStock } : p)
+        const ahora = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+        const mov: Movimiento = {
+          id: 'mv' + Date.now(),
+          fecha: ahora,
+          prod: prod.nombre,
+          tipo: cant > 0 ? 'entrada' : 'salida',
+          cant: Math.abs(cant),
+          motivo,
+          ref: 'manual',
+        }
+        return { data: { ...s.data, productos, movimientos: [mov, ...s.data.movimientos] } }
       }),
 
       venderProducto: (productoId, cant, clienta, pago, estId) => {

@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Avatar, Switch, CardHead, toast, Modal } from '../components/ui'
+import React, { useState, useMemo } from 'react'
+import { Avatar, Switch, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn } from '../lib/helpers'
@@ -7,14 +7,34 @@ import type { Servicio, Estilista } from '../types'
 
 export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => void }) {
   const [cat, setCat] = useState('Todos')
+  const [q, setQ] = useState('')
   const [editor, setEditor] = useState<Partial<Servicio> | null>(null)
   const { data, upsertServicio, deleteServicio } = useStore()
 
   const servicios = data.servicios
   const estilistas = data.estilistas
+  const comisiones = data.config?.comisiones || {}
+  const anticipoPct = data.config?.anticipoPct ?? 35
+
   const rawCats = Array.from(new Set(servicios.map(s => s.cat)))
   const cats = ['Todos', ...rawCats]
-  const lista = cat === 'Todos' ? servicios : servicios.filter(s => s.cat === cat)
+
+  // Stats per service from real ventas
+  const srvStats = useMemo(() => {
+    const acc: Record<string, { veces: number; ingresos: number }> = {}
+    data.ventas.forEach(v => {
+      v.lineas.filter(l => l.tipo === 'servicio').forEach(l => {
+        if (!acc[l.nombre]) acc[l.nombre] = { veces: 0, ingresos: 0 }
+        acc[l.nombre].veces += l.cant
+        acc[l.nombre].ingresos += l.precio * l.cant
+      })
+    })
+    return acc
+  }, [data.ventas])
+
+  const lista = servicios
+    .filter(s => cat === 'Todos' || s.cat === cat)
+    .filter(s => !q || s.nombre.toLowerCase().includes(q.toLowerCase()) || s.cat.toLowerCase().includes(q.toLowerCase()))
 
   return (
     <div>
@@ -25,9 +45,15 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
             {servicios.length} servicios en {rawCats.length} categorías · {servicios.filter(s => s.online).length} disponibles en línea
           </div>
         </div>
-        <button className="btn gold" onClick={() => setEditor({})}>
-          <Ic n="plus" />Nuevo servicio
-        </button>
+        <div className="vc gap10">
+          <div className="search">
+            <Ic n="magnifying-glass" />
+            <input placeholder="Buscar servicio…" value={q} onChange={e => setQ(e.target.value)} />
+          </div>
+          <button className="btn gold" onClick={() => setEditor({})}>
+            <Ic n="plus" />Nuevo servicio
+          </button>
+        </div>
       </div>
 
       <div className="vc gap8" style={{ marginBottom: 18, flexWrap: 'wrap' }}>
@@ -48,6 +74,8 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
           const profs = s.prof
             .map(id => estilistas.find(e => e.id === id))
             .filter((e): e is Estilista => Boolean(e))
+          const stats = srvStats[s.nombre] || { veces: 0, ingresos: 0 }
+          const comPct = comisiones[s.id] ?? comisiones[s.cat] ?? 30
           return (
             <div
               key={s.id}
@@ -66,13 +94,22 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
                 <h3 className="serif" style={{ fontSize: 19, margin: 0, fontWeight: 600 }}>{s.nombre}</h3>
                 <div className="vc gap16 mt10" style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
                   <span className="vc" style={{ gap: 5 }}><Ic n="clock" />{s.dur} min</span>
+                  <span className="vc" style={{ gap: 5, color: '#B08AC7' }}>
+                    <Ic n="users-three" />Com. {comPct}%
+                  </span>
                   {s.anticipo && (
                     <span className="vc" style={{ gap: 5, color: 'var(--gold)' }}>
-                      <Ic n="hand-coins" />Requiere anticipo
+                      <Ic n="hand-coins" />Anticipo {anticipoPct}%
                     </span>
                   )}
                 </div>
               </div>
+              {stats.veces > 0 && (
+                <div className="vc gap12" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                  <span className="vc" style={{ gap: 4 }}><Ic n="check-circle" />{stats.veces} veces vendido</span>
+                  <span className="vc gold-text" style={{ gap: 4, fontWeight: 600 }}><Ic n="currency-dollar" />{mxn(stats.ingresos)}</span>
+                </div>
+              )}
               <hr className="hr" />
               <div className="between">
                 <div className="vc" style={{ marginLeft: 2 }}>
@@ -94,11 +131,19 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
         })}
       </div>
 
+      {lista.length === 0 && (
+        <div className="center dim" style={{ padding: '60px 0', fontSize: 13 }}>
+          <div style={{ fontSize: 32, marginBottom: 10, opacity: .4 }}><Ic n="scissors" /></div>
+          No hay servicios que coincidan con tu búsqueda.
+        </div>
+      )}
+
       {editor !== null && (
         <ServicioEditor
           s={editor}
           estilistas={estilistas}
           cats={rawCats}
+          anticipoPct={anticipoPct}
           onSave={srv => {
             upsertServicio(srv)
             toast('Servicio guardado')
@@ -120,12 +165,13 @@ interface ServicioEditorProps {
   s: Partial<Servicio>
   estilistas: Estilista[]
   cats: string[]
+  anticipoPct: number
   onSave: (srv: Partial<Servicio> & { id: string }) => void
   onDelete: (id: string) => void
   onClose: () => void
 }
 
-function ServicioEditor({ s, estilistas, cats, onSave, onDelete, onClose }: ServicioEditorProps) {
+function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, onClose }: ServicioEditorProps) {
   const nuevo = !s.id
   const [nombre, setNombre] = useState(s.nombre ?? '')
   const [cat, setCat] = useState(s.cat ?? (cats[0] ?? ''))
@@ -154,40 +200,25 @@ function ServicioEditor({ s, estilistas, cats, onSave, onDelete, onClose }: Serv
     })
   }
 
-  const anticipoSugerido = anticipo ? Math.round(precio * 0.35) : 0
+  const anticipoMonto = anticipo ? Math.round(precio * anticipoPct / 100) : 0
 
   return (
     <Modal onClose={onClose} width={540}>
       <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
-        {/* Header */}
         <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: 4 }}>
-              {nuevo ? 'Nuevo servicio' : 'Editar servicio'}
-            </div>
-            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>
-              {nuevo ? 'Agregar servicio' : nombre}
-            </h3>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>{nuevo ? 'Nuevo servicio' : 'Editar servicio'}</div>
+            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>{nuevo ? 'Agregar servicio' : nombre}</h3>
           </div>
-          <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}>
-            <Ic n="x" />
-          </button>
+          <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}><Ic n="x" /></button>
         </div>
 
-        {/* Body */}
         <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {/* Nombre */}
           <div>
             <label className="label">Nombre del servicio</label>
-            <input
-              className="input"
-              value={nombre}
-              onChange={e => setNombre(e.target.value)}
-              placeholder="Ej. Corte + peinado"
-            />
+            <input className="input" value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej. Corte + peinado" />
           </div>
 
-          {/* Categoría */}
           <div>
             <label className="label">Categoría</label>
             <select className="input" value={cat} onChange={e => setCat(e.target.value)}>
@@ -195,68 +226,31 @@ function ServicioEditor({ s, estilistas, cats, onSave, onDelete, onClose }: Serv
               <option value="">+ Nueva categoría</option>
             </select>
             {cat === '' && (
-              <input
-                className="input mt8"
-                value={catInput}
-                onChange={e => setCatInput(e.target.value)}
-                placeholder="Nombre de la nueva categoría"
-              />
+              <input className="input mt8" value={catInput} onChange={e => setCatInput(e.target.value)} placeholder="Nombre de la nueva categoría" />
             )}
           </div>
 
-          {/* Duración + Precio */}
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <label className="label">Duración (min)</label>
-              <input
-                className="input"
-                type="number"
-                min={5}
-                step={5}
-                value={dur}
-                onChange={e => setDur(Number(e.target.value))}
-              />
+              <input className="input" type="number" min={5} step={5} value={dur} onChange={e => setDur(Number(e.target.value))} />
             </div>
             <div>
               <label className="label">Precio</label>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                value={precio}
-                onChange={e => setPrecio(Number(e.target.value))}
-              />
+              <input className="input" type="number" min={0} value={precio} onChange={e => setPrecio(Number(e.target.value))} />
             </div>
           </div>
 
-          {/* Anticipo sugerido */}
           <div>
-            <label className="label">Anticipo sugerido (35%)</label>
-            <input
-              className="input"
-              type="number"
-              value={anticipoSugerido}
-              disabled
-              style={{ opacity: 0.55, cursor: 'not-allowed' }}
-            />
-          </div>
-
-          {/* Estilistas */}
-          <div>
-            <label className="label" style={{ marginBottom: 10 }}>Estilistas que ofrecen este servicio</label>
-            <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
+            <label className="label">Estilistas que ofrecen este servicio</label>
+            <div className="vc gap8" style={{ flexWrap: 'wrap', marginTop: 10 }}>
               {estilistas.map(e => {
                 const sel = prof.includes(e.id)
                 return (
                   <button
                     key={e.id}
                     className="chip vc"
-                    style={{
-                      gap: 6,
-                      borderColor: sel ? e.color : undefined,
-                      color: sel ? e.color : undefined,
-                      background: sel ? e.color + '18' : undefined,
-                    }}
+                    style={{ gap: 6, borderColor: sel ? e.color : undefined, color: sel ? e.color : undefined, background: sel ? e.color + '18' : undefined }}
                     onClick={() => toggleProf(e.id)}
                   >
                     <span className="dotc" style={{ background: e.color }} />
@@ -268,13 +262,12 @@ function ServicioEditor({ s, estilistas, cats, onSave, onDelete, onClose }: Serv
             </div>
           </div>
 
-          {/* Switches */}
           <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="between">
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13.5 }}>Requiere anticipo</div>
                 <div className="muted" style={{ fontSize: 12 }}>
-                  Se solicitará {mxn(anticipoSugerido)} al agendar
+                  {anticipo ? `Se solicitará ${mxn(anticipoMonto)} (${anticipoPct}%) al agendar` : 'Sin anticipo requerido'}
                 </div>
               </div>
               <Switch on={anticipo} onClick={() => setAnticipo(v => !v)} />
@@ -283,32 +276,24 @@ function ServicioEditor({ s, estilistas, cats, onSave, onDelete, onClose }: Serv
             <div className="between">
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13.5 }}>Disponible para agendar en línea</div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Visible en el portal de reservas
-                </div>
+                <div className="muted" style={{ fontSize: 12 }}>Visible en el portal de reservas</div>
               </div>
               <Switch on={online} onClick={() => setOnline(v => !v)} />
             </div>
           </div>
         </div>
 
-        {/* Footer */}
         <div className="between card-pad" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 16 }}>
           <div>
             {!nuevo && (
-              <button
-                className="btn danger"
-                onClick={() => s.id && onDelete(s.id)}
-              >
+              <button className="btn danger" onClick={() => s.id && onDelete(s.id)}>
                 <Ic n="trash" />Eliminar
               </button>
             )}
           </div>
           <div className="vc gap10">
             <button className="btn ghost" onClick={onClose}>Cancelar</button>
-            <button className="btn gold" onClick={handleSave}>
-              <Ic n="check" />Guardar
-            </button>
+            <button className="btn gold" onClick={handleSave}><Ic n="check" />Guardar</button>
           </div>
         </div>
       </div>

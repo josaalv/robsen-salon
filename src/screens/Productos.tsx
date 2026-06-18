@@ -1,8 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Avatar, Seg, Switch, CardHead, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn } from '../lib/helpers'
+import { mxn, ventaCalc } from '../lib/helpers'
 import type { Producto, Estilista } from '../types'
 
 export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => void }) {
@@ -10,13 +10,16 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   const [catFiltro, setCatFiltro] = useState('Todos')
   const [editor, setEditor] = useState<Partial<Producto> | null>(null)
   const [vender, setVender] = useState<Producto | null>(null)
+  const [ajuste, setAjuste] = useState<Producto | null>(null)
 
-  const { data, upsertProducto, deleteProducto, venderProducto } = useStore()
+  const { data, upsertProducto, deleteProducto, venderProducto, ajustarStock } = useStore()
   const { productos, movimientos, transacciones, clientas, estilistas, marcas } = data
 
   // KPIs
   const valorInventario = productos.reduce((s, p) => s + p.stock * p.costo, 0)
-  const ventasMes = 99600
+  const ventasMes = useMemo(() =>
+    data.ventas.reduce((s, v) => s + ventaCalc.porTipo(v, 'producto'), 0),
+  [data.ventas])
   const bajos = productos.filter(p => p.stock > 0 && p.stock <= p.min)
   const agotados = productos.filter(p => p.stock === 0)
 
@@ -32,10 +35,13 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
         <div>
           <h1 className="display" style={{ fontSize: 26, margin: 0 }}>Productos</h1>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            {productos.length} productos · {marcas.length} marcas · {productos.reduce((s, p) => s + p.stock, 0)} unidades en inventario
+            {productos.length} productos · {marcas.length} marcas · {productos.reduce((s, p) => s + p.stock, 0)} unidades · ventas de productos: {mxn(ventasMes)}
           </div>
         </div>
         <div className="vc gap10">
+          <button className="btn ghost" onClick={() => setAjuste(productos[0] || null)}>
+            <Ic n="arrows-down-up" />Entrada de stock
+          </button>
           <button className="btn ghost" onClick={() => setEditor({})}>
             <Ic n="plus" />Nuevo producto
           </button>
@@ -60,10 +66,10 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="vc gap10" style={{ color: 'var(--st-conf)', marginBottom: 4 }}>
             <Ic n="chart-line-up" />
-            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 500 }}>Venta producto mes</span>
+            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 500 }}>Ventas de productos</span>
           </div>
           <div className="num" style={{ fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 700 }}>{mxn(ventasMes)}</div>
-          <div className="muted" style={{ fontSize: 11.5 }}>Este mes</div>
+          <div className="muted" style={{ fontSize: 11.5 }}>Registradas en el sistema</div>
         </div>
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="vc gap10" style={{ color: 'var(--st-pend)', marginBottom: 4 }}>
@@ -173,12 +179,14 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
                       </td>
                       <td style={{ textAlign: 'center' }} className="muted">{p.vendidos}</td>
                       <td>
-                        <button
-                          className="btn sm ghost"
-                          onClick={e => { e.stopPropagation(); setVender(p) }}
-                        >
-                          <Ic n="shopping-cart" size={14} />Vender
-                        </button>
+                        <div className="vc gap6">
+                          <button className="btn sm ghost" onClick={e => { e.stopPropagation(); setAjuste(p) }} title="Entrada de stock">
+                            <Ic n="arrows-down-up" size={14} />
+                          </button>
+                          <button className="btn sm ghost" onClick={e => { e.stopPropagation(); setVender(p) }}>
+                            <Ic n="shopping-cart" size={14} />Vender
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -310,6 +318,19 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
             setEditor(null)
           }}
           onClose={() => setEditor(null)}
+        />
+      )}
+
+      {ajuste !== null && (
+        <AjusteStockModal
+          productos={productos}
+          sel={ajuste}
+          onConfirm={(prodId, cant, motivo) => {
+            ajustarStock(prodId, cant, motivo)
+            toast(`Stock actualizado · ${cant > 0 ? '+' : ''}${cant} unidades`)
+            setAjuste(null)
+          }}
+          onClose={() => setAjuste(null)}
         />
       )}
 
@@ -732,6 +753,139 @@ function VenderModal({ productos, sel: initialSel, estilistas, clientas, onConfi
             onClick={() => onConfirm(sel, cant, cliente || 'Mostrador', pago, est)}
           >
             <Ic n="check" />Confirmar venta · {mxn(total)}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── AjusteStockModal ────────────────────────────────────────────────────────
+
+const MOTIVOS_ENTRADA = ['Compra a proveedor', 'Devolución de cliente', 'Ajuste de inventario', 'Muestra / regalo']
+const MOTIVOS_SALIDA  = ['Consumo interno', 'Merma / caducidad', 'Ajuste de inventario']
+
+interface AjusteStockModalProps {
+  productos: Producto[]
+  sel: Producto
+  onConfirm: (productoId: string, cant: number, motivo: string) => void
+  onClose: () => void
+}
+
+function AjusteStockModal({ productos, sel: initialSel, onConfirm, onClose }: AjusteStockModalProps) {
+  const [sel, setSel] = useState<Producto>(initialSel)
+  const [tipo, setTipo] = useState<'entrada' | 'salida'>('entrada')
+  const [cant, setCant] = useState(1)
+  const [motivo, setMotivo] = useState(MOTIVOS_ENTRADA[0])
+  const motivos = tipo === 'entrada' ? MOTIVOS_ENTRADA : MOTIVOS_SALIDA
+  const stockResultante = tipo === 'entrada' ? sel.stock + cant : Math.max(0, sel.stock - cant)
+
+  const handleTipo = (t: 'entrada' | 'salida') => {
+    setTipo(t)
+    setMotivo(t === 'entrada' ? MOTIVOS_ENTRADA[0] : MOTIVOS_SALIDA[0])
+    setCant(1)
+  }
+
+  return (
+    <Modal onClose={onClose} width={480}>
+      <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
+        <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Inventario</div>
+            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>Ajuste de stock</h3>
+          </div>
+          <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}><Ic n="x" /></button>
+        </div>
+
+        <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label className="label">Producto</label>
+            <select className="input" value={sel.id} onChange={e => {
+              const found = productos.find(p => p.id === e.target.value)
+              if (found) { setSel(found); setCant(1) }
+            }}>
+              {productos.map(p => (
+                <option key={p.id} value={p.id}>{p.nombre} (stock: {p.stock})</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label" style={{ marginBottom: 10 }}>Tipo de movimiento</label>
+            <div className="vc gap8">
+              {(['entrada', 'salida'] as const).map(t => (
+                <button
+                  key={t}
+                  className="chip"
+                  style={tipo === t ? { borderColor: t === 'entrada' ? 'var(--st-conf)' : 'var(--st-canc)', color: t === 'entrada' ? 'var(--st-conf)' : 'var(--st-canc)' } : {}}
+                  onClick={() => handleTipo(t)}
+                >
+                  {t === 'entrada' ? '↓ Entrada' : '↑ Salida'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Cantidad</label>
+            <div className="vc gap10">
+              <button className="btn ghost" style={{ padding: '6px 12px' }} onClick={() => setCant(c => Math.max(1, c - 1))}>
+                <Ic n="minus" size={14} />
+              </button>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                value={cant}
+                onChange={e => setCant(Math.max(1, Number(e.target.value)))}
+                style={{ width: 80, textAlign: 'center' }}
+              />
+              <button className="btn ghost" style={{ padding: '6px 12px' }} onClick={() => setCant(c => c + 1)}>
+                <Ic n="plus" size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Motivo</label>
+            <select className="input" value={motivo} onChange={e => setMotivo(e.target.value)}>
+              {motivos.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+
+          <div className="card card-pad" style={{ background: 'var(--surface-2)' }}>
+            <div className="between" style={{ fontSize: 13.5 }}>
+              <span className="muted">Stock actual</span>
+              <span className="num" style={{ fontWeight: 600 }}>{sel.stock}</span>
+            </div>
+            <div className="between mt10" style={{ fontSize: 13.5 }}>
+              <span className="muted">Movimiento</span>
+              <span className="num" style={{ fontWeight: 600, color: tipo === 'entrada' ? 'var(--st-conf)' : 'var(--st-canc)' }}>
+                {tipo === 'entrada' ? '+' : '-'}{cant}
+              </span>
+            </div>
+            <hr className="hr" style={{ margin: '12px 0' }} />
+            <div className="between" style={{ fontSize: 15 }}>
+              <span style={{ fontWeight: 700 }}>Stock resultante</span>
+              <span className="num gold-text" style={{ fontWeight: 700, fontSize: 20 }}>{stockResultante}</span>
+            </div>
+            {stockResultante <= sel.min && stockResultante > 0 && (
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 8, color: 'var(--st-pend)' }}>
+                ⚠ Quedará por debajo del mínimo ({sel.min})
+              </div>
+            )}
+            {stockResultante === 0 && (
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 8, color: 'var(--st-canc)' }}>
+                El producto quedará agotado
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="between card-pad" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 16 }}>
+          <button className="btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn gold" onClick={() => onConfirm(sel.id, tipo === 'entrada' ? cant : -cant, motivo)}>
+            <Ic n="check" />Registrar movimiento
           </button>
         </div>
       </div>
