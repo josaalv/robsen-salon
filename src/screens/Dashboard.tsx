@@ -44,8 +44,8 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   const mejorDia = semanaData.length > 0 ? semanaData.reduce((a, b) => b.v > a.v ? b : a) : null
 
   // Mes actual real
-  const mesActualStr = MESES_SHORT[hoy.getMonth()]
-  const ventasMesArr = data.ventas.filter(v => v.fecha.includes(mesActualStr))
+  const mesActualStr = MESES_SHORT[hoy.getMonth()].toLowerCase()
+  const ventasMesArr = data.ventas.filter(v => v.fecha.toLowerCase().includes(mesActualStr))
   const totalMes = ventasMesArr.reduce((s, v) => s + ventaCalc.total(v), 0)
   const ticketProm = ventasMesArr.length ? Math.round(totalMes / ventasMesArr.length) : 0
 

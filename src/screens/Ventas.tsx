@@ -213,7 +213,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return [s && `${s} servicio${s > 1 ? 's' : ''}`, p && `${p} producto${p > 1 ? 's' : ''}`, a && `${a} extra${a > 1 ? 's' : ''}`].filter(Boolean).join(' · ')
   }
 
-  const nextTicket = '#' + (1043 + hoyVentas.length)
+  const nextTicket = '#' + (1000 + ventas.length + 1)
 
   return (
     <div>

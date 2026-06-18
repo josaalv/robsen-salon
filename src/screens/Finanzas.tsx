@@ -16,7 +16,7 @@ const CAT_COLORS: Record<string, string> = {
 function parseFecha(s: string): Date {
   const dateStr = s.split(' · ')[0].trim()
   const [dd, mon] = dateStr.split(' ')
-  const m = MESES_ES.indexOf(mon)
+  const m = MESES_ES.findIndex(x => x.toLowerCase() === mon?.toLowerCase())
   const year = HOY.getFullYear()
   const d = new Date(year, m < 0 ? HOY.getMonth() : m, parseInt(dd) || 1)
   if (d > HOY) d.setFullYear(year - 1)

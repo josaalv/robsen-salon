@@ -143,7 +143,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
     })
 
     const cobros: Item[] = data.ventas.filter(v => v.estado==='parcial'||v.estado==='pendiente').map(v => {
-      const saldo = v.lineas.reduce((s,l)=>s+l.precio*l.cant,0) - v.desc - v.anticipo
+      const saldo = Math.max(0, v.lineas.reduce((s,l)=>s+l.precio*l.cant,0) - (v.desc||0) - (v.anticipo||0))
       const cl = data.clientas.find(c=>c.id===v.clienteId)
       const srv = v.lineas.find(l=>l.tipo==='servicio')?.nombre || 'tu servicio'
       return { id:v.id, nombre:v.cliente, tel:cl?.tel||'', ini:cl?.ini||v.cliente[0], urgencia:'alta',

@@ -2,7 +2,7 @@ import type { Venta } from '../types'
 
 const MES: Record<string, number> = { Ene:0,Feb:1,Mar:2,Abr:3,May:4,Jun:5,Jul:6,Ago:7,Sep:8,Oct:9,Nov:10,Dic:11 }
 const MESN = Object.keys(MES)
-const HOY = new Date(2026, 5, 17)
+const HOY = new Date()
 const DIA = 86400000
 
 export const mxn = (n: number) => '$' + Number(n).toLocaleString('es-MX')
