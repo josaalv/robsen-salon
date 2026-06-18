@@ -459,12 +459,16 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
 }
 
 // ─── Vista semana ───────────────────────────────────────────────────────────
-function WeekView({ onSel }: { onSel: (a: Cita) => void }) {
+function WeekView({ onSel, weekOffset, onWeekChange }: {
+  onSel: (a: Cita) => void
+  weekOffset: number
+  onWeekChange: (delta: number) => void
+}) {
   const { data } = useStore()
   const hoy = new Date()
   const dow = hoy.getDay()
   const monday = new Date(hoy)
-  monday.setDate(hoy.getDate() - (dow === 0 ? 6 : dow - 1))
+  monday.setDate(hoy.getDate() - (dow === 0 ? 6 : dow - 1) + weekOffset * 7)
   monday.setHours(0, 0, 0, 0)
   const todayIso = dateToIso(hoy)
 
@@ -475,8 +479,24 @@ function WeekView({ onSel }: { onSel: (a: Cita) => void }) {
     return { label, date, iso, isHoy: iso === todayIso }
   })
 
+  const semLabel = (() => {
+    const s = dias[0].date, e = dias[6].date
+    const sm = MESES_CORTOS[s.getMonth()], em = MESES_CORTOS[e.getMonth()]
+    return sm === em ? `${s.getDate()}–${e.getDate()} ${sm}` : `${s.getDate()} ${sm} – ${e.getDate()} ${em}`
+  })()
+
   return (
     <div className="card card-pad">
+      <div className="between" style={{ marginBottom: 14 }}>
+        <button className="btn ghost" onClick={() => onWeekChange(-1)}><Ic n="caret-left" />Anterior</button>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
+          {weekOffset === 0 ? 'Esta semana' : semLabel}
+          {weekOffset !== 0 && (
+            <button className="btn ghost" style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11 }} onClick={() => onWeekChange(-weekOffset)}>Hoy</button>
+          )}
+        </span>
+        <button className="btn ghost" onClick={() => onWeekChange(1)}>Siguiente<Ic n="caret-right" /></button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 12 }}>
         {dias.map(({ label, date, iso, isHoy }, i) => {
           const items = isHoy
@@ -513,15 +533,21 @@ function WeekView({ onSel }: { onSel: (a: Cita) => void }) {
 }
 
 // ─── Vista mes ──────────────────────────────────────────────────────────────
-function MonthView() {
+function MonthView({ onDayClick }: { onDayClick?: (date: Date) => void }) {
   const { data } = useStore()
   const hoy = new Date()
-  const todayNum = hoy.getDate()
-  const firstDow = new Date(hoy.getFullYear(), hoy.getMonth(), 1).getDay()
+  const [monthOffset, setMonthOffset] = useState(0)
+
+  const base = new Date(hoy.getFullYear(), hoy.getMonth() + monthOffset, 1)
+  const displayYear = base.getFullYear()
+  const displayMonth = base.getMonth()
+  const isCurrentMonth = displayYear === hoy.getFullYear() && displayMonth === hoy.getMonth()
+
+  const firstDow = new Date(displayYear, displayMonth, 1).getDay()
   const offset = firstDow === 0 ? 6 : firstDow - 1
-  const daysInMonth = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()
-  const yy = hoy.getFullYear()
-  const mm = String(hoy.getMonth() + 1).padStart(2, '0')
+  const daysInMonth = new Date(displayYear, displayMonth + 1, 0).getDate()
+  const yy = String(displayYear)
+  const mm = String(displayMonth + 1).padStart(2, '0')
 
   const cells: (number | null)[] = [
     ...Array(offset).fill(null),
@@ -530,25 +556,38 @@ function MonthView() {
 
   return (
     <div className="card card-pad">
+      <div className="between" style={{ marginBottom: 14 }}>
+        <button className="btn ghost" onClick={() => setMonthOffset(o => o - 1)}><Ic n="caret-left" />Anterior</button>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
+          {MESES_ES[displayMonth].charAt(0).toUpperCase() + MESES_ES[displayMonth].slice(1)} {displayYear}
+          {monthOffset !== 0 && (
+            <button className="btn ghost" style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11 }} onClick={() => setMonthOffset(0)}>Hoy</button>
+          )}
+        </span>
+        <button className="btn ghost" onClick={() => setMonthOffset(o => o + 1)}>Siguiente<Ic n="caret-right" /></button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 8 }}>
         {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
           <div key={i} className="center dim" style={{ fontSize: 11, fontWeight: 600, paddingBottom: 4 }}>{d}</div>
         ))}
         {cells.map((d, idx) => {
           if (d === null) return <div key={'e' + idx} />
-          const isHoy = d === todayNum
+          const isHoy = isCurrentMonth && d === hoy.getDate()
           const isDom = idx % 7 === 6
           const dayIso = `${yy}-${mm}-${String(d).padStart(2, '0')}`
           const n = isHoy
             ? data.hoy.length
             : (data.citasFuturas || []).filter(c => c.fecha === dayIso).length
           return (
-            <div key={d} style={{
-              minHeight: 92, borderRadius: 10,
-              border: '1px solid ' + (isHoy ? 'var(--gold)' : 'var(--line-soft)'),
-              background: isHoy ? 'rgba(200,161,74,0.06)' : isDom ? 'rgba(255,255,255,0.015)' : 'var(--surface)',
-              padding: 9
-            }}>
+            <div key={d}
+              onClick={() => onDayClick?.(new Date(displayYear, displayMonth, d))}
+              style={{
+                minHeight: 92, borderRadius: 10,
+                border: '1px solid ' + (isHoy ? 'var(--gold)' : 'var(--line-soft)'),
+                background: isHoy ? 'rgba(200,161,74,0.06)' : isDom ? 'rgba(255,255,255,0.015)' : 'var(--surface)',
+                padding: 9,
+                cursor: onDayClick ? 'pointer' : 'default',
+              }}>
               <div className="between">
                 <span className="num" style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 600, color: isHoy ? 'var(--gold)' : isDom ? 'var(--text-4)' : 'var(--text-2)' }}>{d}</span>
                 {n > 0 && <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{n}</span>}
@@ -579,6 +618,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const [editCita, setEditCita] = useState<Partial<Cita> | null>(null)
   const [showBloqueo, setShowBloqueo] = useState(false)
   const [bloqueos, setBloqueos] = useState<Bloqueo[]>([])
+  const [weekOffset, setWeekOffset] = useState(0)
 
   const hoy = new Date()
   const todayIso = dateToIso(hoy)
@@ -714,8 +754,28 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
           </div>
         )}
 
-        {vista === 'Semana' && <WeekView onSel={setSel} />}
-        {vista === 'Mes' && <MonthView />}
+        {vista === 'Semana' && (
+          <WeekView
+            onSel={setSel}
+            weekOffset={weekOffset}
+            onWeekChange={(delta) => setWeekOffset(w => w + delta)}
+          />
+        )}
+        {vista === 'Mes' && (
+          <MonthView onDayClick={(date) => {
+            const dow = hoy.getDay()
+            const mondayHoy = new Date(hoy)
+            mondayHoy.setDate(hoy.getDate() - (dow === 0 ? 6 : dow - 1))
+            mondayHoy.setHours(0, 0, 0, 0)
+            const dowDate = date.getDay()
+            const mondayDate = new Date(date)
+            mondayDate.setDate(date.getDate() - (dowDate === 0 ? 6 : dowDate - 1))
+            mondayDate.setHours(0, 0, 0, 0)
+            const diffWeeks = Math.round((mondayDate.getTime() - mondayHoy.getTime()) / (7 * 86400000))
+            setWeekOffset(diffWeeks)
+            setVista('Semana')
+          }} />
+        )}
 
         {sel && (
           <ApptDetail

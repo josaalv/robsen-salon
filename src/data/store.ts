@@ -356,7 +356,12 @@ export const useStore = create<Store>()(
     }),
     {
       name: STORAGE_KEY,
-      partialize: (state) => ({ data: state.data }),
+      partialize: (state) => ({
+        data: {
+          ...state.data,
+          usuarios: state.data.usuarios.map(({ pass: _p, ...u }) => u),
+        }
+      }),
     }
   )
 )

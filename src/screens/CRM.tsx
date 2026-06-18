@@ -689,13 +689,51 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
 
 // ─── Pantalla principal CRM ─────────────────────────────────────────────────
 export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data, deleteClienta } = useStore()
+  const { data, deleteClienta, upsertClienta } = useStore()
   const [q, setQ] = useState('')
   const [filtro, setFiltro] = useState('Todas')
   const [sort, setSort] = useState<{ k: keyof Clienta; dir: number }>({ k: 'ultima', dir: -1 })
   const [perfil, setPerfil] = useState<Clienta | null>(null)
   const [vista, setVista] = useState('Clientas')
   const [editCl, setEditCl] = useState<Partial<Clienta> | null>(null)
+  const csvRef = useRef<HTMLInputElement>(null)
+
+  const handleCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+      if (lines.length < 2) { toast('El archivo CSV está vacío'); return }
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+      let imported = 0
+      for (let i = 1; i < lines.length; i++) {
+        const vals = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g, ''))
+        const get = (keys: string[]) => vals[headers.findIndex(h => keys.includes(h))] || ''
+        const nombre = get(['nombre', 'name', 'cliente'])
+        if (!nombre) continue
+        const existing = data.clientas.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())
+        if (existing) continue
+        upsertClienta({
+          id: 'cl' + Date.now() + i,
+          nombre,
+          tel: get(['tel', 'telefono', 'phone', 'celular']),
+          estado: 'Nueva' as const,
+          ultima: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' + new Date().getFullYear(),
+          ticket: 0, fav: '', est: '', visitas: 0, gasto: 0,
+          ini: nombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
+          cumple: get(['cumple', 'cumpleaños', 'birthday']),
+          ciclo: 0,
+          notas: get(['notas', 'notes', 'comentarios']),
+        })
+        imported++
+      }
+      toast(imported > 0 ? `${imported} clienta${imported > 1 ? 's' : ''} importada${imported > 1 ? 's' : ''}` : 'No se encontraron clientas nuevas')
+      e.target.value = ''
+    }
+    reader.readAsText(file)
+  }
 
   const filtros = ['Todas', 'VIP', 'Frecuente', 'Activa', 'Nueva', 'Inactiva']
 
@@ -750,7 +788,8 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
         </div>
         <div className="vc gap12">
           <Seg opts={['Clientas', 'Retención']} value={vista} onChange={setVista} />
-          <button className="btn ghost" onClick={() => toast('Importar clientas desde CSV — disponible con Supabase')}><Ic n="upload-simple" />Importar</button>
+          <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvImport} />
+          <button className="btn ghost" onClick={() => csvRef.current?.click()}><Ic n="upload-simple" />Importar CSV</button>
           <button className="btn gold" onClick={() => setEditCl({})}><Ic n="plus" />Nueva clienta</button>
         </div>
       </div>

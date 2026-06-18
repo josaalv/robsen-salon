@@ -230,7 +230,7 @@ export function ScreenBooking() {
                     <Avatar ini={p.ini} color={p.color} />
                     <div className="f1">
                       <div style={{ fontWeight: 600, fontSize: 14.5 }}>{p.nombre}</div>
-                      <div className="dim" style={{ fontSize: 12, marginTop: 3 }}>{p.rol} · 4.9 ★</div>
+                      <div className="dim" style={{ fontSize: 12, marginTop: 3 }}>{p.rol}</div>
                     </div>
                     <div className="check"><Ic n="check" /></div>
                   </div>
