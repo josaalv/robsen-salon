@@ -111,7 +111,7 @@ function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
             </div>
             <textarea className="input" rows={5}
               value={txt} onChange={e=>setTxt(e.target.value)}
-              style={{ resize:'vertical', fontFamily:'var(--sans)', lineHeight:1.6 }} />
+              style={{ resize:'vertical', lineHeight:1.6 }} />
             {varsInvalidas.length > 0 && (
               <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 5 }}>
                 Variable inválida: {varsInvalidas.join(', ')} · usa solo las variables del botón
@@ -415,7 +415,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
                 rows={5}
                 value={msgEdit}
                 onChange={e=>setMsgEdit(e.target.value)}
-                style={{ resize:'vertical', fontSize:12.5, lineHeight:1.6, fontFamily:'var(--sans)' }}
+                style={{ resize:'vertical', fontSize:12.5, lineHeight:1.6 }}
               />
               <div className="vc gap8">
                 {selItem.tel ? (

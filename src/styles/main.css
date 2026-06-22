@@ -43,7 +43,7 @@
 
   /* Tipografía */
   --serif: "Playfair Display", Georgia, serif;
-  --sans:  "Montserrat", system-ui, sans-serif;
+  --sans:  "Montserrat", system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 
   /* Radios / sombras */
   --r-sm: 8px;

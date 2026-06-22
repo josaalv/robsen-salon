@@ -150,7 +150,7 @@ function PreferenciasTab({ c }: { c: Clienta }) {
         placeholder="Ej. Alergia a amonio · prefiere citas por la mañana · cabello teñido con henna previa…"
         value={notas}
         onChange={e => setNotas(e.target.value)}
-        style={{ resize: 'vertical', fontFamily: 'var(--sans)', lineHeight: 1.6 }}
+        style={{ resize: 'vertical', lineHeight: 1.6 }}
       />
       <div className="vc gap8">
         <button className="btn gold sm" onClick={guardar}>
@@ -215,7 +215,7 @@ function FormulaColorTab({ c }: { c: Clienta }) {
               placeholder="Ej. Base: 6N 50g + 20vol · Mechas: 9.1 30g + 30vol · Tóner: 10P 20g · Tiempo: 35min"
               value={formula}
               onChange={e => setFormula(e.target.value)}
-              style={{ resize: 'vertical', fontFamily: 'var(--sans)', lineHeight: 1.6 }}
+              style={{ resize: 'vertical', lineHeight: 1.6 }}
             />
           </div>
           <button className="btn gold sm" style={{ alignSelf: 'flex-start' }} onClick={agregar} disabled={!formula.trim()}>
