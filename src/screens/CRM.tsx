@@ -265,7 +265,7 @@ function AntesDesTab({ c }: { c: Clienta }) {
   }, [c.id])
 
   const readFile = (file: File): Promise<string> => new Promise((resolve, reject) => {
-    if (file.size > 3 * 1024 * 1024) { reject(new Error('La imagen debe pesar menos de 3 MB')); return }
+    if (file.size > 15 * 1024 * 1024) { reject(new Error('La imagen debe pesar menos de 15 MB')); return }
     const r = new FileReader()
     r.onload = e => resolve(e.target?.result as string)
     r.onerror = reject

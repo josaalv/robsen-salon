@@ -34,7 +34,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   const onAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) { toast('La imagen debe pesar menos de 2 MB'); return }
+    if (file.size > 8 * 1024 * 1024) { toast('La imagen debe pesar menos de 8 MB'); return }
     const reader = new FileReader()
     reader.onload = ev => {
       const result = ev.target?.result as string
@@ -129,7 +129,7 @@ function AjustesSalon() {
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) { toast('La imagen debe pesar menos de 2 MB'); return }
+    if (file.size > 8 * 1024 * 1024) { toast('La imagen debe pesar menos de 8 MB'); return }
     const reader = new FileReader()
     reader.onload = ev => {
       const result = ev.target?.result as string
@@ -163,7 +163,7 @@ function AjustesSalon() {
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" style={{ display: 'none' }} onChange={onFile} />
             <button className="btn gold sm" onClick={() => fileRef.current?.click()}><Ic n="upload" />{logo ? 'Cambiar logo' : 'Subir logo'}</button>
             {logo && <button className="btn ghost sm" onClick={removeLogo}><Ic n="trash" />Quitar</button>}
-            <div className="dim" style={{ fontSize: 11.5 }}>PNG, SVG o JPG · máx. 2 MB</div>
+            <div className="dim" style={{ fontSize: 11.5 }}>PNG, SVG o JPG · máx. 8 MB</div>
           </div>
         </div>
       </div>
