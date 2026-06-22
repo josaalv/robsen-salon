@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto } from '../types'
 
+const BUCKET = 'media'
+
 // ─── Mappers DB ↔ TypeScript ──────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,13 +72,79 @@ const toConfigRow = (c: SalonConfig) => ({
   logo: c.logo ?? null,
 })
 
+// Mapper explícito para clientas — evita enviar columnas desconocidas
+const toClientaRow = (c: Clienta) => ({
+  id: c.id,
+  nombre: c.nombre,
+  tel: c.tel,
+  email: c.email ?? null,
+  estado: c.estado,
+  ultima: c.ultima,
+  ticket: c.ticket,
+  fav: c.fav,
+  est: c.est,
+  visitas: c.visitas,
+  gasto: c.gasto,
+  ini: c.ini,
+  cumple: c.cumple,
+  ciclo: c.ciclo,
+  notas: c.notas ?? null,
+  formulas: c.formulas ?? [],
+  fotos: c.fotos ?? [],
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapClienta = (r: any): Clienta => ({
+  id: r.id,
+  nombre: r.nombre,
+  tel: r.tel ?? '',
+  email: r.email ?? undefined,
+  estado: r.estado,
+  ultima: r.ultima ?? '',
+  ticket: r.ticket ?? 0,
+  fav: r.fav ?? '',
+  est: r.est ?? '',
+  visitas: r.visitas ?? 0,
+  gasto: r.gasto ?? 0,
+  ini: r.ini ?? '',
+  cumple: r.cumple ?? '',
+  ciclo: r.ciclo ?? 8,
+  notas: r.notas ?? undefined,
+  formulas: r.formulas ?? [],
+  fotos: r.fotos ?? [],
+})
+
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export const db = {
+
+  // ─── Storage: archivos de imagen ────────────────────────────────────────────
+  async uploadMedia(path: string, file: File): Promise<string | null> {
+    if (!supabase) return null
+    const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true })
+    if (error) { console.error('[storage.upload]', path, error.message); return null }
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+    return data.publicUrl
+  },
+
+  async deleteMedia(paths: string[]): Promise<void> {
+    if (!supabase || paths.length === 0) return
+    const { error } = await supabase.storage.from(BUCKET).remove(paths)
+    if (error) console.error('[storage.delete]', error.message)
+  },
+
+  // Extrae el path relativo de una URL pública de Supabase Storage
+  pathFromUrl(url: string): string {
+    const marker = `/object/public/${BUCKET}/`
+    const idx = url.indexOf(marker)
+    return idx >= 0 ? url.slice(idx + marker.length) : ''
+  },
+
   // — Config —
   async getConfig(): Promise<SalonConfig | null> {
     if (!supabase) return null
-    const { data } = await supabase.from('config').select('*').limit(1).maybeSingle()
+    const { data, error } = await supabase.from('config').select('*').limit(1).maybeSingle()
+    if (error) console.error('[db.getConfig]', error.message)
     return data ? mapConfig(data) : null
   },
   async saveConfig(cfg: SalonConfig) {
@@ -94,7 +162,8 @@ export const db = {
   },
   async upsertEstilista(e: Estilista) {
     if (!supabase) return
-    await supabase.from('estilistas').upsert(e, { onConflict: 'id' })
+    const { error } = await supabase.from('estilistas').upsert(e, { onConflict: 'id' })
+    if (error) console.error('[db.upsertEstilista]', error.message)
   },
   async deleteEstilista(id: string) {
     if (!supabase) return
@@ -109,7 +178,8 @@ export const db = {
   },
   async upsertServicio(s: Servicio) {
     if (!supabase) return
-    await supabase.from('servicios').upsert(s, { onConflict: 'id' })
+    const { error } = await supabase.from('servicios').upsert(s, { onConflict: 'id' })
+    if (error) console.error('[db.upsertServicio]', error.message)
   },
   async deleteServicio(id: string) {
     if (!supabase) return
@@ -119,12 +189,14 @@ export const db = {
   // — Clientas —
   async getClientas(): Promise<Clienta[]> {
     if (!supabase) return []
-    const { data } = await supabase.from('clientas').select('*')
-    return (data ?? []) as Clienta[]
+    const { data, error } = await supabase.from('clientas').select('*')
+    if (error) console.error('[db.getClientas]', error.message)
+    return (data ?? []).map(mapClienta)
   },
   async upsertClienta(c: Clienta) {
     if (!supabase) return
-    await supabase.from('clientas').upsert(c, { onConflict: 'id' })
+    const { error } = await supabase.from('clientas').upsert(toClientaRow(c), { onConflict: 'id' })
+    if (error) console.error('[db.upsertClienta]', error.message)
   },
   async deleteClienta(id: string) {
     if (!supabase) return
@@ -144,7 +216,8 @@ export const db = {
   },
   async upsertCita(c: Partial<Cita> & { id: string }) {
     if (!supabase) return
-    await supabase.from('citas').upsert(toCitaRow(c), { onConflict: 'id' })
+    const { error } = await supabase.from('citas').upsert(toCitaRow(c), { onConflict: 'id' })
+    if (error) console.error('[db.upsertCita]', error.message)
   },
   async deleteCita(id: string) {
     if (!supabase) return
@@ -167,7 +240,7 @@ export const db = {
       cliente_id: v.clienteId || null, pago: v.pago, estado: v.estado,
       descuento: v.desc, anticipo: v.anticipo,
     })
-    if (error) return
+    if (error) { console.error('[db.addVenta]', error.message); return }
     if (v.lineas.length > 0) {
       await supabase.from('lineas_venta').insert(
         v.lineas.map(l => ({
@@ -195,7 +268,8 @@ export const db = {
   },
   async upsertProducto(p: Producto) {
     if (!supabase) return
-    await supabase.from('productos').upsert(p, { onConflict: 'id' })
+    const { error } = await supabase.from('productos').upsert(p, { onConflict: 'id' })
+    if (error) console.error('[db.upsertProducto]', error.message)
   },
   async deleteProducto(id: string) {
     if (!supabase) return
@@ -210,7 +284,8 @@ export const db = {
   },
   async addMovimiento(m: Movimiento) {
     if (!supabase) return
-    await supabase.from('movimientos').insert(m)
+    const { error } = await supabase.from('movimientos').insert(m)
+    if (error) console.error('[db.addMovimiento]', error.message)
   },
 
   // — Gastos —
@@ -221,7 +296,8 @@ export const db = {
   },
   async upsertGasto(g: Gasto) {
     if (!supabase) return
-    await supabase.from('gastos').upsert(g, { onConflict: 'id' })
+    const { error } = await supabase.from('gastos').upsert(g, { onConflict: 'id' })
+    if (error) console.error('[db.upsertGasto]', error.message)
   },
   async deleteGasto(id: string) {
     if (!supabase) return
@@ -236,7 +312,8 @@ export const db = {
   },
   async upsertBloqueo(b: Bloqueo) {
     if (!supabase) return
-    await supabase.from('bloqueos').upsert(b, { onConflict: 'id' })
+    const { error } = await supabase.from('bloqueos').upsert(b, { onConflict: 'id' })
+    if (error) console.error('[db.upsertBloqueo]', error.message)
   },
   async deleteBloqueo(id: string) {
     if (!supabase) return
@@ -251,18 +328,21 @@ export const db = {
   },
   async upsertPlantilla(p: Plantilla) {
     if (!supabase) return
-    await supabase.from('plantillas').upsert(p, { onConflict: 'id' })
+    const { error } = await supabase.from('plantillas').upsert(p, { onConflict: 'id' })
+    if (error) console.error('[db.upsertPlantilla]', error.message)
   },
 
   // — Usuarios —
   async getUsuarios(): Promise<Usuario[]> {
     if (!supabase) return []
-    const { data } = await supabase.from('usuarios').select('*')
+    const { data, error } = await supabase.from('usuarios').select('*')
+    if (error) console.error('[db.getUsuarios]', error.message)
     return (data ?? []) as Usuario[]
   },
   async upsertUsuario(u: Usuario) {
     if (!supabase) return
-    await supabase.from('usuarios').upsert(u, { onConflict: 'id' })
+    const { error } = await supabase.from('usuarios').upsert(u, { onConflict: 'id' })
+    if (error) console.error('[db.upsertUsuario]', error.message)
   },
 
   // ─── Carga completa desde Supabase ────────────────────────────────────────
@@ -312,7 +392,7 @@ export const db = {
         await supabase.from('servicios').upsert(data.servicios, { onConflict: 'id' })
 
       if (data.clientas.length)
-        await supabase.from('clientas').upsert(data.clientas, { onConflict: 'id' })
+        await supabase.from('clientas').upsert(data.clientas.map(toClientaRow), { onConflict: 'id' })
 
       const allCitas = [...data.hoy, ...(data.citasFuturas || [])]
       if (allCitas.length)
@@ -330,7 +410,6 @@ export const db = {
           { onConflict: 'id' }
         )
 
-      // Ventas: upsert header + delete-then-insert lineas
       for (const v of data.ventas) {
         await supabase.from('ventas').upsert({
           id: v.id, ticket: v.ticket, fecha: v.fecha, cliente: v.cliente,

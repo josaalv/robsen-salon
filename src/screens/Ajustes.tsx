@@ -3,6 +3,7 @@ import { Avatar, Switch, CardHead, Seg, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
+import { db } from '../lib/db'
 import { mxn } from '../lib/helpers'
 import type { Usuario, SlotMinutos, RolUsuario } from '../types'
 
@@ -31,19 +32,23 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   const avatarRef = useRef<HTMLInputElement>(null)
   const [avatar, setAvatar] = useState(() => user.avatar || '')
 
-  const onAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.size > 8 * 1024 * 1024) { toast('La imagen debe pesar menos de 8 MB'); return }
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const result = ev.target?.result as string
-      setAvatar(result)
-      const updated = { ...user, avatar: result }
+    const preview = URL.createObjectURL(file)
+    setAvatar(preview)
+    const url = await db.uploadMedia(`avatares/${user.id}`, file)
+    URL.revokeObjectURL(preview)
+    if (url) {
+      setAvatar(url)
+      const updated = { ...user, avatar: url }
       upsertUsuario(updated)
       login(updated)
+    } else {
+      toast('Error al subir la foto — intenta de nuevo')
+      setAvatar(user.avatar || '')
     }
-    reader.readAsDataURL(file)
   }
 
   const guardar = () => {
@@ -126,17 +131,21 @@ function AjustesSalon() {
   const [tel, setTel] = useState(cfg.tel)
   const [whatsapp, setWhatsapp] = useState(cfg.whatsapp)
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.size > 8 * 1024 * 1024) { toast('La imagen debe pesar menos de 8 MB'); return }
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const result = ev.target?.result as string
-      setLogo(result)
-      updateConfig({ logo: result })
+    const preview = URL.createObjectURL(file)
+    setLogo(preview)
+    const url = await db.uploadMedia('logos/logo', file)
+    URL.revokeObjectURL(preview)
+    if (url) {
+      setLogo(url)
+      updateConfig({ logo: url })
+    } else {
+      toast('Error al subir el logo — intenta de nuevo')
+      setLogo(cfg.logo || '')
     }
-    reader.readAsDataURL(file)
   }
 
   const removeLogo = () => {

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { db } from '../lib/db'
 import { mxn, helpers } from '../lib/helpers'
 import type { Clienta, EstadoClienta, FotoEntry } from '../types'
 
@@ -254,9 +255,12 @@ function AntesDesTab({ c }: { c: Clienta }) {
   const { upsertClienta } = useStore()
   const [fotos, setFotos] = useState<FotoEntry[]>(() => c.fotos || [])
   const [adding, setAdding] = useState(false)
-  const [antesB64, setAntesB64] = useState('')
-  const [despuesB64, setDespuesB64] = useState('')
+  const [antesFile, setAntesFile] = useState<File | null>(null)
+  const [antesPreview, setAntesPreview] = useState('')
+  const [despuesFile, setDespuesFile] = useState<File | null>(null)
+  const [despuesPreview, setDespuesPreview] = useState('')
   const [nota, setNota] = useState('')
+  const [uploading, setUploading] = useState(false)
   const antesRef = useRef<HTMLInputElement>(null)
   const despuesRef = useRef<HTMLInputElement>(null)
 
@@ -264,45 +268,75 @@ function AntesDesTab({ c }: { c: Clienta }) {
     setFotos(c.fotos || [])
   }, [c.id])
 
-  const readFile = (file: File): Promise<string> => new Promise((resolve, reject) => {
-    if (file.size > 15 * 1024 * 1024) { reject(new Error('La imagen debe pesar menos de 15 MB')); return }
-    const r = new FileReader()
-    r.onload = e => resolve(e.target?.result as string)
-    r.onerror = reject
-    r.readAsDataURL(file)
-  })
-
-  const save = () => {
-    if (!antesB64 && !despuesB64) { toast('Sube al menos una foto'); return }
-    const entry: FotoEntry = {
-      id: 'p' + Date.now(),
-      antes: antesB64,
-      despues: despuesB64,
-      fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
-      nota,
+  const handleFile = (file: File, type: 'antes' | 'despues') => {
+    if (file.size > 15 * 1024 * 1024) { toast('La imagen debe pesar menos de 15 MB'); return }
+    const preview = URL.createObjectURL(file)
+    if (type === 'antes') {
+      if (antesPreview) URL.revokeObjectURL(antesPreview)
+      setAntesFile(file); setAntesPreview(preview)
+    } else {
+      if (despuesPreview) URL.revokeObjectURL(despuesPreview)
+      setDespuesFile(file); setDespuesPreview(preview)
     }
-    const next = [entry, ...fotos]
-    setFotos(next)
-    upsertClienta({ id: c.id, fotos: next })
-    toast('Comparativa guardada')
-    setAdding(false); setAntesB64(''); setDespuesB64(''); setNota('')
+  }
+
+  const resetForm = () => {
+    if (antesPreview) URL.revokeObjectURL(antesPreview)
+    if (despuesPreview) URL.revokeObjectURL(despuesPreview)
+    setAntesFile(null); setAntesPreview('')
+    setDespuesFile(null); setDespuesPreview('')
+    setNota('')
+  }
+
+  const save = async () => {
+    if (!antesFile && !despuesFile) { toast('Sube al menos una foto'); return }
+    setUploading(true)
+    try {
+      const id = 'p' + Date.now()
+      const [antesUrl, despuesUrl] = await Promise.all([
+        antesFile ? db.uploadMedia(`fotos/${c.id}/${id}-antes`, antesFile) : Promise.resolve(null),
+        despuesFile ? db.uploadMedia(`fotos/${c.id}/${id}-despues`, despuesFile) : Promise.resolve(null),
+      ])
+      if (antesFile && !antesUrl) { toast('Error al subir la foto de antes'); return }
+      if (despuesFile && !despuesUrl) { toast('Error al subir la foto de después'); return }
+      const entry: FotoEntry = {
+        id,
+        antes: antesUrl || '',
+        despues: despuesUrl || '',
+        fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
+        nota,
+      }
+      const next = [entry, ...fotos]
+      setFotos(next)
+      upsertClienta({ id: c.id, fotos: next })
+      toast('Comparativa guardada')
+      setAdding(false)
+      resetForm()
+    } finally {
+      setUploading(false)
+    }
   }
 
   const eliminar = (id: string) => {
+    const f = fotos.find(x => x.id === id)
+    if (f) {
+      const paths = [f.antes, f.despues].filter(Boolean).map(url => db.pathFromUrl(url))
+      if (paths.length) db.deleteMedia(paths)
+    }
     const next = fotos.filter(f => f.id !== id)
     setFotos(next)
     upsertClienta({ id: c.id, fotos: next })
   }
 
-  const PhotoSlot = ({ b64, label, onClick }: { b64: string; label: string; onClick: () => void }) => (
+  const PhotoSlot = ({ src, label, onClick }: { src: string; label: string; onClick: () => void }) => (
     <div>
       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 6, letterSpacing: '.1em' }}>{label}</div>
       <div
         onClick={onClick}
         style={{ height: 160, border: '2px dashed var(--line)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden' }}
       >
-        {b64
-          ? <img src={b64} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {src
+          ? <img src={src} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           : <div className="dim" style={{ textAlign: 'center', fontSize: 12 }}>
               <Ic n="upload" size={24} style={{ display: 'block', margin: '0 auto 6px', opacity: .5 }} />
               Subir foto
@@ -315,7 +349,7 @@ function AntesDesTab({ c }: { c: Clienta }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="between">
         <div className="eyebrow">Comparativas de antes / después</div>
-        <button className="btn gold sm" onClick={() => setAdding(v => !v)}>
+        <button className="btn gold sm" onClick={() => { if (adding) resetForm(); setAdding(v => !v) }}>
           <Ic n={adding ? 'x' : 'plus'} />{adding ? 'Cancelar' : 'Nueva comparativa'}
         </button>
       </div>
@@ -323,19 +357,19 @@ function AntesDesTab({ c }: { c: Clienta }) {
       {adding && (
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <PhotoSlot b64={antesB64} label="ANTES" onClick={() => antesRef.current?.click()} />
-            <PhotoSlot b64={despuesB64} label="DESPUÉS" onClick={() => despuesRef.current?.click()} />
+            <PhotoSlot src={antesPreview} label="ANTES" onClick={() => antesRef.current?.click()} />
+            <PhotoSlot src={despuesPreview} label="DESPUÉS" onClick={() => despuesRef.current?.click()} />
           </div>
           <input ref={antesRef} type="file" accept="image/*" style={{ display: 'none' }}
-            onChange={async e => { const f = e.target.files?.[0]; if (f) try { setAntesB64(await readFile(f)) } catch (err: any) { toast(err.message) } }} />
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f, 'antes') }} />
           <input ref={despuesRef} type="file" accept="image/*" style={{ display: 'none' }}
-            onChange={async e => { const f = e.target.files?.[0]; if (f) try { setDespuesB64(await readFile(f)) } catch (err: any) { toast(err.message) } }} />
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f, 'despues') }} />
           <div className="field">
             <label>Nota (opcional)</label>
             <input className="input" placeholder="Ej. Balayage natural + tóner cenizo · Jun 2026" value={nota} onChange={e => setNota(e.target.value)} />
           </div>
-          <button className="btn gold sm" style={{ alignSelf: 'flex-start' }} onClick={save}>
-            <Ic n="check" />Guardar comparativa
+          <button className="btn gold sm" style={{ alignSelf: 'flex-start' }} onClick={save} disabled={uploading}>
+            {uploading ? <><Ic n="spinner" />Subiendo…</> : <><Ic n="check" />Guardar comparativa</>}
           </button>
         </div>
       )}
