@@ -149,9 +149,11 @@ export const db = {
   },
   async saveConfig(cfg: SalonConfig) {
     if (!supabase) return
-    const { data: row } = await supabase.from('config').select('id').limit(1).maybeSingle()
-    if (row) await supabase.from('config').update(toConfigRow(cfg)).eq('id', row.id)
-    else      await supabase.from('config').insert(toConfigRow(cfg))
+    const { error } = await supabase.from('config').upsert(
+      { id: 'main', ...toConfigRow(cfg) },
+      { onConflict: 'id' }
+    )
+    if (error) console.error('[db.saveConfig]', error.message)
   },
 
   // — Estilistas —
