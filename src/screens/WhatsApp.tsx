@@ -153,6 +153,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
   const MANANA_STR = `${mañana.getFullYear()}-${String(mañana.getMonth()+1).padStart(2,'0')}-${String(mañana.getDate()).padStart(2,'0')}`
 
   const todos = useMemo((): Record<string, Item[]> => {
+    const salon = data.config.nombre || 'el salón'
     const clByNombre = (nombre: string) => data.clientas.find(c => c.nombre === nombre)
     const estNombre = (id: string) => data.estilistas.find(e => e.id === id)?.nombre.split(' ')[0] || 'tu estilista'
 
@@ -182,7 +183,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
     const post_visita: Item[] = data.clientas.filter(c => { const d=diasDesde(c.ultima); return d>=1&&d<=3 }).map(c => ({
       id:c.id+'_pv', nombre:c.nombre, tel:c.tel, ini:c.ini, urgencia:'media' as const,
       contexto:`Visitó hace ${diasDesde(c.ultima)} día${diasDesde(c.ultima)>1?'s':''}`, sub:c.fav,
-      msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un placer tenerte en Robsen. ¿Cómo quedaste con tu ${c.fav}? Tu opinión nos importa mucho 😊`
+      msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un placer tenerte en ${salon}. ¿Cómo quedaste con tu ${c.fav}? Tu opinión nos importa mucho 😊`
     }))
 
     const react = (catSec: string, buildMsg: (c:Clienta)=>string): Item[] =>
@@ -197,11 +198,11 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
           msg: buildMsg(c) }
       })
 
-    const mechas      = react('mechas',      c=>`Hola ${c.nombre.split(' ')[0]} ✨ Ya casi es hora de dar mantenimiento a tu ${c.fav}. ¿Agendamos en las próximas semanas? Te esperamos en Robsen 💇‍♀️`)
+    const mechas      = react('mechas',      c=>`Hola ${c.nombre.split(' ')[0]} ✨ Ya casi es hora de dar mantenimiento a tu ${c.fav}. ¿Agendamos en las próximas semanas? Te esperamos en ${salon} 💇‍♀️`)
     const color       = react('color',       c=>`Hola ${c.nombre.split(' ')[0]} 💛 Ya casi es momento del retoque de ${c.fav}. ¿Cuándo te acomodamos? 🗓`)
     const tratamiento = react('tratamiento', c=>`Hola ${c.nombre.split(' ')[0]} 💛 ¿Lista para renovar tu ${c.fav}? Tu cabello lo va a agradecer 🌿`)
     const unas        = react('unas',        c=>`Hola ${c.nombre.split(' ')[0]} 💅 Ya casi es hora de tu ${c.fav}. ¿Agendamos esta semana? Te esperamos ✨`)
-    const cortes      = react('cortes',      c=>`Hola ${c.nombre.split(' ')[0]} ✂️ Tu corte ya está pidiendo tijeras 😄 ¿Cuándo pasas por Robsen?`)
+    const cortes      = react('cortes',      c=>`Hola ${c.nombre.split(' ')[0]} ✂️ Tu corte ya está pidiendo tijeras 😄 ¿Cuándo pasas por ${salon}?`)
     const maquillaje  = react('maquillaje',  c=>`Hola ${c.nombre.split(' ')[0]} 💛 ¿Tienes algún evento próximo? Tenemos ${c.fav} disponible. ¿Agendamos? ✨`)
 
     const cumples: Item[] = data.clientas.filter(c=>diasCumple(c.cumple)<=7)
@@ -212,14 +213,14 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
           urgencia: d===0?'alta':'media' as 'alta'|'media',
           contexto: d===0?'¡Hoy es su cumpleaños!':`Cumpleaños en ${d} días`, sub:c.cumple,
           msg: d===0
-            ? `¡Feliz cumpleaños ${c.nombre.split(' ')[0]}! 🎂🎉 Todo el equipo de Robsen te desea un día increíble. ¡Eres muy especial para nosotras! 💛`
-            : `Hola ${c.nombre.split(' ')[0]} 💛 Estamos a nada de tu cumpleaños 🎂 Tenemos una sorpresa especial para ti en Robsen. ¡Ven a celebrar! ✨` }
+            ? `¡Feliz cumpleaños ${c.nombre.split(' ')[0]}! 🎂🎉 Todo el equipo de ${salon} te desea un día increíble. ¡Eres muy especial para nosotras! 💛`
+            : `Hola ${c.nombre.split(' ')[0]} 💛 Estamos a nada de tu cumpleaños 🎂 Tenemos una sorpresa especial para ti en ${salon}. ¡Ven a celebrar! ✨` }
       })
 
     const nuevas: Item[] = data.clientas.filter(c=>c.visitas===1&&diasDesde(c.ultima)<=14).map(c=>({
       id:c.id+'_nva', nombre:c.nombre, tel:c.tel, ini:c.ini, urgencia:'media' as const,
       contexto:`Primera visita · hace ${diasDesde(c.ultima)} días`, sub:c.fav,
-      msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un gusto que nos visitaras en Robsen. ¿Cómo quedaste con tu ${c.fav}? ¡Esperamos verte pronto! 😊`
+      msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un gusto que nos visitaras en ${salon}. ¿Cómo quedaste con tu ${c.fav}? ¡Esperamos verte pronto! 😊`
     }))
 
     const inactivas: Item[] = data.clientas
@@ -227,7 +228,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
       .map(c=>({ id:c.id+'_ina', nombre:c.nombre, tel:c.tel, ini:c.ini,
         urgencia: diasDesde(c.ultima)>120?'alta':'media' as 'alta'|'media',
         contexto:`Sin visita hace ${diasDesde(c.ultima)} días`, sub:c.fav,
-        msg:`Hola ${c.nombre.split(' ')[0]} 💛 ¡Te extrañamos en Robsen! Llevamos tiempo sin verte. ¿Cuándo nos visitas? Tenemos algo especial cuando regreses ✨`
+        msg:`Hola ${c.nombre.split(' ')[0]} 💛 ¡Te extrañamos en ${salon}! Llevamos tiempo sin verte. ¿Cuándo nos visitas? Tenemos algo especial cuando regreses ✨`
       }))
 
     return { hoy_pend, cobros, manana, post_visita, mechas, color, tratamiento, unas, cortes, maquillaje, cumples, nuevas, inactivas }

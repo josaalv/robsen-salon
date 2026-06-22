@@ -114,7 +114,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
             const lineas = lista.map(p =>
               `${p.nombre.padEnd(35)} Stock: ${p.stock}  Mínimo: ${p.min}  Pedir: ${Math.max(p.min * 2 - p.stock, 1)} uds.  Costo: ${mxn(p.costo)}`
             )
-            const texto = [`LISTA DE PEDIDO — Robsen Salón & Spa`, `Generada: ${fecha}`, ``, ...lineas].join('\n')
+            const texto = [`LISTA DE PEDIDO — ${data.config.nombre}`, `Generada: ${fecha}`, ``, ...lineas].join('\n')
             const a = document.createElement('a')
             a.href = URL.createObjectURL(new Blob([texto], { type: 'text/plain' }))
             a.download = `pedido-${fecha.replace(/\s/g,'-')}.txt`

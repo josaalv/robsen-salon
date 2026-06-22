@@ -474,7 +474,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
               <div className="between">
                 <span className="muted" style={{ fontSize: 12.5 }}>{c.fav} · cada {c.ciclo} sem</span>
                 <span style={{ fontWeight: 600, fontSize: 13, color: ins.recompra === 'aldia' ? 'var(--text)' : 'var(--st-pend)' }}>
-                  {ins.proxStr.replace(' 2026', '')}
+                  {ins.proxStr}
                 </span>
               </div>
             </div>
@@ -602,7 +602,7 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
                     <td><div className="cell-name"><Avatar ini={c.ini} size="sm" /><div className="nm">{c.nombre}</div></div></td>
                     <td className="muted">{c.fav} · cada {c.ciclo} sem</td>
                     <td className="muted">hace {i.dias} días</td>
-                    <td className="muted">{i.proxStr.replace(' 2026', '')}</td>
+                    <td className="muted">{i.proxStr}</td>
                     <td>
                       {i.recompra === 'atrasada'
                         ? <span className="badge canc"><span className="d" />Atrasada</span>
@@ -612,7 +612,7 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
                       <button
                         className="btn sm"
                         style={{ background: '#25D366', color: '#fff', border: 'none' }}
-                        onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 En Robsen Salón llevamos tiempo sin verte. Tu ${c.fav} te espera — ¿agendamos? 🗓`)}
+                        onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 En ${data.config.nombre} llevamos tiempo sin verte. Tu ${c.fav} te espera — ¿agendamos? 🗓`)}
                       >
                         <Ic n="whatsapp-logo" />Reagendar
                       </button>
@@ -673,7 +673,7 @@ function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
                 <button
                 className="btn sm"
                 style={{ background: '#25D366', color: '#fff', border: 'none' }}
-                onClick={() => abrirWA(c.tel, `¡Feliz cumpleaños ${c.nombre.split(' ')[0]}! 🎂 Todo el equipo de Robsen Salón te desea un día increíble. Tienes un regalo especial esperándote 🎁`)}
+                onClick={() => abrirWA(c.tel, `¡Feliz cumpleaños ${c.nombre.split(' ')[0]}! 🎂 Todo el equipo de ${data.config.nombre} te desea un día increíble. Tienes un regalo especial esperándote 🎁`)}
               >
                 <Ic n="whatsapp-logo" />Felicitar
               </button>

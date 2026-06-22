@@ -155,8 +155,8 @@ export function ScreenBooking() {
       <div className="book-aside">
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(600px 400px at 80% 0%, rgba(200,161,74,0.10), transparent 60%)' }}></div>
         <div style={{ position: 'relative', zIndex: 1, flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div className="logo serif" style={{ fontStyle: 'italic', fontSize: 34, background: 'var(--gold-grad)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Robsen</div>
-          <div style={{ fontSize: 10, letterSpacing: '.36em', textTransform: 'uppercase', color: 'var(--text-3)', marginTop: 8 }}>Salón &amp; Spa · Guadalajara</div>
+          <div className="logo serif" style={{ fontStyle: 'italic', fontSize: 34, background: 'var(--gold-grad)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{cfg.nombre}</div>
+          <div style={{ fontSize: 10, letterSpacing: '.36em', textTransform: 'uppercase', color: 'var(--text-3)', marginTop: 8 }}>{cfg.direccion}</div>
 
           <div style={{ marginTop: 'auto' }}>
             <h2 className="display" style={{ fontSize: 30, lineHeight: 1.15 }}>

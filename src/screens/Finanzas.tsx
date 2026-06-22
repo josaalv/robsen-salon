@@ -157,7 +157,16 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
 
   // Bar chart — grouped by day (semana), week (mes), month (año)
   const barData = useMemo(() => {
-    if (periodo === 'Año') return data.ventasMes
+    if (periodo === 'Año') {
+      const acc: Record<number, number> = {}
+      data.ventas.forEach(v => {
+        const d = parseFecha(v.fecha)
+        if (d.getFullYear() === HOY.getFullYear()) {
+          acc[d.getMonth()] = (acc[d.getMonth()] || 0) + ventaCalc.total(v)
+        }
+      })
+      return MESES_ES.map((d, i) => ({ d, v: acc[i] || 0 }))
+    }
 
     const acc: Record<string, number> = {}
     ventasFiltradas.forEach(v => {
@@ -183,7 +192,7 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
       }
       return { d: `Sem ${wi + 1}`, v: total }
     })
-  }, [ventasFiltradas, periodo, data.ventasMes])
+  }, [ventasFiltradas, periodo, data.ventas])
 
   const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const periodoLabel = periodo === 'Semana' ? 'Últimos 7 días' : periodo === 'Mes' ? `${MESES_LARGO[HOY.getMonth()]} ${HOY.getFullYear()}` : `Año ${HOY.getFullYear()}`

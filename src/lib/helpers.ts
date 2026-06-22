@@ -59,7 +59,8 @@ export const helpers = {
     else if (dias > cicloD + 14) riesgo = 'riesgo'
     const prox = helpers.proxVisita(c.ultima, c.ciclo || 8)
     return {
-      dias, cicloD, recompra, riesgo, prox, proxStr: fmtDate(prox),
+      dias, cicloD, recompra, riesgo, prox,
+      proxStr: prox.getDate() + ' ' + MESN[prox.getMonth()],
       cumpleDias: helpers.diasACumple(c.cumple || '01 Ene'),
     }
   },
