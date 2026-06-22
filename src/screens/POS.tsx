@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Avatar, Seg } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
@@ -24,12 +24,27 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
   nextTicket?: string
 }) {
   const { data } = useStore()
+  const DRAFT_KEY = 'rb_pos_draft'
+
   const [tab, setTab] = useState('Servicios')
   const [q, setQ] = useState('')
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [cliente, setCliente] = useState('')
-  const [desc, setDesc] = useState(0)
-  const [anticipo, setAnticipo] = useState(0)
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY + '_cart') || '[]') } catch { return [] }
+  })
+  const [cliente, setCliente] = useState(() => localStorage.getItem(DRAFT_KEY + '_cliente') || '')
+  const [desc, setDesc] = useState(() => Number(localStorage.getItem(DRAFT_KEY + '_desc') || '0'))
+  const [anticipo, setAnticipo] = useState(() => Number(localStorage.getItem(DRAFT_KEY + '_anticipo') || '0'))
+
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY + '_cart', JSON.stringify(cart))
+    localStorage.setItem(DRAFT_KEY + '_cliente', cliente)
+    localStorage.setItem(DRAFT_KEY + '_desc', String(desc))
+    localStorage.setItem(DRAFT_KEY + '_anticipo', String(anticipo))
+  }, [cart, cliente, desc, anticipo])
+
+  const clearDraft = () => {
+    ;[DRAFT_KEY + '_cart', DRAFT_KEY + '_cliente', DRAFT_KEY + '_desc', DRAFT_KEY + '_anticipo'].forEach(k => localStorage.removeItem(k))
+  }
 
   const ticket = nextTicket || ('#' + (1043 + data.ventas.length))
   const comisiones = data.config?.comisiones || {}
@@ -118,6 +133,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
         com: l.com,
       })),
     }
+    clearDraft()
     onConfirm(venta)
   }
 
@@ -190,6 +206,14 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
             <hr className="hr" />
 
             <div className="scroll-y" style={{ flex: 1, padding: '8px 20px' }}>
+              {cart.length > 0 && (
+                <div className="between" style={{ padding: '6px 0 10px', borderBottom: '1px solid var(--line-soft)', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{cart.length} artículo{cart.length !== 1 ? 's' : ''}</span>
+                  <button className="btn ghost sm" style={{ fontSize: 11, padding: '3px 10px', color: 'var(--st-canc)' }} onClick={() => { setCart([]); setCliente(''); setDesc(0); setAnticipo(0); clearDraft() }}>
+                    <Ic n="trash" size={12} />Limpiar
+                  </button>
+                </div>
+              )}
               {!cart.length && (
                 <div className="center dim" style={{ padding: '48px 12px', fontSize: 12.5 }}>
                   <div style={{ fontSize: 30, marginBottom: 10, opacity: .4 }}><Ic n="shopping-cart" /></div>

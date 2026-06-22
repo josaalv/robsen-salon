@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo } from '../types'
+import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto } from '../types'
 
 // ─── Mappers DB ↔ TypeScript ──────────────────────────────────────────────────
 
@@ -55,6 +55,7 @@ const mapConfig = (r: any): SalonConfig => ({
   metodospago: r.metodospago,
   acento: r.acento,
   comisiones: r.comisiones || {},
+  escalaComisiones: r.escala_comisiones || [],
   notifs: r.notifs,
 })
 
@@ -64,7 +65,7 @@ const toConfigRow = (c: SalonConfig) => ({
   nombre: c.nombre, direccion: c.direccion, tel: c.tel, whatsapp: c.whatsapp,
   anticipo_pct: c.anticipoPct, requerir_anticipo: c.requerirAnticipo,
   iva: c.iva, metodospago: c.metodospago, acento: c.acento,
-  comisiones: c.comisiones, notifs: c.notifs,
+  comisiones: c.comisiones, escala_comisiones: c.escalaComisiones || [], notifs: c.notifs,
 })
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
@@ -210,6 +211,21 @@ export const db = {
     await supabase.from('movimientos').insert(m)
   },
 
+  // — Gastos —
+  async getGastos(): Promise<Gasto[]> {
+    if (!supabase) return []
+    const { data } = await supabase.from('gastos').select('*').order('fecha', { ascending: false })
+    return (data ?? []) as Gasto[]
+  },
+  async upsertGasto(g: Gasto) {
+    if (!supabase) return
+    await supabase.from('gastos').upsert(g, { onConflict: 'id' })
+  },
+  async deleteGasto(id: string) {
+    if (!supabase) return
+    await supabase.from('gastos').delete().eq('id', id)
+  },
+
   // — Bloqueos —
   async getBloqueos(): Promise<Bloqueo[]> {
     if (!supabase) return []
@@ -262,8 +278,9 @@ export const db = {
       db.getUsuarios(),
       db.getMovimientos(),
       db.getBloqueos(),
+      db.getGastos(),
     ])
-    const [cfg, est, srv, cl, citas, ventas, prod, plant, usr, movs, blqs] = results
+    const [cfg, est, srv, cl, citas, ventas, prod, plant, usr, movs, blqs, gsts] = results
     return {
       config:      cfg.status    === 'fulfilled' ? cfg.value    : null,
       estilistas:  est.status    === 'fulfilled' ? est.value    : [],
@@ -276,6 +293,7 @@ export const db = {
       usuarios:    usr.status    === 'fulfilled' ? usr.value    : [],
       movimientos: movs.status   === 'fulfilled' ? movs.value   : [],
       bloqueos:    blqs.status   === 'fulfilled' ? blqs.value   : [],
+      gastos:      gsts.status   === 'fulfilled' ? gsts.value   : [],
     }
   },
 
@@ -330,6 +348,9 @@ export const db = {
 
       if (data.bloqueos?.length)
         await supabase.from('bloqueos').upsert(data.bloqueos, { onConflict: 'id' })
+
+      if (data.gastos?.length)
+        await supabase.from('gastos').upsert(data.gastos, { onConflict: 'id' })
 
       return true
     } catch (e) {

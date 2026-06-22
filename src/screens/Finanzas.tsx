@@ -3,6 +3,7 @@ import { CardHead, Seg, Donut, BarChart, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, ventaCalc } from '../lib/helpers'
+import type { Gasto } from '../types'
 
 const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const DIAS_ES  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
@@ -11,6 +12,58 @@ const HOY = new Date()
 const CAT_COLORS: Record<string, string> = {
   'Colorimetría':'#C8A14A','Mechas':'#E8CE8A','Tratamientos':'#93B58C',
   'Uñas & Spa':'#6FA6B8','Maquillaje':'#C77B7B','Corte':'#8FB2D8','Otros':'#B08AC7',
+}
+
+const CATS_GASTO = ['Productos','Renta','Servicios','Nómina','Publicidad','Mantenimiento','Otros']
+
+function GastoModal({ onClose, onSave }: { onClose: () => void; onSave: (g: Gasto) => void }) {
+  const [concepto, setConcepto] = useState('')
+  const [monto, setMonto] = useState('')
+  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
+  const [categoria, setCategoria] = useState(CATS_GASTO[0])
+
+  const guardar = () => {
+    const m = parseFloat(monto)
+    if (!concepto.trim() || isNaN(m) || m <= 0) return
+    onSave({ id: 'g' + Date.now(), concepto: concepto.trim(), monto: m, fecha, categoria })
+  }
+
+  return (
+    <div className="rb-modal-bg" onClick={onClose}>
+      <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw' }}>
+        <div className="card-head">
+          <div>
+            <div className="eyebrow">Registrar</div>
+            <h3 style={{ marginTop: 6 }}>Nuevo gasto</h3>
+          </div>
+          <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
+        </div>
+        <div className="card-pad" style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="field">
+            <label>Concepto</label>
+            <input className="input" value={concepto} onChange={e => setConcepto(e.target.value)} placeholder="Ej: Renta de local…" />
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field">
+              <label>Monto</label>
+              <input className="input" type="number" min="0" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" />
+            </div>
+            <div className="field">
+              <label>Fecha</label>
+              <input className="input" type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Categoría</label>
+            <select className="select" value={categoria} onChange={e => setCategoria(e.target.value)}>
+              {CATS_GASTO.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <button className="btn gold" style={{ marginTop: 4 }} onClick={guardar}>Guardar gasto</button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function parseFecha(s: string): Date {
@@ -24,8 +77,9 @@ function parseFecha(s: string): Date {
 }
 
 export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data } = useStore()
+  const { data, addGasto, deleteGasto } = useStore()
   const [periodo, setPeriodo] = useState('Mes')
+  const [showGastoModal, setShowGastoModal] = useState(false)
 
   // Filter ventas by selected period
   const ventasFiltradas = useMemo(() => {
@@ -47,7 +101,17 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
   const ingTotal     = ingServicio + ingProducto + ingAdicional
   const comReal      = ventasFiltradas.reduce((s, v) => s + ventaCalc.comision(v), 0)
   const antReal      = ventasFiltradas.reduce((s, v) => s + (v.anticipo || 0), 0)
-  const gastos       = data.finanzas.gastos
+
+  const gastosFiltrados = useMemo(() => {
+    return (data.gastos || []).filter(g => {
+      const d = new Date(g.fecha + 'T12:00:00')
+      if (periodo === 'Semana') return (HOY.getTime() - d.getTime()) / 86400000 < 7
+      if (periodo === 'Mes') return d.getMonth() === HOY.getMonth() && d.getFullYear() === HOY.getFullYear()
+      return d.getFullYear() === HOY.getFullYear()
+    })
+  }, [data.gastos, periodo])
+
+  const gastos       = gastosFiltrados.reduce((s, g) => s + g.monto, 0)
   const utilidad     = Math.max(0, ingTotal - gastos - comReal)
   const margen       = ingTotal > 0 ? Math.round(utilidad / ingTotal * 100) : 0
 
@@ -298,7 +362,60 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
         </div>
       </div>
 
-      {/* Row 5: Anticipos + Utilidad resumen */}
+      {/* Row 5: Gastos */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="card-head">
+          <div>
+            <div className="eyebrow">Gastos operativos</div>
+            <h3 style={{ marginTop: 4 }}>Egresos del periodo · {periodoLabel}</h3>
+          </div>
+          <button className="btn ghost" onClick={() => setShowGastoModal(true)}><Ic n="plus" />Registrar gasto</button>
+        </div>
+        {gastosFiltrados.length === 0
+          ? <div className="card-pad dim" style={{ fontSize: 12.5 }}>Sin gastos registrados en el periodo. Usa el botón para agregar uno.</div>
+          : <table className="table">
+              <thead>
+                <tr>
+                  <th>Concepto</th>
+                  <th>Categoría</th>
+                  <th>Fecha</th>
+                  <th className="num">Monto</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {gastosFiltrados.map(g => (
+                  <tr key={g.id}>
+                    <td style={{ fontWeight: 600 }}>{g.concepto}</td>
+                    <td><span style={{ fontSize: 11.5, padding: '2px 8px', borderRadius: 20, background: 'var(--surface-2)', border: '1px solid var(--line-soft)' }}>{g.categoria}</span></td>
+                    <td className="muted" style={{ fontSize: 12.5 }}>{g.fecha}</td>
+                    <td className="num" style={{ fontWeight: 600, color: 'var(--st-canc)' }}>{mxn(g.monto)}</td>
+                    <td>
+                      <button className="icon-btn" style={{ color: 'var(--st-canc)' }} onClick={() => { deleteGasto(g.id); toast('Gasto eliminado') }}>
+                        <Ic n="trash" size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+        }
+        {gastosFiltrados.length > 0 && (
+          <div className="card-pad" style={{ paddingTop: 10, borderTop: '1px solid var(--line-soft)', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
+            <span className="muted" style={{ fontSize: 12.5 }}>Total gastos</span>
+            <span className="num" style={{ fontWeight: 700, fontSize: 16, color: 'var(--st-canc)' }}>{mxn(gastos)}</span>
+          </div>
+        )}
+      </div>
+
+      {showGastoModal && (
+        <GastoModal
+          onClose={() => setShowGastoModal(false)}
+          onSave={g => { addGasto(g); setShowGastoModal(false); toast('Gasto registrado') }}
+        />
+      )}
+
+      {/* Row 6: Anticipos + Utilidad resumen */}
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <div className="card">
           <CardHead title="Anticipos del periodo" sub={periodoLabel} />

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react'
-import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, toast } from '../components/ui'
+import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, helpers } from '../lib/helpers'
@@ -394,7 +394,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
   const e = data.estilistas.find(est => est.id === c.est) || data.estilistas[0]
 
   // Solo ventas reales de esta clienta
-  const ventasCl = data.ventas.filter(v => c.id && v.clienteId === c.id || v.cliente === c.nombre).map(v => ({
+  const ventasCl = data.ventas.filter(v => c.id && v.clienteId === c.id).map(v => ({
     f: v.fecha,
     ticket: v.ticket,
     srv: v.lineas.map(l => (l.cant > 1 ? l.cant + '× ' : '') + l.nombre).join(', '),
@@ -694,6 +694,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   const [filtro, setFiltro] = useState('Todas')
   const [sort, setSort] = useState<{ k: keyof Clienta; dir: number }>({ k: 'ultima', dir: -1 })
   const [perfil, setPerfil] = useState<Clienta | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Clienta | null>(null)
   const [vista, setVista] = useState('Clientas')
   const [editCl, setEditCl] = useState<Partial<Clienta> | null>(null)
   const csvRef = useRef<HTMLInputElement>(null)
@@ -765,16 +766,28 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
     <span className="caret">{sort.k === k ? (sort.dir === 1 ? '▲' : '▼') : '↕'}</span>
   )
 
-  if (perfil) return (
-    <ClientaPerfil
-      c={perfil}
-      onBack={() => setPerfil(null)}
-      onEdit={() => setEditCl(perfil)}
-      onDelete={() => { deleteClienta(perfil.id); setPerfil(null) }}
-      onNavigate={onNavigate}
-      editCl={editCl}
-      setEditCl={setEditCl}
+  const confirmDeleteModal = confirmDelete && (
+    <ConfirmModal
+      title="¿Eliminar clienta?"
+      desc={`${confirmDelete.nombre} será eliminada permanentemente del CRM.`}
+      onConfirm={() => { deleteClienta(confirmDelete.id); setConfirmDelete(null); setPerfil(null); toast('Clienta eliminada') }}
+      onCancel={() => setConfirmDelete(null)}
     />
+  )
+
+  if (perfil) return (
+    <>
+      <ClientaPerfil
+        c={perfil}
+        onBack={() => setPerfil(null)}
+        onEdit={() => setEditCl(perfil)}
+        onDelete={() => setConfirmDelete(perfil)}
+        onNavigate={onNavigate}
+        editCl={editCl}
+        setEditCl={setEditCl}
+      />
+      {confirmDeleteModal}
+    </>
   )
 
   return (
@@ -892,6 +905,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
       {editCl !== null && (
         <ClientaModal c={editCl} onClose={() => setEditCl(null)} onSaved={() => setEditCl(null)} />
       )}
+      {confirmDeleteModal}
     </div>
   )
 }

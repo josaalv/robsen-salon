@@ -14,8 +14,11 @@ function waLink(tel: string, msg: string): string {
 
 function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
   const { data, updateVenta } = useStore()
+  const iva = data.config?.iva || 0
   const subtotal = ventaCalc.subtotal(v)
   const totalV = ventaCalc.total(v)
+  const baseImponible = totalV / (1 + iva / 100)
+  const ivaAmount = totalV - baseImponible
   const saldo = ventaCalc.saldo(v)
   const comision = ventaCalc.comision(v)
   const pagoOpts = Object.entries(data.config?.metodospago || {})
@@ -120,6 +123,16 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
               <span className="muted">Anticipo aplicado</span>
               <span className="num" style={{ color: 'var(--st-conf)' }}>−{mxn(v.anticipo)}</span>
             </div>
+          )}
+          {iva > 0 && (
+            <>
+              <div className="between" style={{ fontSize: 12, marginBottom: 6, color: 'var(--text-3)' }}>
+                <span>Base gravable</span><span className="num">{mxn(Math.round(baseImponible))}</span>
+              </div>
+              <div className="between" style={{ fontSize: 12, marginBottom: 8, color: 'var(--text-3)' }}>
+                <span>IVA ({iva}%) incluido</span><span className="num">{mxn(Math.round(ivaAmount))}</span>
+              </div>
+            </>
           )}
           <div className="between" style={{ marginBottom: 14 }}>
             <span style={{ fontWeight: 700, fontFamily: 'var(--serif)', fontSize: 16 }}>

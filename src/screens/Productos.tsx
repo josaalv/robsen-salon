@@ -11,6 +11,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   const [editor, setEditor] = useState<Partial<Producto> | null>(null)
   const [vender, setVender] = useState<Producto | null>(null)
   const [ajuste, setAjuste] = useState<Producto | null>(null)
+  const [ordenCompra, setOrdenCompra] = useState<Producto | null>(null)
 
   const { data, upsertProducto, deleteProducto, venderProducto, ajustarStock } = useStore()
   const { productos, movimientos, transacciones, clientas, estilistas, marcas } = data
@@ -39,6 +40,9 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
           </div>
         </div>
         <div className="vc gap10">
+          <button className="btn ghost" onClick={() => setOrdenCompra(productos[0] || null)}>
+            <Ic n="shopping-cart-simple" />Orden de compra
+          </button>
           <button className="btn ghost" onClick={() => setAjuste(productos[0] || null)}>
             <Ic n="arrows-down-up" />Entrada de stock
           </button>
@@ -195,6 +199,9 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
                           <button className="btn sm ghost" onClick={e => { e.stopPropagation(); setAjuste(p) }} title="Entrada de stock">
                             <Ic n="arrows-down-up" size={14} />
                           </button>
+                          <button className="btn sm ghost" onClick={e => { e.stopPropagation(); setOrdenCompra(p) }} title="Orden de compra">
+                            <Ic n="shopping-cart-simple" size={14} />
+                          </button>
                           <button className="btn sm ghost" onClick={e => { e.stopPropagation(); setVender(p) }}>
                             <Ic n="shopping-cart" size={14} />Vender
                           </button>
@@ -343,6 +350,19 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
             setAjuste(null)
           }}
           onClose={() => setAjuste(null)}
+        />
+      )}
+
+      {ordenCompra !== null && (
+        <OrdenCompraModal
+          productos={productos}
+          sel={ordenCompra}
+          onRecibido={(prod, cant) => {
+            ajustarStock(prod.id, cant, 'Compra a proveedor')
+            toast(`Stock actualizado · +${cant} unidades de ${prod.nombre}`)
+            setOrdenCompra(null)
+          }}
+          onClose={() => setOrdenCompra(null)}
         />
       )}
 
@@ -766,6 +786,93 @@ function VenderModal({ productos, sel: initialSel, estilistas, clientas, onConfi
           >
             <Ic n="check" />Confirmar venta · {mxn(total)}
           </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── OrdenCompraModal ────────────────────────────────────────────────────────
+
+interface OrdenCompraProps {
+  productos: Producto[]
+  sel: Producto
+  onRecibido: (prod: Producto, cant: number) => void
+  onClose: () => void
+}
+
+function OrdenCompraModal({ productos, sel: initialSel, onRecibido, onClose }: OrdenCompraProps) {
+  const [sel, setSel] = useState<Producto>(initialSel)
+  const [proveedor, setProveedor] = useState('')
+  const [cant, setCant] = useState(Math.max(1, sel.min * 2 - sel.stock))
+  const [precioUnit, setPrecioUnit] = useState(sel.costo)
+  const [recibido, setRecibido] = useState(false)
+
+  const total = cant * precioUnit
+
+  return (
+    <Modal onClose={onClose} width={500}>
+      <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
+        <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Compras</div>
+            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>Orden de compra</h3>
+          </div>
+          <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}><Ic n="x" /></button>
+        </div>
+        <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="field">
+            <label className="label">Producto</label>
+            <select className="input" value={sel.id} onChange={e => {
+              const found = productos.find(p => p.id === e.target.value)
+              if (found) { setSel(found); setCant(Math.max(1, found.min * 2 - found.stock)); setPrecioUnit(found.costo) }
+            }}>
+              {productos.map(p => <option key={p.id} value={p.id}>{p.nombre} (stock: {p.stock})</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label className="label">Proveedor</label>
+            <input className="input" value={proveedor} onChange={e => setProveedor(e.target.value)} placeholder="Nombre del proveedor…" />
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div className="field">
+              <label className="label">Cantidad a pedir</label>
+              <input className="input" type="number" min={1} value={cant} onChange={e => setCant(Math.max(1, Number(e.target.value)))} />
+            </div>
+            <div className="field">
+              <label className="label">Precio unitario</label>
+              <input className="input" type="number" min={0} value={precioUnit} onChange={e => setPrecioUnit(Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="card card-pad" style={{ background: 'var(--surface-2)' }}>
+            <div className="between">
+              <span style={{ fontWeight: 600 }}>Total estimado</span>
+              <span className="num gold-text" style={{ fontFamily: 'var(--serif)', fontSize: 22, fontWeight: 700 }}>{mxn(total)}</span>
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              {cant} × {mxn(precioUnit)} · Stock actual: {sel.stock} → {sel.stock + cant}
+            </div>
+          </div>
+          <label className="vc gap10" style={{ cursor: 'pointer', fontSize: 13.5 }}>
+            <input type="checkbox" checked={recibido} onChange={e => setRecibido(e.target.checked)} />
+            Marcar como recibido (actualiza stock inmediatamente)
+          </label>
+        </div>
+        <div className="between card-pad" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 16 }}>
+          <button className="btn ghost" onClick={onClose}>Cancelar</button>
+          <div className="vc gap10">
+            {!recibido && (
+              <button className="btn ghost" onClick={() => {
+                const txt = `ORDEN DE COMPRA\nProducto: ${sel.nombre}\nProveedor: ${proveedor || '—'}\nCantidad: ${cant}\nPrecio unit.: ${mxn(precioUnit)}\nTotal: ${mxn(total)}\nFecha: ${new Date().toLocaleDateString('es-MX')}`
+                navigator.clipboard?.writeText(txt).then(() => toast('Orden copiada al portapapeles'))
+              }}>
+                <Ic n="copy" />Copiar orden
+              </button>
+            )}
+            <button className="btn gold" disabled={!recibido} style={{ opacity: recibido ? 1 : .5 }} onClick={() => recibido && onRecibido(sel, cant)}>
+              <Ic n="check" />Recibir pedido
+            </button>
+          </div>
         </div>
       </div>
     </Modal>

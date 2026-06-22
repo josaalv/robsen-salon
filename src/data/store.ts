@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { defaultData } from './mockData'
 import { db } from '../lib/db'
-import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario, Plantilla, Bloqueo } from '../types'
+import { toast } from '../components/ui'
+import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario, Plantilla, Bloqueo, Gasto } from '../types'
 
 const STORAGE_KEY = 'rb_data_v3'
 
@@ -33,6 +34,8 @@ interface Store {
   ajustarStock: (productoId: string, cant: number, motivo: string) => void
   upsertBloqueo: (b: Bloqueo) => void
   deleteBloqueo: (id: string) => void
+  addGasto: (g: Gasto) => void
+  deleteGasto: (id: string) => void
 }
 
 export const useStore = create<Store>()(
@@ -73,6 +76,7 @@ export const useStore = create<Store>()(
                   usuarios:     fresh.usuarios,
                   movimientos:  fresh.movimientos,
                   bloqueos:     fresh.bloqueos,
+                  gastos:       fresh.gastos,
                   hoy:          fresh.citas.hoy,
                   citasFuturas: fresh.citas.futuras,
                 }
@@ -96,6 +100,7 @@ export const useStore = create<Store>()(
             usuarios:     result.usuarios,
             movimientos:  result.movimientos,
             bloqueos:     result.bloqueos,
+            gastos:       result.gastos,
             hoy:          result.citas.hoy,
             citasFuturas: result.citas.futuras,
           }
@@ -362,6 +367,16 @@ export const useStore = create<Store>()(
         db.deleteBloqueo(id).catch(() => {})
       },
 
+      addGasto: (g) => {
+        set(s => ({ data: { ...s.data, gastos: [...(s.data.gastos || []), g] } }))
+        db.upsertGasto(g).catch(() => {})
+      },
+
+      deleteGasto: (id) => {
+        set(s => ({ data: { ...s.data, gastos: (s.data.gastos || []).filter(g => g.id !== id) } }))
+        db.deleteGasto(id).catch(() => {})
+      },
+
       ajustarStock: (productoId, cant, motivo) => {
         let syncProd: Producto | null = null
         const syncMov: Movimiento[] = []
@@ -394,7 +409,7 @@ export const useStore = create<Store>()(
       venderProducto: (productoId, cant, clienta, pago, estId) => {
         const { data, addVenta } = get()
         const prod = data.productos.find(p => p.id === productoId)
-        if (!prod || prod.stock < cant) return
+        if (!prod || prod.stock < cant) { toast('Stock insuficiente'); return }
         const ticket = '#' + (1000 + data.ventas.length + 1)
         const clienteEncontrado = clienta ? data.clientas.find(c => c.nombre === clienta) : null
         const com = (data.config.comisiones as Record<string, number>)['_producto'] ?? 10

@@ -61,17 +61,27 @@ const SECS = [
 ]
 
 // ─── Nueva plantilla modal ─────────────────────────────────────────────────────
+const VARS_VALIDAS = ['{nombre}', '{servicio}', '{fecha}', '{hora}', '{estilista}', '{dias}']
+
 function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
   const { upsertPlantilla } = useStore()
   const [nombre, setNombre] = useState('')
   const [txt, setTxt] = useState('')
   const ICONS = ['chat-text','calendar-check','clock-countdown','hand-coins','user-plus','gift','sparkle']
   const [icon, setIcon] = useState('chat-text')
+
+  const varsEnTexto = txt.match(/\{[^}]+\}/g) || []
+  const varsInvalidas = varsEnTexto.filter(v => !VARS_VALIDAS.includes(v))
+  const canSave = nombre.trim() && txt.trim() && varsInvalidas.length === 0
+
   const save = () => {
-    if (!nombre.trim() || !txt.trim()) { toast('Completa nombre y mensaje'); return }
+    if (!canSave) { toast(varsInvalidas.length > 0 ? `Variable inválida: ${varsInvalidas[0]}` : 'Completa nombre y mensaje'); return }
     upsertPlantilla({ id:'pl'+Date.now(), nombre:nombre.trim(), icon, txt:txt.trim() })
     toast('Plantilla guardada'); onClose()
   }
+
+  const insertVar = (v: string) => setTxt(prev => prev + v)
+
   return (
     <Modal onClose={onClose} width={480}>
       <div style={{ borderTop:'3px solid var(--gold)', borderRadius:'var(--radius) var(--radius) 0 0' }}>
@@ -90,17 +100,28 @@ function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
                 onClick={()=>setIcon(ic)}><Ic n={ic} size={18}/></button>
             ))}</div>
           </div>
-          <div className="field"><label className="label">Mensaje</label>
+          <div className="field">
+            <div className="between" style={{ marginBottom: 6 }}>
+              <label className="label" style={{ marginBottom: 0 }}>Mensaje</label>
+              <div className="vc gap4" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {VARS_VALIDAS.map(v => (
+                  <button key={v} className="chip" style={{ fontSize: 10.5, padding: '2px 7px' }} onClick={() => insertVar(v)}>{v}</button>
+                ))}
+              </div>
+            </div>
             <textarea className="input" rows={5}
-              placeholder="Variables: {nombre} {servicio} {fecha} {hora} {estilista} {dias}"
               value={txt} onChange={e=>setTxt(e.target.value)}
               style={{ resize:'vertical', fontFamily:'var(--sans)', lineHeight:1.6 }} />
-            <div className="dim" style={{ fontSize:11,marginTop:6 }}>Variables: {'{nombre}'} {'{servicio}'} {'{hora}'} {'{dias}'}</div>
+            {varsInvalidas.length > 0 && (
+              <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 5 }}>
+                Variable inválida: {varsInvalidas.join(', ')} · usa solo las variables del botón
+              </div>
+            )}
           </div>
         </div>
         <div className="between card-pad" style={{ borderTop:'1px solid var(--line-soft)', paddingTop:16 }}>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn gold" onClick={save}><Ic n="check"/>Guardar</button>
+          <button className="btn gold" disabled={!canSave} style={{ opacity: canSave ? 1 : .5 }} onClick={save}><Ic n="check"/>Guardar</button>
         </div>
       </div>
     </Modal>

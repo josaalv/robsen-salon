@@ -215,3 +215,31 @@ export function Modal({ onClose, children, width = 560 }: { onClose: () => void;
     </div>
   )
 }
+
+export function ConfirmModal({ title, desc, onConfirm, onCancel, danger = true }: {
+  title: string
+  desc?: string
+  onConfirm: () => void
+  onCancel: () => void
+  danger?: boolean
+}) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onCancel])
+  return (
+    <div className="rb-modal-bg" onClick={onCancel}>
+      <div className="card gold-edge rb-modal" style={{ width: 400, maxWidth: 'calc(100vw - 48px)', animation: 'pop .2s cubic-bezier(.2,.8,.2,1)' }} onClick={e => e.stopPropagation()}>
+        <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 22, fontFamily: 'var(--serif)', fontWeight: 600 }}>{title}</div>
+          {desc && <div style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.5 }}>{desc}</div>}
+          <div className="vc gap10" style={{ justifyContent: 'flex-end', marginTop: 8 }}>
+            <button className="btn ghost" onClick={onCancel}>Cancelar</button>
+            <button className={`btn ${danger ? 'danger' : 'gold'}`} onClick={onConfirm}>Confirmar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

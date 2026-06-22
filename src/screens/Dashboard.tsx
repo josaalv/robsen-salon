@@ -49,6 +49,14 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   const totalMes = ventasMesArr.reduce((s, v) => s + ventaCalc.total(v), 0)
   const ticketProm = ventasMesArr.length ? Math.round(totalMes / ventasMesArr.length) : 0
 
+  // Mes anterior (comparativo)
+  const mesPasadoIdx = (hoy.getMonth() + 11) % 12
+  const mesPasadoStr = MESES_SHORT[mesPasadoIdx].toLowerCase()
+  const ventasMesPasadoArr = data.ventas.filter(v => v.fecha.toLowerCase().includes(mesPasadoStr))
+  const totalMesPasado = ventasMesPasadoArr.reduce((s, v) => s + ventaCalc.total(v), 0)
+  const cambioPct = totalMesPasado > 0 ? Math.round((totalMes - totalMesPasado) / totalMesPasado * 100) : null
+  const cambioDir: 'up' | 'down' | undefined = cambioPct != null ? (cambioPct >= 0 ? 'up' : 'down') : undefined
+
   const mesData = useMemo(() => {
     const acc: Record<number, number> = {}
     ventasMesArr.forEach(v => {
@@ -130,7 +138,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
         <Stat icon={<Ic n="currency-circle-dollar" />} label="Ventas de hoy"      value={mxn(totalHoy)}   spark={semanaData.map(d => d.v)} />
         <Stat icon={<Ic n="calendar-check" />}         label="Ventas de la semana" value={mxn(totalSemana)} spark={semanaData.map(d => d.v)} />
-        <Stat icon={<Ic n="chart-line-up" />}          label="Ventas del mes"      value={mxn(totalMes)}   spark={mesData.slice(-6).map(d => d.v)} />
+        <Stat icon={<Ic n="chart-line-up" />}          label="Ventas del mes"      value={mxn(totalMes)}   spark={mesData.slice(-6).map(d => d.v)} delta={cambioPct != null ? `${Math.abs(cambioPct)}% vs ${MESES_SHORT[mesPasadoIdx]}` : undefined} deltaDir={cambioDir} />
         <Stat icon={<Ic n="receipt" />}                label="Ticket promedio"     value={mxn(ticketProm)} spark={semanaData.map(d => d.v)} />
       </div>
 

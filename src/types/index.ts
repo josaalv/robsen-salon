@@ -32,6 +32,7 @@ export interface Clienta {
   id: string
   nombre: string
   tel: string
+  email?: string
   estado: EstadoClienta
   ultima: string
   ticket: number
@@ -181,6 +182,14 @@ export interface Bloqueo {
   fecha?: string  // 'YYYY-MM-DD' — undefined = todos los días
 }
 
+export interface Gasto {
+  id: string
+  concepto: string
+  monto: number
+  fecha: string   // 'YYYY-MM-DD'
+  categoria: string
+}
+
 export interface NavItem {
   id: string
   label: string
@@ -216,6 +225,7 @@ export interface SalonConfig {
   acento: string
 
   comisiones: Record<string, number>
+  escalaComisiones: { limite: number | null; pct: number }[]
 
   notifs: {
     citas: boolean
@@ -259,4 +269,5 @@ export interface RBData {
   adicionales: Adicional[]
   ventas: Venta[]
   bloqueos: Bloqueo[]
+  gastos: Gasto[]
 }

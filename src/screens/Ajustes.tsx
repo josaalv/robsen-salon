@@ -280,6 +280,7 @@ function AjustesComisiones() {
   const cats = Object.keys(bycat).sort()
 
   const [coms, setComs] = useState<Record<string, number>>({ ...data.config.comisiones })
+  const [escala, setEscala] = useState<{ limite: number | null; pct: number }[]>(data.config.escalaComisiones || [])
 
   const effectiveVal = (s: { id: string; cat: string }) =>
     coms[s.id] !== undefined ? coms[s.id] : (coms[s.cat] ?? 25)
@@ -301,9 +302,14 @@ function AjustesComisiones() {
     })
 
   const guardar = () => {
-    updateConfig({ comisiones: coms })
+    updateConfig({ comisiones: coms, escalaComisiones: escala })
     toast('Comisiones actualizadas')
   }
+
+  const addTramo = () => setEscala(prev => [...prev, { limite: null, pct: 30 }])
+  const removeTramo = (i: number) => setEscala(prev => prev.filter((_, j) => j !== i))
+  const updateTramo = (i: number, field: 'limite' | 'pct', val: number | null) =>
+    setEscala(prev => prev.map((t, j) => j === i ? { ...t, [field]: val } : t))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -396,6 +402,63 @@ function AjustesComisiones() {
             <span className="muted">%</span>
           </div>
         </SettingRow>
+      </div>
+
+      <div className="card card-pad">
+        <div className="between" style={{ marginBottom: 12 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Escala progresiva</div>
+            <div className="dim" style={{ fontSize: 12 }}>
+              Define tramos de ventas mensuales con diferentes porcentajes. El tramo con límite vacío aplica al excedente.
+            </div>
+          </div>
+          <button className="btn ghost sm" onClick={addTramo}><Ic n="plus" size={13} />Agregar tramo</button>
+        </div>
+        {escala.length === 0
+          ? <div className="dim" style={{ fontSize: 12.5 }}>Sin escala progresiva configurada. Las comisiones planas aplican siempre.</div>
+          : <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-3)', padding: '0 0 8px', fontWeight: 500 }}>Hasta (ventas)</th>
+                  <th style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-3)', padding: '0 0 8px', fontWeight: 500 }}>Comisión</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {escala.map((t, i) => (
+                  <tr key={i}>
+                    <td style={{ padding: '6px 12px 6px 0' }}>
+                      <div className="vc gap6">
+                        <input
+                          className="input num" type="number" min={0} placeholder="Sin límite"
+                          style={{ width: 120 }}
+                          value={t.limite ?? ''}
+                          onChange={e => updateTramo(i, 'limite', e.target.value === '' ? null : +e.target.value)}
+                        />
+                        <span className="dim" style={{ fontSize: 11.5 }}>MXN</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '6px 12px 6px 0' }}>
+                      <div className="vc gap6">
+                        <input
+                          className="input num" type="number" min={0} max={100}
+                          style={{ width: 68 }}
+                          value={t.pct}
+                          onChange={e => updateTramo(i, 'pct', +e.target.value)}
+                        />
+                        <span className="dim">%</span>
+                      </div>
+                    </td>
+                    <td>
+                      <button className="icon-btn" style={{ color: 'var(--st-canc)' }} onClick={() => removeTramo(i)}>
+                        <Ic n="trash" size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+        }
       </div>
 
       <button className="btn gold" style={{ alignSelf: 'flex-start' }} onClick={guardar}>

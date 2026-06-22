@@ -50,6 +50,10 @@ export const ventaCalc = {
   subtotal: (v: Venta) => v.lineas.reduce((s, l) => s + l.precio * l.cant, 0),
   total: (v: Venta) => ventaCalc.subtotal(v) - (v.desc || 0),
   saldo: (v: Venta) => Math.max(0, ventaCalc.total(v) - (v.anticipo || 0)),
-  comision: (v: Venta) => v.lineas.reduce((s, l) => s + Math.round(l.precio * l.cant * (l.com || 0) / 100), 0),
+  comision: (v: Venta) => {
+    const sub = ventaCalc.subtotal(v)
+    const ratio = sub > 0 ? (sub - (v.desc || 0)) / sub : 1
+    return v.lineas.reduce((s, l) => s + Math.round(l.precio * l.cant * ratio * (l.com || 0) / 100), 0)
+  },
   porTipo: (v: Venta, tipo: string) => v.lineas.filter(l => l.tipo === tipo).reduce((s, l) => s + l.precio * l.cant, 0),
 }

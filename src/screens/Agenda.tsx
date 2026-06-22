@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Avatar, EstadoBadge, Seg, toast } from '../components/ui'
+import { Avatar, EstadoBadge, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn } from '../lib/helpers'
@@ -85,6 +85,12 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const srv = data.servicios.find(s => s.id === srvId) || data.servicios[0]
   const isToday = selectedDate === todayIso
 
+  const dayIdx = (() => {
+    const d = new Date(selectedDate + 'T12:00:00')
+    return (d.getDay() + 6) % 7
+  })()
+  const estilistasDia = data.estilistas.filter(es => !es.horarios || es.horarios[dayIdx])
+
   const citasDelDia = isToday
     ? data.hoy.filter(a => a.est === est && a.id !== cita.id)
     : (data.citasFuturas || []).filter(a => a.fecha === selectedDate && a.est === est && a.id !== cita.id)
@@ -110,6 +116,12 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
       setH(availableSlots[0])
     }
   }, [est, srvId, selectedDate])
+
+  useEffect(() => {
+    if (estilistasDia.length > 0 && !estilistasDia.find(es => es.id === est)) {
+      setEst(estilistasDia[0].id)
+    }
+  }, [selectedDate])
 
   const displayH = availableSlots.includes(h) ? h : (availableSlots[0] || h)
   const saldoPreview = Math.max(0, srv.precio - (+ant || 0))
@@ -158,7 +170,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             <div className="field">
               <label>Estilista</label>
               <select className="select" value={est} onChange={e => setEst(e.target.value)}>
-                {data.estilistas.map(es => <option key={es.id} value={es.id}>{es.nombre}</option>)}
+                {estilistasDia.map(es => <option key={es.id} value={es.id}>{es.nombre}</option>)}
               </select>
             </div>
             <div className="field">
@@ -455,7 +467,8 @@ function WeekView({ onSel, weekOffset, onWeekChange }: {
   weekOffset: number
   onWeekChange: (delta: number) => void
 }) {
-  const { data } = useStore()
+  const { data, deleteBloqueo } = useStore()
+  const bloqueos = data.bloqueos || []
   const hoy = new Date()
   const dow = hoy.getDay()
   const monday = new Date(hoy)
@@ -511,6 +524,22 @@ function WeekView({ onSel, weekOffset, onWeekChange }: {
                   <div key={k} className={`appt ${a.estado}`} onClick={() => onSel(a)}>
                     <div className="t">{a.h}</div>
                     <div className="s">{a.cl.split(' ')[0]}</div>
+                  </div>
+                ))}
+                {bloqueos.filter(b => !b.fecha || b.fecha === iso).map(b => (
+                  <div
+                    key={b.id}
+                    title={`Bloqueo: ${b.nota} · ${b.h}–${b.fin} (clic para quitar)`}
+                    onClick={() => deleteBloqueo(b.id)}
+                    style={{
+                      padding: '4px 8px', borderRadius: 6, fontSize: 10.5,
+                      background: 'repeating-linear-gradient(45deg,rgba(200,80,60,0.10),rgba(200,80,60,0.10) 4px,transparent 4px,transparent 10px)',
+                      border: '1px dashed rgba(200,80,60,0.45)',
+                      color: 'var(--st-canc)', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    <Ic n="lock-simple" size={11} />{b.h}–{b.fin}
                   </div>
                 ))}
                 {esDom && <div className="imgph" style={{ minHeight: 70, fontSize: 10 }}>Cerrado</div>}
@@ -606,6 +635,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const [vista, setVista] = useState('Día')
   const [filtro, setFiltro] = useState('todos')
   const [sel, setSel] = useState<Cita | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Cita | null>(null)
   const [editCita, setEditCita] = useState<Partial<Cita> | null>(null)
   const [showBloqueo, setShowBloqueo] = useState(false)
   const bloqueos = data.bloqueos || []
@@ -624,10 +654,14 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const addBloqueo = (b: Bloqueo) => upsertBloqueo(b)
   const removeBloqueo = (id: string) => deleteBloqueo(id)
 
-  const handleDelete = (cita: Cita) => {
-    if (cita.fecha && cita.fecha !== todayIso) deleteCitaFutura(cita.id)
-    else deleteCita(cita.id)
+  const handleDelete = (cita: Cita) => setConfirmDelete(cita)
+  const confirmDeleteFn = () => {
+    if (!confirmDelete) return
+    if (confirmDelete.fecha && confirmDelete.fecha !== todayIso) deleteCitaFutura(confirmDelete.id)
+    else deleteCita(confirmDelete.id)
     setSel(null)
+    setConfirmDelete(null)
+    toast('Cita eliminada')
   }
 
   return (
@@ -791,6 +825,15 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
         <BloqueoModal
           onClose={() => setShowBloqueo(false)}
           onSaved={addBloqueo}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="¿Eliminar cita?"
+          desc={`Cita de ${confirmDelete.cl} — ${confirmDelete.srv} a las ${confirmDelete.h}. Esta acción no se puede deshacer.`}
+          onConfirm={confirmDeleteFn}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
     </div>

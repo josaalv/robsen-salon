@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
 import { PhosphorIcon as Ic } from './components/PhosphorIcon'
 import { Avatar, ToastHost, toast } from './components/ui'
@@ -29,10 +29,12 @@ const ALL = NAV.flatMap(g => g.items)
 
 function AppShell() {
   const { user, logout } = useAuth()
-  const { data, loadFromSupabase } = useStore()
+  const { data, syncing, loadFromSupabase } = useStore()
   const [route, setRoute] = useState('dashboard')
   const [menuOpen, setMenuOpen] = useState(false)
   const [topPop, setTopPop] = useState<'agenda' | 'notif' | null>(null)
+  const [searchQ, setSearchQ] = useState('')
+  const searchRef = useRef<HTMLDivElement>(null)
   const [logo, setLogo] = useState(() => localStorage.getItem('rb_logo') || '')
   const [Screen, setScreen] = useState<React.ComponentType<any> | null>(null)
 
@@ -62,7 +64,32 @@ function AppShell() {
       root.setAttribute('data-theme', 'light')
   }, [])
 
-  useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null) }, [route])
+  useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null); setSearchQ('') }, [route])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchQ('')
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const searchResults = useMemo(() => {
+    if (!searchQ.trim() || searchQ.length < 2) return []
+    const q = searchQ.toLowerCase()
+    const out: { tipo: string; label: string; sub: string; ruta: string; icon: string }[] = []
+
+    data.clientas.filter(c => c.nombre.toLowerCase().includes(q)).slice(0, 3)
+      .forEach(c => out.push({ tipo: 'Clienta', label: c.nombre, sub: c.tel || 'CRM', ruta: 'crm', icon: 'user' }))
+
+    data.hoy.filter(a => a.cl.toLowerCase().includes(q) || a.srv.toLowerCase().includes(q)).slice(0, 3)
+      .forEach(a => out.push({ tipo: 'Cita', label: a.cl, sub: `${a.h} · ${a.srv}`, ruta: 'agenda', icon: 'calendar-blank' }))
+
+    data.ventas.filter(v => v.cliente.toLowerCase().includes(q) || v.ticket.toLowerCase().includes(q)).slice(0, 3)
+      .forEach(v => out.push({ tipo: 'Venta', label: `${v.ticket} · ${v.cliente}`, sub: v.fecha, ruta: 'ventas', icon: 'cash-register' }))
+
+    return out.slice(0, 8)
+  }, [searchQ, data.clientas, data.hoy, data.ventas])
 
   // Lazy-load screen
   useEffect(() => {
@@ -167,9 +194,41 @@ function AppShell() {
             <div className="page-sub">{meta.sub}</div>
           </div>
           <div className="spacer" />
-          <div className="search">
+          {syncing && (
+            <div className="vc gap6" style={{ fontSize: 11.5, color: 'var(--text-3)', padding: '0 8px' }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: 'spin 1s linear infinite' }}>
+                <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="22 8" />
+              </svg>
+              Sincronizando…
+            </div>
+          )}
+          <div className="search" ref={searchRef} style={{ position: 'relative' }}>
             <Ic n="magnifying-glass" />
-            <input placeholder="Buscar clienta, cita o servicio…" />
+            <input
+              placeholder="Buscar clienta, cita o servicio…"
+              value={searchQ}
+              onChange={e => setSearchQ(e.target.value)}
+              onKeyDown={e => e.key === 'Escape' && setSearchQ('')}
+            />
+            {searchResults.length > 0 && (
+              <div className="card gold-edge" style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, minWidth: 300, zIndex: 50, boxShadow: 'var(--sh-lg)', padding: 4 }}>
+                {searchResults.map((r, i) => (
+                  <div
+                    key={i}
+                    className="nav-item"
+                    style={{ padding: '10px 12px', cursor: 'pointer', borderRadius: 8, gap: 10, display: 'flex', alignItems: 'center' }}
+                    onClick={() => { setRoute(r.ruta); setSearchQ('') }}
+                  >
+                    <Ic n={r.icon} />
+                    <div className="f1" style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</div>
+                      <div className="dim" style={{ fontSize: 11, marginTop: 1 }}>{r.sub}</div>
+                    </div>
+                    <span className="badge neutral" style={{ fontSize: 10 }}>{r.tipo}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           {/* Agenda pop */}
           <div style={{ position:'relative' }}>

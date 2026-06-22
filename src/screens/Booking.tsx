@@ -96,9 +96,13 @@ export function ScreenBooking() {
   const back = () => setStep(s => Math.max(1, s - 1))
   const canNext = (step === 1 && !!srv) || (step === 2 && !!prof) || (step === 3 && !!hora)
 
+  const telValido = /^\d{10}$/.test(clienteTel.replace(/\D/g, ''))
+  const emailValido = !clienteEmail.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clienteEmail.trim())
+  const step4Ok = clienteNombre.trim() && telValido && emailValido
+
   const submitCita = () => {
     if (!srv || !prof || !hora || !selectedDay) return
-    if (!clienteNombre.trim()) return
+    if (!clienteNombre.trim() || !telValido || !emailValido) return
     const y = selectedDay.date.getFullYear()
     const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
     const dy = String(selectedDay.date.getDate()).padStart(2, '0')
@@ -131,10 +135,9 @@ export function ScreenBooking() {
       const ini = nombreLimpio.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
       upsertClienta({
         id: 'cl' + Date.now(), nombre: nombreLimpio,
-        tel: telLimpio || '', estado: 'Nueva', ultima: '',
+        tel: telLimpio || '', email: emailLimpio, estado: 'Nueva', ultima: '',
         ticket: 0, fav: srv.nombre, est: estId,
         visitas: 0, gasto: 0, ini, cumple: '', ciclo: 4,
-        notas: clienteEmail || undefined,
       })
     }
     next()
@@ -280,11 +283,25 @@ export function ScreenBooking() {
                 </div>
                 <div className="field">
                   <label>Teléfono (WhatsApp)</label>
-                  <input className="input" placeholder="33 0000 0000" value={clienteTel} onChange={e => setClienteTel(e.target.value)} />
+                  <input
+                    className="input"
+                    placeholder="3300000000"
+                    value={clienteTel}
+                    onChange={e => setClienteTel(e.target.value)}
+                    style={{ borderColor: clienteTel && !telValido ? 'var(--st-canc)' : undefined }}
+                  />
+                  {clienteTel && !telValido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>Ingresa 10 dígitos</div>}
                 </div>
                 <div className="field" style={{ gridColumn: '1 / -1' }}>
                   <label>Correo (opcional)</label>
-                  <input className="input" placeholder="tucorreo@mail.com" value={clienteEmail} onChange={e => setClienteEmail(e.target.value)} />
+                  <input
+                    className="input"
+                    placeholder="tucorreo@mail.com"
+                    value={clienteEmail}
+                    onChange={e => setClienteEmail(e.target.value)}
+                    style={{ borderColor: clienteEmail && !emailValido ? 'var(--st-canc)' : undefined }}
+                  />
+                  {clienteEmail && !emailValido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>Correo inválido</div>}
                 </div>
                 <div className="field" style={{ gridColumn: '1 / -1' }}>
                   <label>Notas para tu estilista (opcional)</label>
@@ -355,8 +372,8 @@ export function ScreenBooking() {
             {step === 4 && (
               <button
                 className="btn gold"
-                disabled={!clienteNombre.trim() || !clienteTel.trim()}
-                style={{ opacity: clienteNombre.trim() && clienteTel.trim() ? 1 : .4, pointerEvents: clienteNombre.trim() && clienteTel.trim() ? 'auto' : 'none' }}
+                disabled={!step4Ok}
+                style={{ opacity: step4Ok ? 1 : .4, pointerEvents: step4Ok ? 'auto' : 'none' }}
                 onClick={submitCita}
               >
                 <Ic n="check" />{anticipo > 0 ? `Solicitar cita · anticipo ${mxn(anticipo)}` : 'Solicitar cita'}

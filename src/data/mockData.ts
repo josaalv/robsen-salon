@@ -185,6 +185,7 @@ export const defaultConfig: SalonConfig = {
     Uñas: 25, Pedicure: 25, Maquillaje: 30, Extensiones: 35,
     Depilación: 22, Paquetes: 30, _producto: 10,
   },
+  escalaComisiones: [],
 
   notifs: {
     citas: true, recordatorios: true, anticipos: true,
@@ -236,4 +237,5 @@ export const defaultData: RBData = {
   adicionales,
   ventas,
   bloqueos: [],
+  gastos: [],
 }
