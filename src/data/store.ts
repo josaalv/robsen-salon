@@ -49,71 +49,75 @@ export const useStore = create<Store>()(
       // ─── Cargar desde Supabase al iniciar sesión ─────────────────────────
       loadFromSupabase: async () => {
         set({ syncing: true })
-        const result = await db.loadAll()
-        set({ syncing: false })
-        if (!result) return false
+        try {
+          const result = await db.loadAll()
+          if (!result) return false
 
-        // Si Supabase está vacío pero hay datos locales → migrar automáticamente
-        if (result.usuarios.length === 0) {
-          const localData = get().data
-          if (localData.usuarios.length > 0) {
-            set({ syncing: true })
-            await db.seedAll(localData)
-            set({ syncing: false })
-            // Recargar tras migración
-            const fresh = await db.loadAll()
-            if (fresh && fresh.usuarios.length > 0) {
-              set(s => ({
-                data: {
-                  ...s.data,
-                  ...(fresh.config ? { config: fresh.config } : {}),
-                  estilistas:   fresh.estilistas,
-                  servicios:    fresh.servicios,
-                  clientas:     fresh.clientas,
-                  ventas:       fresh.ventas,
-                  productos:    fresh.productos,
-                  plantillas:   fresh.plantillas,
-                  usuarios:     fresh.usuarios,
-                  movimientos:  fresh.movimientos,
-                  bloqueos:     fresh.bloqueos,
-                  gastos:       fresh.gastos,
-                  hoy:          fresh.citas.hoy,
-                  citasFuturas: fresh.citas.futuras,
-                }
-              }))
+          // Si Supabase está vacío pero hay datos locales → migrar automáticamente
+          if (result.usuarios.length === 0) {
+            const localData = get().data
+            if (localData.usuarios.length > 0) {
+              await db.seedAll(localData)
+              const fresh = await db.loadAll()
+              if (fresh && fresh.usuarios.length > 0) {
+                set(s => ({
+                  data: {
+                    ...s.data,
+                    ...(fresh.config ? { config: fresh.config } : {}),
+                    estilistas:   fresh.estilistas,
+                    servicios:    fresh.servicios,
+                    clientas:     fresh.clientas,
+                    ventas:       fresh.ventas,
+                    productos:    fresh.productos,
+                    plantillas:   fresh.plantillas,
+                    usuarios:     fresh.usuarios,
+                    movimientos:  fresh.movimientos,
+                    bloqueos:     fresh.bloqueos,
+                    gastos:       fresh.gastos,
+                    hoy:          fresh.citas.hoy,
+                    citasFuturas: fresh.citas.futuras,
+                  }
+                }))
+              }
             }
+            return true
           }
-          return true
-        }
 
-        // Supabase tiene datos — es la fuente de verdad
-        set(s => ({
-          data: {
-            ...s.data,
-            ...(result.config ? { config: result.config } : {}),
-            estilistas:   result.estilistas,
-            servicios:    result.servicios,
-            clientas:     result.clientas,
-            ventas:       result.ventas,
-            productos:    result.productos,
-            plantillas:   result.plantillas,
-            usuarios:     result.usuarios,
-            movimientos:  result.movimientos,
-            bloqueos:     result.bloqueos,
-            gastos:       result.gastos,
-            hoy:          result.citas.hoy,
-            citasFuturas: result.citas.futuras,
-          }
-        }))
-        return true
+          // Supabase tiene datos — es la fuente de verdad
+          set(s => ({
+            data: {
+              ...s.data,
+              ...(result.config ? { config: result.config } : {}),
+              estilistas:   result.estilistas,
+              servicios:    result.servicios,
+              clientas:     result.clientas,
+              ventas:       result.ventas,
+              productos:    result.productos,
+              plantillas:   result.plantillas,
+              usuarios:     result.usuarios,
+              movimientos:  result.movimientos,
+              bloqueos:     result.bloqueos,
+              gastos:       result.gastos,
+              hoy:          result.citas.hoy,
+              citasFuturas: result.citas.futuras,
+            }
+          }))
+          return true
+        } catch {
+          return false
+        } finally {
+          set({ syncing: false })
+        }
       },
 
       // ─── Migrar datos locales a Supabase ─────────────────────────────────
       migrateToSupabase: async () => {
         set({ syncing: true })
-        const ok = await db.seedAll(get().data)
-        set({ syncing: false })
-        return ok
+        try {
+          return await db.seedAll(get().data)
+        } finally {
+          set({ syncing: false })
+        }
       },
 
       updateConfig: (patch) => {

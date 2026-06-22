@@ -132,6 +132,16 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   'warning-circle': Ph.WarningCircle,
   'upload-simple': Ph.UploadSimple,
   'repeat': Ph.Repeat,
+  'minus': Ph.Minus,
+  'sign-in': Ph.SignIn,
+  'spinner': Ph.Spinner,
+  'envelope-simple': Ph.EnvelopeSimple,
+  'lock-key': Ph.LockKey,
+  'caret-left': Ph.CaretLeft,
+  'arrow-counter-clockwise': Ph.ArrowCounterClockwise,
+  'arrows-down-up': Ph.ArrowsDownUp,
+  'currency-dollar': Ph.CurrencyDollar,
+  'shopping-cart-simple': Ph.ShoppingCartSimple,
 }
 
 interface IconProps {
