@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData } from '../types'
+import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo } from '../types'
 
 // ─── Mappers DB ↔ TypeScript ──────────────────────────────────────────────────
 
@@ -210,6 +210,21 @@ export const db = {
     await supabase.from('movimientos').insert(m)
   },
 
+  // — Bloqueos —
+  async getBloqueos(): Promise<Bloqueo[]> {
+    if (!supabase) return []
+    const { data } = await supabase.from('bloqueos').select('*')
+    return (data ?? []) as Bloqueo[]
+  },
+  async upsertBloqueo(b: Bloqueo) {
+    if (!supabase) return
+    await supabase.from('bloqueos').upsert(b, { onConflict: 'id' })
+  },
+  async deleteBloqueo(id: string) {
+    if (!supabase) return
+    await supabase.from('bloqueos').delete().eq('id', id)
+  },
+
   // — Plantillas —
   async getPlantillas(): Promise<Plantilla[]> {
     if (!supabase) return []
@@ -246,19 +261,21 @@ export const db = {
       db.getPlantillas(),
       db.getUsuarios(),
       db.getMovimientos(),
+      db.getBloqueos(),
     ])
-    const [cfg, est, srv, cl, citas, ventas, prod, plant, usr, movs] = results
+    const [cfg, est, srv, cl, citas, ventas, prod, plant, usr, movs, blqs] = results
     return {
-      config:     cfg.status    === 'fulfilled' ? cfg.value    : null,
-      estilistas: est.status    === 'fulfilled' ? est.value    : [],
-      servicios:  srv.status    === 'fulfilled' ? srv.value    : [],
-      clientas:   cl.status     === 'fulfilled' ? cl.value     : [],
-      citas:      citas.status  === 'fulfilled' ? citas.value  : { hoy: [], futuras: [] },
-      ventas:     ventas.status === 'fulfilled' ? ventas.value : [],
-      productos:  prod.status   === 'fulfilled' ? prod.value   : [],
-      plantillas: plant.status  === 'fulfilled' ? plant.value  : [],
-      usuarios:   usr.status    === 'fulfilled' ? usr.value    : [],
-      movimientos: movs.status  === 'fulfilled' ? movs.value   : [],
+      config:      cfg.status    === 'fulfilled' ? cfg.value    : null,
+      estilistas:  est.status    === 'fulfilled' ? est.value    : [],
+      servicios:   srv.status    === 'fulfilled' ? srv.value    : [],
+      clientas:    cl.status     === 'fulfilled' ? cl.value     : [],
+      citas:       citas.status  === 'fulfilled' ? citas.value  : { hoy: [], futuras: [] },
+      ventas:      ventas.status === 'fulfilled' ? ventas.value : [],
+      productos:   prod.status   === 'fulfilled' ? prod.value   : [],
+      plantillas:  plant.status  === 'fulfilled' ? plant.value  : [],
+      usuarios:    usr.status    === 'fulfilled' ? usr.value    : [],
+      movimientos: movs.status   === 'fulfilled' ? movs.value   : [],
+      bloqueos:    blqs.status   === 'fulfilled' ? blqs.value   : [],
     }
   },
 
@@ -310,6 +327,9 @@ export const db = {
 
       if (data.movimientos.length)
         await supabase.from('movimientos').upsert(data.movimientos, { onConflict: 'id' })
+
+      if (data.bloqueos?.length)
+        await supabase.from('bloqueos').upsert(data.bloqueos, { onConflict: 'id' })
 
       return true
     } catch (e) {

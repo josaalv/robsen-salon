@@ -235,4 +235,5 @@ export const defaultData: RBData = {
   movimientos,
   adicionales,
   ventas,
+  bloqueos: [],
 }

@@ -172,6 +172,15 @@ export interface Adicional {
   cat: string
 }
 
+export interface Bloqueo {
+  id: string
+  est: string
+  h: string
+  fin: string
+  nota: string
+  fecha?: string  // 'YYYY-MM-DD' — undefined = todos los días
+}
+
 export interface NavItem {
   id: string
   label: string
@@ -249,4 +258,5 @@ export interface RBData {
   movimientos: Movimiento[]
   adicionales: Adicional[]
   ventas: Venta[]
+  bloqueos: Bloqueo[]
 }

@@ -3,7 +3,7 @@ import { Avatar, EstadoBadge, Seg, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn } from '../lib/helpers'
-import type { Cita, EstadoCita } from '../types'
+import type { Cita, EstadoCita, Bloqueo } from '../types'
 
 const PXH = 60
 const DIAS_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -38,15 +38,6 @@ function top(hhmm: string, start: number): number {
 
 function dateToIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-interface Bloqueo {
-  id: string
-  est: string
-  h: string
-  fin: string
-  nota: string
-  fecha?: string  // 'YYYY-MM-DD' — undefined = todos los días
 }
 
 // ─── Modal nueva/editar cita ────────────────────────────────────────────────
@@ -610,14 +601,14 @@ function MonthView({ onDayClick }: { onDayClick?: (date: Date) => void }) {
 
 // ─── Pantalla principal ─────────────────────────────────────────────────────
 export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data, upsertCita, deleteCita, deleteCitaFutura } = useStore()
+  const { data, upsertCita, deleteCita, deleteCitaFutura, upsertBloqueo, deleteBloqueo } = useStore()
   const { agendaStart: S, agendaEnd: E } = data.config
   const [vista, setVista] = useState('Día')
   const [filtro, setFiltro] = useState('todos')
   const [sel, setSel] = useState<Cita | null>(null)
   const [editCita, setEditCita] = useState<Partial<Cita> | null>(null)
   const [showBloqueo, setShowBloqueo] = useState(false)
-  const [bloqueos, setBloqueos] = useState<Bloqueo[]>([])
+  const bloqueos = data.bloqueos || []
   const [weekOffset, setWeekOffset] = useState(0)
 
   const hoy = new Date()
@@ -630,8 +621,8 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const horas: number[] = []
   for (let h = S; h <= E; h++) horas.push(h)
 
-  const addBloqueo = (b: Bloqueo) => setBloqueos(prev => [...prev, b])
-  const removeBloqueo = (id: string) => setBloqueos(prev => prev.filter(b => b.id !== id))
+  const addBloqueo = (b: Bloqueo) => upsertBloqueo(b)
+  const removeBloqueo = (id: string) => deleteBloqueo(id)
 
   const handleDelete = (cita: Cita) => {
     if (cita.fecha && cita.fecha !== todayIso) deleteCitaFutura(cita.id)

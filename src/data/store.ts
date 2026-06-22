@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { defaultData } from './mockData'
 import { db } from '../lib/db'
-import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario, Plantilla } from '../types'
+import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario, Plantilla, Bloqueo } from '../types'
 
 const STORAGE_KEY = 'rb_data_v3'
 
@@ -31,6 +31,8 @@ interface Store {
   upsertUsuario: (u: Partial<Usuario> & { id: string }) => void
   upsertPlantilla: (p: Partial<Plantilla> & { id: string }) => void
   ajustarStock: (productoId: string, cant: number, motivo: string) => void
+  upsertBloqueo: (b: Bloqueo) => void
+  deleteBloqueo: (id: string) => void
 }
 
 export const useStore = create<Store>()(
@@ -48,18 +50,52 @@ export const useStore = create<Store>()(
         set({ syncing: false })
         if (!result) return false
 
+        // Si Supabase está vacío pero hay datos locales → migrar automáticamente
+        if (result.usuarios.length === 0) {
+          const localData = get().data
+          if (localData.usuarios.length > 0) {
+            set({ syncing: true })
+            await db.seedAll(localData)
+            set({ syncing: false })
+            // Recargar tras migración
+            const fresh = await db.loadAll()
+            if (fresh && fresh.usuarios.length > 0) {
+              set(s => ({
+                data: {
+                  ...s.data,
+                  ...(fresh.config ? { config: fresh.config } : {}),
+                  estilistas:   fresh.estilistas,
+                  servicios:    fresh.servicios,
+                  clientas:     fresh.clientas,
+                  ventas:       fresh.ventas,
+                  productos:    fresh.productos,
+                  plantillas:   fresh.plantillas,
+                  usuarios:     fresh.usuarios,
+                  movimientos:  fresh.movimientos,
+                  bloqueos:     fresh.bloqueos,
+                  hoy:          fresh.citas.hoy,
+                  citasFuturas: fresh.citas.futuras,
+                }
+              }))
+            }
+          }
+          return true
+        }
+
+        // Supabase tiene datos — es la fuente de verdad
         set(s => ({
           data: {
             ...s.data,
             ...(result.config ? { config: result.config } : {}),
-            ...(result.estilistas.length  ? { estilistas: result.estilistas }   : {}),
-            ...(result.servicios.length   ? { servicios: result.servicios }     : {}),
-            ...(result.clientas.length    ? { clientas: result.clientas }       : {}),
-            ...(result.ventas.length      ? { ventas: result.ventas }           : {}),
-            ...(result.productos.length   ? { productos: result.productos }     : {}),
-            ...(result.plantillas.length  ? { plantillas: result.plantillas }   : {}),
-            ...(result.usuarios.length    ? { usuarios: result.usuarios }       : {}),
-            ...(result.movimientos.length ? { movimientos: result.movimientos } : {}),
+            estilistas:   result.estilistas,
+            servicios:    result.servicios,
+            clientas:     result.clientas,
+            ventas:       result.ventas,
+            productos:    result.productos,
+            plantillas:   result.plantillas,
+            usuarios:     result.usuarios,
+            movimientos:  result.movimientos,
+            bloqueos:     result.bloqueos,
             hoy:          result.citas.hoy,
             citasFuturas: result.citas.futuras,
           }
@@ -307,6 +343,23 @@ export const useStore = create<Store>()(
           return { data: { ...s.data, plantillas: newP } }
         })
         db.upsertPlantilla(merged!).catch(() => {})
+      },
+
+      upsertBloqueo: (b) => {
+        set(s => {
+          const bloqueos = s.data.bloqueos || []
+          const idx = bloqueos.findIndex(x => x.id === b.id)
+          const newBloqueos = idx >= 0
+            ? bloqueos.map((x, i) => i === idx ? b : x)
+            : [...bloqueos, b]
+          return { data: { ...s.data, bloqueos: newBloqueos } }
+        })
+        db.upsertBloqueo(b).catch(() => {})
+      },
+
+      deleteBloqueo: (id) => {
+        set(s => ({ data: { ...s.data, bloqueos: (s.data.bloqueos || []).filter(b => b.id !== id) } }))
+        db.deleteBloqueo(id).catch(() => {})
       },
 
       ajustarStock: (productoId, cant, motivo) => {
