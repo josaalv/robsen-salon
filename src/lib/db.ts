@@ -325,7 +325,10 @@ export const db = {
         await supabase.from('plantillas').upsert(data.plantillas, { onConflict: 'id' })
 
       if (data.usuarios.length)
-        await supabase.from('usuarios').upsert(data.usuarios, { onConflict: 'id' })
+        await supabase.from('usuarios').upsert(
+          data.usuarios.map(u => ({ ...u, pass: u.pass || 'robsen2026' })),
+          { onConflict: 'id' }
+        )
 
       // Ventas: upsert header + delete-then-insert lineas
       for (const v of data.ventas) {
