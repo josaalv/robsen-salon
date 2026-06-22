@@ -35,19 +35,13 @@ function AppShell() {
   const [topPop, setTopPop] = useState<'agenda' | 'notif' | null>(null)
   const [searchQ, setSearchQ] = useState('')
   const searchRef = useRef<HTMLDivElement>(null)
-  const [logo, setLogo] = useState(() => localStorage.getItem('rb_logo') || '')
+  const logo = data.config?.logo || ''
   const [Screen, setScreen] = useState<React.ComponentType<any> | null>(null)
 
   // Sincronizar desde Supabase al iniciar
   useEffect(() => {
     loadFromSupabase().catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    const handler = () => setLogo(localStorage.getItem('rb_logo') || '')
-    window.addEventListener('rb_logo_changed', handler)
-    return () => window.removeEventListener('rb_logo_changed', handler)
   }, [])
 
   useEffect(() => {

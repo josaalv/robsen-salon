@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, helpers } from '../lib/helpers'
-import type { Clienta, EstadoClienta } from '../types'
+import type { Clienta, EstadoClienta, FotoEntry } from '../types'
 
 function waUrl(tel: string, msg: string): string {
   const digits = tel.replace(/\D/g, '')
@@ -250,19 +250,19 @@ function FormulaColorTab({ c }: { c: Clienta }) {
 }
 
 // ─── Antes / Después ─────────────────────────────────────────────────────────
-interface FotoEntry { id: string; antes: string; despues: string; fecha: string; nota: string }
-
 function AntesDesTab({ c }: { c: Clienta }) {
-  const storageKey = `rb_fotos_${c.id}`
-  const [fotos, setFotos] = useState<FotoEntry[]>(() => {
-    try { return JSON.parse(localStorage.getItem(storageKey) || '[]') } catch { return [] }
-  })
+  const { upsertClienta } = useStore()
+  const [fotos, setFotos] = useState<FotoEntry[]>(() => c.fotos || [])
   const [adding, setAdding] = useState(false)
   const [antesB64, setAntesB64] = useState('')
   const [despuesB64, setDespuesB64] = useState('')
   const [nota, setNota] = useState('')
   const antesRef = useRef<HTMLInputElement>(null)
   const despuesRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setFotos(c.fotos || [])
+  }, [c.id])
 
   const readFile = (file: File): Promise<string> => new Promise((resolve, reject) => {
     if (file.size > 3 * 1024 * 1024) { reject(new Error('La imagen debe pesar menos de 3 MB')); return }
@@ -283,7 +283,7 @@ function AntesDesTab({ c }: { c: Clienta }) {
     }
     const next = [entry, ...fotos]
     setFotos(next)
-    localStorage.setItem(storageKey, JSON.stringify(next))
+    upsertClienta({ id: c.id, fotos: next })
     toast('Comparativa guardada')
     setAdding(false); setAntesB64(''); setDespuesB64(''); setNota('')
   }
@@ -291,7 +291,7 @@ function AntesDesTab({ c }: { c: Clienta }) {
   const eliminar = (id: string) => {
     const next = fotos.filter(f => f.id !== id)
     setFotos(next)
-    localStorage.setItem(storageKey, JSON.stringify(next))
+    upsertClienta({ id: c.id, fotos: next })
   }
 
   const PhotoSlot = ({ b64, label, onClick }: { b64: string; label: string; onClick: () => void }) => (

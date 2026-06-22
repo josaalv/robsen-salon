@@ -29,7 +29,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   const [pwConf, setPwConf] = useState('')
   const [showPw, setShowPw] = useState(false)
   const avatarRef = useRef<HTMLInputElement>(null)
-  const [avatar, setAvatar] = useState(() => localStorage.getItem('rb_avatar_' + user.id) || '')
+  const [avatar, setAvatar] = useState(() => user.avatar || '')
 
   const onAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -39,7 +39,9 @@ function AjustesPerfil({ user }: { user: Usuario }) {
     reader.onload = ev => {
       const result = ev.target?.result as string
       setAvatar(result)
-      localStorage.setItem('rb_avatar_' + user.id, result)
+      const updated = { ...user, avatar: result }
+      upsertUsuario(updated)
+      login(updated)
     }
     reader.readAsDataURL(file)
   }
@@ -78,7 +80,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
             : <Avatar ini={user.ini} color={user.color} size="lg" />}
           <input ref={avatarRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={onAvatarFile} />
           <button className="btn ghost sm" onClick={() => avatarRef.current?.click()}><Ic n="camera" />{avatar ? 'Cambiar foto' : 'Subir foto'}</button>
-          {avatar && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} onClick={() => { setAvatar(''); localStorage.removeItem('rb_avatar_' + user.id) }}><Ic n="trash" /></button>}
+          {avatar && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} onClick={() => { setAvatar(''); const u = { ...user, avatar: undefined }; upsertUsuario(u); login(u) }}><Ic n="trash" /></button>}
           <span className={'badge ' + (rolBadgeClass[user.rol] || 'neutral')} style={{ fontSize: 11.5 }}>{user.rol}</span>
         </div>
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -117,7 +119,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
 function AjustesSalon() {
   const { data, updateConfig } = useStore()
   const cfg = data.config
-  const [logo, setLogo] = useState(() => localStorage.getItem('rb_logo') || '')
+  const [logo, setLogo] = useState(() => cfg.logo || '')
   const fileRef = useRef<HTMLInputElement>(null)
   const [nombre, setNombre] = useState(cfg.nombre)
   const [direccion, setDireccion] = useState(cfg.direccion)
@@ -127,20 +129,19 @@ function AjustesSalon() {
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (file.size > 2 * 1024 * 1024) { toast('La imagen debe pesar menos de 2 MB'); return }
     const reader = new FileReader()
     reader.onload = ev => {
       const result = ev.target?.result as string
       setLogo(result)
-      localStorage.setItem('rb_logo', result)
-      window.dispatchEvent(new CustomEvent('rb_logo_changed'))
+      updateConfig({ logo: result })
     }
     reader.readAsDataURL(file)
   }
 
   const removeLogo = () => {
     setLogo('')
-    localStorage.removeItem('rb_logo')
-    window.dispatchEvent(new CustomEvent('rb_logo_changed'))
+    updateConfig({ logo: undefined })
   }
 
   const guardar = () => {

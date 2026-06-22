@@ -28,6 +28,14 @@ export interface Servicio {
   prof: string[]
 }
 
+export interface FotoEntry {
+  id: string
+  antes: string
+  despues: string
+  fecha: string
+  nota: string
+}
+
 export interface Clienta {
   id: string
   nombre: string
@@ -45,6 +53,7 @@ export interface Clienta {
   ciclo: number
   notas?: string
   formulas?: { id: string; fecha: string; srv: string; formula: string }[]
+  fotos?: FotoEntry[]
 }
 
 export interface Cita {
@@ -152,6 +161,7 @@ export interface Usuario {
   activo: boolean
   ultimo: string
   pass?: string
+  avatar?: string
 }
 
 export interface Rol {
@@ -226,6 +236,8 @@ export interface SalonConfig {
 
   comisiones: Record<string, number>
   escalaComisiones: { limite: number | null; pct: number }[]
+
+  logo?: string
 
   notifs: {
     citas: boolean

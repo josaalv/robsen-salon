@@ -56,6 +56,7 @@ const mapConfig = (r: any): SalonConfig => ({
   acento: r.acento,
   comisiones: r.comisiones || {},
   escalaComisiones: r.escala_comisiones || [],
+  logo: r.logo ?? undefined,
   notifs: r.notifs,
 })
 
@@ -66,6 +67,7 @@ const toConfigRow = (c: SalonConfig) => ({
   anticipo_pct: c.anticipoPct, requerir_anticipo: c.requerirAnticipo,
   iva: c.iva, metodospago: c.metodospago, acento: c.acento,
   comisiones: c.comisiones, escala_comisiones: c.escalaComisiones || [], notifs: c.notifs,
+  logo: c.logo ?? null,
 })
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
