@@ -8,6 +8,25 @@ const DIA = 86400000
 export const mxn = (n: number) => '$' + Number(n).toLocaleString('es-MX')
 export const mxn0 = (n: number) => Number(n).toLocaleString('es-MX')
 
+export type EscalaTramo = { limite: number | null; pct: number }
+
+// Calcula comisión progresiva por tramos (tipo brackets fiscales).
+// Cada tramo aplica su % solo a la porción de ventas dentro de ese rango.
+export const applyEscala = (totalVentas: number, escala: EscalaTramo[]): number => {
+  if (!escala || escala.length === 0 || totalVentas <= 0) return 0
+  const sorted = [...escala].sort((a, b) => (a.limite ?? Infinity) - (b.limite ?? Infinity))
+  let comision = 0
+  let prev = 0
+  for (const tramo of sorted) {
+    if (totalVentas <= prev) break
+    const lim = tramo.limite ?? Infinity
+    const enTramo = Math.min(totalVentas, lim) - prev
+    comision += Math.round(enTramo * tramo.pct / 100)
+    prev = lim
+  }
+  return comision
+}
+
 const parseDate = (s: string): Date => {
   const p = s.split(' ')
   return new Date(+p[2], MES[p[1]], +p[0])

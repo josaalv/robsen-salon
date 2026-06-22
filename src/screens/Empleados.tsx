@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react'
 import { Avatar, CardHead, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn } from '../lib/helpers'
+import { mxn, applyEscala } from '../lib/helpers'
+import type { EscalaTramo } from '../lib/helpers'
 import type { Estilista } from '../types'
 
 const COLORES = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8CE8A']
@@ -137,6 +138,68 @@ function HorariosModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+function EscalaPanel({ ventasMes, escala }: { ventasMes: number; escala: EscalaTramo[] }) {
+  const sorted = [...escala].sort((a, b) => (a.limite ?? Infinity) - (b.limite ?? Infinity))
+
+  // Find active bracket index
+  let activeIdx = sorted.length - 1
+  for (let i = 0; i < sorted.length; i++) {
+    if (ventasMes <= (sorted[i].limite ?? Infinity)) { activeIdx = i; break }
+  }
+
+  const active = sorted[activeIdx]
+  const next = sorted[activeIdx + 1]
+  const rangeStart = activeIdx === 0 ? 0 : (sorted[activeIdx - 1].limite ?? 0)
+  const rangeEnd = active.limite
+  const inRange = ventasMes - rangeStart
+  const rangeSize = rangeEnd ? rangeEnd - rangeStart : 1
+  const progress = rangeEnd ? Math.min(100, (inRange / rangeSize) * 100) : 100
+  const faltante = rangeEnd ? Math.max(0, rangeEnd - ventasMes) : 0
+
+  return (
+    <div style={{ marginTop: 16, padding: '14px 16px', background: 'rgba(200,161,74,0.06)', border: '1px solid var(--line)', borderRadius: 10 }}>
+      <div className="eyebrow" style={{ marginBottom: 10 }}>Escala de comisiones</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+        {sorted.map((t, i) => {
+          const prevLim = i === 0 ? 0 : (sorted[i - 1].limite ?? 0)
+          const isActive = i === activeIdx
+          return (
+            <div key={i} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '6px 9px', borderRadius: 7, fontSize: 12,
+              background: isActive ? 'rgba(200,161,74,0.12)' : 'transparent',
+              border: `1px solid ${isActive ? 'var(--line-strong)' : 'transparent'}`,
+              color: isActive ? 'var(--text)' : 'var(--text-3)',
+              fontWeight: isActive ? 600 : 400,
+            }}>
+              <span>{mxn(prevLim)} – {t.limite ? mxn(t.limite) : '∞'}</span>
+              <span style={{ color: isActive ? 'var(--gold)' : undefined }}>{t.pct}%</span>
+            </div>
+          )
+        })}
+      </div>
+      {rangeEnd != null && (
+        <>
+          <div className="bar" style={{ marginBottom: 5 }}>
+            <span style={{ width: progress + '%' }} />
+          </div>
+          <div className="between" style={{ fontSize: 11, color: 'var(--text-4)' }}>
+            <span>{mxn(ventasMes)} en tramo</span>
+            {faltante > 0 && next
+              ? <span>{mxn(faltante)} para {next.pct}%</span>
+              : <span>{mxn(rangeEnd)}</span>}
+          </div>
+        </>
+      )}
+      {rangeEnd == null && (
+        <div style={{ fontSize: 11.5, color: 'var(--gold)', textAlign: 'center' }}>
+          Tramo máximo alcanzado
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => void }) {
   const { data } = useStore()
   const estilistas = data.estilistas
@@ -146,23 +209,34 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
 
   // Compute real metrics from ventas
   const metricas = useMemo(() => {
-    const r: Record<string, { ventas: number; comision: number; citas: number }> = {}
-    estilistas.forEach(e => { r[e.id] = { ventas: 0, comision: 0, citas: 0 } })
+    const escalaConfig = data.config?.escalaComisiones || []
+    const useEscalaLocal = escalaConfig.length > 0
+    const mes = new Date().toLocaleDateString('es-MX', { month: 'short' }).toLowerCase()
+
+    const r: Record<string, { ventas: number; comision: number; citas: number; ventasMes: number }> = {}
+    estilistas.forEach(e => { r[e.id] = { ventas: 0, comision: 0, citas: 0, ventasMes: 0 } })
     data.ventas.forEach(v => {
+      const esMes = v.fecha.toLowerCase().includes(mes)
       v.lineas.forEach(l => {
         if (!l.est || !r[l.est]) return
         const monto = l.precio * l.cant
         r[l.est].ventas += monto
-        r[l.est].comision += Math.round(monto * (l.com || 0) / 100)
+        if (esMes) r[l.est].ventasMes += monto
+        if (!useEscalaLocal) r[l.est].comision += Math.round(monto * (l.com || 0) / 100)
       })
       const mainEst = v.lineas.find(l => l.tipo === 'servicio')?.est
       if (mainEst && r[mainEst]) r[mainEst].citas++
     })
+    if (useEscalaLocal) {
+      Object.keys(r).forEach(id => { r[id].comision = applyEscala(r[id].ventasMes, escalaConfig) })
+    }
     return r
-  }, [data.ventas, estilistas])
+  }, [data.ventas, estilistas, data.config?.escalaComisiones])
 
+  const escalaConfig = data.config?.escalaComisiones || []
+  const useEscala = escalaConfig.length > 0
   const e = estilistas.find(x => x.id === selId) || estilistas[0]
-  const sel = metricas[selId] || { ventas: 0, comision: 0, citas: 0 }
+  const sel = metricas[selId] || { ventas: 0, comision: 0, citas: 0, ventasMes: 0 }
   const comPct = e?.com ?? 30
   const servReal = data.servicios.filter(s => s.prof.includes(selId))
   const comisionesMes = Object.values(metricas).reduce((s, m) => s + m.comision, 0)
@@ -185,21 +259,27 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
       <div className="grid" style={{ gridTemplateColumns: '1fr 360px', alignItems: 'start' }}>
         {/* Performance table */}
         <div className="card">
-          <CardHead title="Rendimiento del equipo" sub="Ventas registradas en el sistema" />
+          <CardHead
+            title="Rendimiento del equipo"
+            sub={useEscala ? 'Ventas y comisiones del mes · escala progresiva activa' : 'Ventas registradas en el sistema'}
+          />
           <table className="table" style={{ marginTop: 6 }}>
             <thead>
               <tr>
                 <th>Profesional</th>
                 <th className="num">Citas</th>
-                <th className="num">Ventas</th>
+                <th className="num">{useEscala ? 'Ventas (mes)' : 'Ventas'}</th>
                 <th className="num">Comisión</th>
-                <th>Com. %</th>
+                <th>{useEscala ? 'Tramo' : 'Com. %'}</th>
               </tr>
             </thead>
             <tbody>
               {estilistas.map(es => {
-                const m = metricas[es.id] || { ventas: 0, comision: 0, citas: 0 }
+                const m = metricas[es.id] || { ventas: 0, comision: 0, citas: 0, ventasMes: 0 }
+                const ventasRef = useEscala ? m.ventasMes : m.ventas
                 const pct = es.com ?? 30
+                const efectivoPct = useEscala && m.ventasMes > 0
+                  ? Math.round(m.comision / m.ventasMes * 100) : null
                 return (
                   <tr key={es.id} onClick={() => setSelId(es.id)} style={{ cursor: 'pointer', background: selId === es.id ? 'rgba(200,161,74,0.06)' : undefined }}>
                     <td>
@@ -209,13 +289,19 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
                       </div>
                     </td>
                     <td className="num">{m.citas}</td>
-                    <td className="num" style={{ fontWeight: 600 }}>{mxn(m.ventas)}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>{mxn(ventasRef)}</td>
                     <td className="num gold-text" style={{ fontWeight: 600 }}>{mxn(m.comision)}</td>
                     <td>
-                      <div className="vc gap8">
-                        <div className="bar" style={{ width: 64 }}><span style={{ width: pct + '%' }}></span></div>
-                        <span className="num dim" style={{ fontSize: 11.5 }}>{pct}%</span>
-                      </div>
+                      {useEscala ? (
+                        <span className="badge neutral" style={{ fontSize: 10.5 }}>
+                          {efectivoPct != null ? `≈${efectivoPct}%` : 'Escala'}
+                        </span>
+                      ) : (
+                        <div className="vc gap8">
+                          <div className="bar" style={{ width: 64 }}><span style={{ width: pct + '%' }}></span></div>
+                          <span className="num dim" style={{ fontSize: 11.5 }}>{pct}%</span>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
@@ -234,8 +320,8 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
           <hr className="hr" />
           <div className="card-pad grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="kpi-mini"><span className="l">Citas atendidas</span><span className="v">{sel.citas}</span></div>
-            <div className="kpi-mini"><span className="l">Ventas generadas</span><span className="v">{mxn(sel.ventas)}</span></div>
-            <div className="kpi-mini"><span className="l">Comisión ({comPct}%)</span><span className="v gold-text">{mxn(sel.comision)}</span></div>
+            <div className="kpi-mini"><span className="l">{useEscala ? 'Ventas del mes' : 'Ventas generadas'}</span><span className="v">{mxn(useEscala ? sel.ventasMes : sel.ventas)}</span></div>
+            <div className="kpi-mini"><span className="l">{useEscala ? 'Comisión (mes)' : `Comisión (${comPct}%)`}</span><span className="v gold-text">{mxn(sel.comision)}</span></div>
             <div className="kpi-mini"><span className="l">Servicios asignados</span><span className="v">{servReal.length}</span></div>
           </div>
           <hr className="hr" />
@@ -260,6 +346,7 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
                 )
               })}
             </div>
+            {useEscala && <EscalaPanel ventasMes={sel.ventasMes} escala={escalaConfig} />}
             <button className="btn ghost w100 mt18" style={{ justifyContent: 'center' }} onClick={() => setEditor(e)}>
               <Ic n="sliders-horizontal" />Editar perfil y comisión
             </button>
