@@ -82,7 +82,7 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
       <div className="book-main" style={{ alignItems:'center', justifyContent:'center' }}>
         <div style={{ width:'100%', maxWidth:420 }}>
           <div className="eyebrow">Bienvenido de nuevo</div>
-          <h1 className="display" style={{ fontSize:28, margin:'8px 0 4px' }}>Inicia sesión</h1>
+          <h1 className="display" style={{ fontSize:28, margin:'8px 0 4px' }}>Inicia sesión - versión nueva</h1>
           <p className="muted" style={{ fontSize:13.5, marginBottom:26 }}>
             Ingresa tus credenciales para acceder al panel.
           </p>
