@@ -31,6 +31,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   const [showPw, setShowPw] = useState(false)
   const avatarRef = useRef<HTMLInputElement>(null)
   const [avatar, setAvatar] = useState(() => user.avatar || '')
+  const [saving, setSaving] = useState(false)
 
   const onAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -38,39 +39,82 @@ function AjustesPerfil({ user }: { user: Usuario }) {
     if (file.size > 8 * 1024 * 1024) { toast('La imagen debe pesar menos de 8 MB'); return }
     const preview = URL.createObjectURL(file)
     setAvatar(preview)
-    const url = await db.uploadMedia(`avatares/${user.id}`, file)
-    URL.revokeObjectURL(preview)
-    if (url) {
+    setSaving(true)
+    try {
+      const url = await db.uploadMedia(`avatares/${user.id}`, file)
+      URL.revokeObjectURL(preview)
+      if (!url) throw new Error('uploadMedia returned null')
+      const patch = { ...user, avatar: url }
+      const saved = await db.upsertUsuario(patch)
       setAvatar(url)
-      const updated = { ...user, avatar: url }
-      upsertUsuario(updated)
-      login(updated)
-    } else {
-      toast('Error al subir la foto — intenta de nuevo')
+      upsertUsuario(saved)
+      login(saved)
+      toast('Foto actualizada')
+    } catch (err) {
+      URL.revokeObjectURL(preview)
       setAvatar(user.avatar || '')
+      toast('Error al subir la foto — intenta de nuevo')
+      console.error('[avatar upload]', err)
+    } finally {
+      setSaving(false)
     }
   }
 
-  const guardar = () => {
-    if (!nombre.trim()) { toast('El nombre no puede estar vacío'); return }
-    const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
-    const updated = { ...user, nombre: nombre.trim(), tel, ini }
-    upsertUsuario(updated)
-    login(updated)
-    toast('Perfil actualizado')
+  const quitarAvatar = async () => {
+    setSaving(true)
+    try {
+      const patch = { ...user, avatar: undefined }
+      const saved = await db.upsertUsuario(patch)
+      setAvatar('')
+      upsertUsuario(saved)
+      login(saved)
+    } catch (err) {
+      toast('Error al quitar la foto — intenta de nuevo')
+      console.error('[avatar remove]', err)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const cambiarPw = () => {
+  const guardar = async () => {
+    if (!nombre.trim()) { toast('El nombre no puede estar vacío'); return }
+    setSaving(true)
+    try {
+      const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+      const patch = { ...user, nombre: nombre.trim(), tel, ini }
+      const saved = await db.upsertUsuario(patch)
+      upsertUsuario(saved)
+      login(saved)
+      toast('Perfil actualizado')
+    } catch (err) {
+      toast('Error al guardar — intenta de nuevo')
+      console.error('[guardar perfil]', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cambiarPw = async () => {
     if (!pwActual || !pwNueva || !pwConf) { toast('Completa todos los campos de contraseña'); return }
-    const correcta = user.pass || 'robsen2026'
-    if (pwActual !== correcta) { toast('La contraseña actual es incorrecta'); return }
     if (pwNueva.length < 8) { toast('La nueva contraseña debe tener al menos 8 caracteres'); return }
     if (pwNueva !== pwConf) { toast('Las contraseñas no coinciden'); return }
-    const updated = { ...user, pass: pwNueva }
-    upsertUsuario(updated)
-    login(updated)
-    toast('Contraseña actualizada correctamente')
-    setPwActual(''); setPwNueva(''); setPwConf('')
+    setSaving(true)
+    try {
+      const fresh = await db.getUsuarioById(user.id)
+      if (!fresh?.pass) { toast('No se pudo verificar la contraseña actual'); return }
+      if (pwActual !== fresh.pass) { toast('La contraseña actual es incorrecta'); return }
+      const patch = { ...user, pass: pwNueva }
+      const saved = await db.upsertUsuario(patch)
+      upsertUsuario(saved)
+      login(saved)
+      toast('Contraseña actualizada correctamente')
+      setPwActual(''); setPwNueva(''); setPwConf('')
+    } catch (err) {
+      toast('Error al actualizar contraseña — intenta de nuevo')
+      console.error('[cambiarPw]', err)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const rolBadgeClass: Record<string, string> = { admin: 'vip', gerente: 'pay', recepcion: 'conf', estilista: 'done' }
@@ -84,8 +128,8 @@ function AjustesPerfil({ user }: { user: Usuario }) {
             ? <img src={avatar} alt={user.ini} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--line)' }} />
             : <Avatar ini={user.ini} color={user.color} size="lg" />}
           <input ref={avatarRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={onAvatarFile} />
-          <button className="btn ghost sm" onClick={() => avatarRef.current?.click()}><Ic n="camera" />{avatar ? 'Cambiar foto' : 'Subir foto'}</button>
-          {avatar && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} onClick={() => { setAvatar(''); const u = { ...user, avatar: undefined }; upsertUsuario(u); login(u) }}><Ic n="trash" /></button>}
+          <button className="btn ghost sm" disabled={saving} onClick={() => avatarRef.current?.click()}><Ic n="camera" />{avatar ? 'Cambiar foto' : 'Subir foto'}</button>
+          {avatar && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} disabled={saving} onClick={quitarAvatar}><Ic n="trash" /></button>}
           <span className={'badge ' + (rolBadgeClass[user.rol] || 'neutral')} style={{ fontSize: 11.5 }}>{user.rol}</span>
         </div>
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -95,8 +139,8 @@ function AjustesPerfil({ user }: { user: Usuario }) {
           <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
         </div>
         <div className="vc gap8 mt14">
-          <button className="btn gold" onClick={guardar}><Ic n="check" />Guardar cambios</button>
-          <button className="btn ghost" onClick={() => { setNombre(user.nombre); setTel(user.tel || '') }}>Cancelar</button>
+          <button className="btn gold" disabled={saving} onClick={guardar}><Ic n={saving ? 'spinner' : 'check'} />{saving ? 'Guardando…' : 'Guardar cambios'}</button>
+          <button className="btn ghost" disabled={saving} onClick={() => { setNombre(user.nombre); setTel(user.tel || '') }}>Cancelar</button>
         </div>
       </div>
       <div className="card card-pad">
@@ -114,7 +158,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
           <div className="field"><label>Nueva contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwNueva} onChange={e => setPwNueva(e.target.value)} placeholder="Mín. 8 caracteres" /></div>
           <div className="field"><label>Confirmar contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwConf} onChange={e => setPwConf(e.target.value)} placeholder="••••••••" /></div>
         </div>
-        <button className="btn ghost sm mt14" onClick={cambiarPw}><Ic n="lock-key" />Actualizar contraseña</button>
+        <button className="btn ghost sm mt14" disabled={saving} onClick={cambiarPw}><Ic n={saving ? 'spinner' : 'lock-key'} />{saving ? 'Verificando…' : 'Actualizar contraseña'}</button>
       </div>
     </div>
   )
