@@ -170,7 +170,7 @@ function AppShell() {
             </>
           )}
           <div className="user-chip" onClick={() => setMenuOpen(v => !v)}>
-            <Avatar ini={user.ini} color={user.color} />
+            <Avatar ini={user.ini} color={user.color} src={user.avatar} />
             <div style={{ minWidth:0, flex:1 }}>
               <div style={{ fontWeight:600, fontSize:13 }}>{user.nombre}</div>
               <div className="dim" style={{ fontSize:11 }}>{rolData.nombre}</div>
