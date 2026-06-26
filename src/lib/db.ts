@@ -341,10 +341,21 @@ export const db = {
     if (error) console.error('[db.getUsuarios]', error.message)
     return (data ?? []) as Usuario[]
   },
-  async upsertUsuario(u: Usuario) {
-    if (!supabase) return
-    const { error } = await supabase.from('usuarios').upsert(u, { onConflict: 'id' })
-    if (error) console.error('[db.upsertUsuario]', error.message)
+  async getUsuarioById(id: string): Promise<Usuario | null> {
+    if (!supabase) return null
+    const { data, error } = await supabase.from('usuarios').select('*').eq('id', id).maybeSingle()
+    if (error) console.error('[db.getUsuarioById]', error.message)
+    return data as Usuario | null
+  },
+  async upsertUsuario(u: Usuario): Promise<Usuario> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase
+      .from('usuarios')
+      .upsert(u, { onConflict: 'id' })
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    return data as Usuario
   },
 
   // ─── Carga completa desde Supabase ────────────────────────────────────────
