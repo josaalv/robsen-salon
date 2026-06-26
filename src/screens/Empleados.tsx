@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef } from 'react'
 import { Avatar, CardHead, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, applyEscala } from '../lib/helpers'
+import { db } from '../lib/db'
 import type { EscalaTramo } from '../lib/helpers'
 import type { Estilista } from '../types'
 
@@ -15,11 +16,31 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
   const [rol, setRol] = useState(est.rol || '')
   const [color, setColor] = useState(est.color || COLORES[0])
   const [comPct, setComPct] = useState(est.com ?? 30)
+  const [foto, setFoto] = useState(est.foto || '')
+  const [bio, setBio] = useState(est.bio || '')
+  const [uploading, setUploading] = useState(false)
+  const fotoRef = useRef<HTMLInputElement>(null)
+
+  const onFotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const id = est.id || 'e' + Date.now()
+      const url = await db.uploadMedia(`estilistas/${id}`, file)
+      if (url) setFoto(url)
+      else toast('Error al subir la imagen')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
 
   const save = () => {
     const id = est.id || 'e' + Date.now()
     upsertEstilista({
-      id, nombre, rol, color, com: comPct,
+      ...est as Estilista,
+      id, nombre, rol, color, com: comPct, foto: foto || undefined, bio: bio || undefined,
       ini: nombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
     })
     toast(est.id ? 'Perfil actualizado' : 'Estilista agregada')
@@ -35,14 +56,44 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
   }
 
   return (
-    <Modal onClose={onClose} width={480}>
+    <Modal onClose={onClose} width={500}>
       <div className="card-head">
-        <div><div className="eyebrow">{est.id ? 'Editar' : 'Nueva'} estilista</div><h3 style={{ marginTop: 4 }}>Perfil y comisión</h3></div>
+        <div><div className="eyebrow">{est.id ? 'Editar' : 'Nueva'} estilista</div><h3 style={{ marginTop: 4 }}>Perfil público y comisión</h3></div>
         <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
       </div>
       <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* Foto */}
+        <div className="field">
+          <label>Foto de perfil <span className="muted" style={{ fontWeight: 400 }}>(visible en el sitio de agendamiento)</span></label>
+          <div className="vc gap12">
+            {foto
+              ? <img src={foto} alt={nombre} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--line)' }} />
+              : <div style={{ width: 64, height: 64, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: '#fff' }}>
+                  {nombre.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'}
+                </div>
+            }
+            <div className="vc gap8">
+              <input ref={fotoRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={onFotoFile} />
+              <button className="btn ghost sm" disabled={uploading} onClick={() => fotoRef.current?.click()}>
+                <Ic n="camera" />{uploading ? 'Subiendo…' : foto ? 'Cambiar foto' : 'Subir foto'}
+              </button>
+              {foto && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} onClick={() => setFoto('')}><Ic n="trash" /></button>}
+            </div>
+          </div>
+        </div>
+
         <div className="field"><label>Nombre completo</label><input className="input" value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej. Valeria Mendoza" /></div>
         <div className="field"><label>Especialidad / Rol</label><input className="input" value={rol} onChange={e => setRol(e.target.value)} placeholder="Ej. Color & Balayage" /></div>
+
+        {/* Bio */}
+        <div className="field">
+          <label>Descripción <span className="muted" style={{ fontWeight: 400 }}>(aparece en el perfil público)</span></label>
+          <textarea className="input" rows={3} value={bio} onChange={e => setBio(e.target.value)}
+            placeholder="Ej. Especialista en colorimetría con 8 años de experiencia. Me apasiona crear looks únicos para cada clienta."
+            style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }} />
+        </div>
+
         <div className="field">
           <label>Comisión base ({comPct}%)</label>
           <input className="input" type="number" min="0" max="100" value={comPct} onChange={e => setComPct(Number(e.target.value))} />
@@ -284,7 +335,10 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
                   <tr key={es.id} onClick={() => setSelId(es.id)} style={{ cursor: 'pointer', background: selId === es.id ? 'rgba(200,161,74,0.06)' : undefined }}>
                     <td>
                       <div className="cell-name">
-                        <Avatar ini={es.ini} color={es.color} size="sm" />
+                        {es.foto
+                          ? <img src={es.foto} alt={es.nombre} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          : <Avatar ini={es.ini} color={es.color} size="sm" />
+                        }
                         <div><div className="nm">{es.nombre}</div><div className="meta">{es.rol}</div></div>
                       </div>
                     </td>
@@ -313,9 +367,13 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
         {/* Detail panel */}
         <div className="card gold-edge" style={{ position: 'sticky', top: 92 }}>
           <div className="card-pad center" style={{ paddingBottom: 16 }}>
-            <Avatar ini={e.ini} color={e.color} size="lg" />
+            {e.foto
+              ? <img src={e.foto} alt={e.nombre} style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--line)' }} />
+              : <Avatar ini={e.ini} color={e.color} size="lg" />
+            }
             <h2 className="display" style={{ fontSize: 21, margin: '12px 0 4px' }}>{e.nombre}</h2>
             <div className="dim" style={{ fontSize: 12.5 }}>{e.rol}</div>
+            {e.bio && <p style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 10, lineHeight: 1.55, textAlign: 'center', maxWidth: 280 }}>{e.bio}</p>}
           </div>
           <hr className="hr" />
           <div className="card-pad grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16 }}>

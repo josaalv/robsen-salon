@@ -15,6 +15,8 @@ export interface Estilista {
   ini: string
   com?: number
   horarios?: boolean[]  // [Lun,Mar,Mié,Jue,Vie,Sáb,Dom]
+  foto?: string
+  bio?: string
 }
 
 export interface Servicio {
