@@ -1,14 +1,16 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef } from 'react'
 import { Avatar, Switch, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn } from '../lib/helpers'
 import type { Servicio, Estilista } from '../types'
+import * as XLSX from 'xlsx'
 
 export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => void }) {
   const [cat, setCat] = useState('Todos')
   const [q, setQ] = useState('')
   const [editor, setEditor] = useState<Partial<Servicio> | null>(null)
+  const [importando, setImportando] = useState(false)
   const { data, upsertServicio, deleteServicio } = useStore()
 
   const servicios = data.servicios
@@ -50,6 +52,9 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
             <Ic n="magnifying-glass" />
             <input placeholder="Buscar servicio…" value={q} onChange={e => setQ(e.target.value)} />
           </div>
+          <button className="btn ghost" onClick={() => setImportando(true)}>
+            <Ic n="upload-simple" />Importar
+          </button>
           <button className="btn gold" onClick={() => setEditor({})}>
             <Ic n="plus" />Nuevo servicio
           </button>
@@ -145,6 +150,18 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
         </div>
       )}
 
+      {importando && (
+        <ImportarServiciosModal
+          serviciosExistentes={servicios}
+          onImport={srvs => {
+            srvs.forEach(srv => upsertServicio(srv))
+            toast(`${srvs.length} servicio${srvs.length !== 1 ? 's' : ''} importado${srvs.length !== 1 ? 's' : ''}`)
+            setImportando(false)
+          }}
+          onClose={() => setImportando(false)}
+        />
+      )}
+
       {editor !== null && (
         <ServicioEditor
           s={editor}
@@ -176,6 +193,212 @@ interface ServicioEditorProps {
   onSave: (srv: Partial<Servicio> & { id: string }) => void
   onDelete: (id: string) => void
   onClose: () => void
+}
+
+// ─── ImportarServiciosModal ───────────────────────────────────────────────────
+
+function normalizeSrvHeader(h: string): string {
+  return h.toLowerCase().trim()
+    .replace(/categoría|categoria|category/i, 'cat')
+    .replace(/duración.*|duracion.*|duration.*|min.*/i, 'dur')
+    .replace(/precio.*venta.*|precio.*base.*|sale.*price.*/i, 'precio')
+    .replace(/reservar.*online|online|en.*línea/i, 'online')
+    .replace(/precio.*visible|mostrar.*precio/i, 'precioVisible')
+    .replace(/precio.*variable|variable/i, 'precioVariable')
+    .replace(/domicilio|a.*domicilio/i, 'domicilio')
+    .replace(/comisión.*valor|com.*valor|commission.*value/i, 'comValor')
+    .replace(/tipo.*comisión|tipo.*com|com.*tipo/i, 'comTipo')
+}
+
+interface ImportarServiciosModalProps {
+  serviciosExistentes: Servicio[]
+  onImport: (srvs: Servicio[]) => void
+  onClose: () => void
+}
+
+function ImportarServiciosModal({ serviciosExistentes, onImport, onClose }: ImportarServiciosModalProps) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [filas, setFilas] = useState<Record<string, string>[]>([])
+  const [errores, setErrores] = useState<string[]>([])
+  const [seleccion, setSeleccion] = useState<Set<number>>(new Set())
+  const [paso, setPaso] = useState<'subir' | 'preview'>('subir')
+
+  const leerArchivo = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const json: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        if (json.length === 0) { setErrores(['El archivo está vacío o no tiene datos.']); return }
+        const normalized = json.map(row => {
+          const nr: Record<string, string> = {}
+          Object.entries(row).forEach(([k, v]) => { nr[normalizeSrvHeader(k)] = String(v ?? '') })
+          return nr
+        })
+        const errs: string[] = []
+        if (!normalized[0].nombre) errs.push('No se encontró la columna "Nombre". Revisa los encabezados.')
+        setErrores(errs)
+        setFilas(normalized)
+        setSeleccion(new Set(normalized.map((_, i) => i)))
+        if (errs.length === 0) setPaso('preview')
+      } catch {
+        setErrores(['No se pudo leer el archivo. Asegúrate de que sea .xlsx o .csv válido.'])
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const parseBool = (v: string) => ['si', 'sí', 'yes', '1', 'true', 'x'].includes(v.toLowerCase().trim())
+
+  const nombreExistentes = new Set(serviciosExistentes.map(s => s.nombre.toLowerCase().trim()))
+
+  const confirmarImport = () => {
+    const srvs: Servicio[] = []
+    Array.from(seleccion).forEach(i => {
+      const r = filas[i]
+      const nombre = r.nombre?.trim()
+      if (!nombre) return
+      const existente = serviciosExistentes.find(s => s.nombre.toLowerCase().trim() === nombre.toLowerCase().trim())
+      srvs.push({
+        id: existente ? existente.id : ('s' + Date.now() + i),
+        nombre,
+        cat: r.cat?.trim() || 'General',
+        precio: parseFloat(r.precio) || 0,
+        dur: parseInt(r.dur) || 60,
+        anticipo: existente?.anticipo ?? false,
+        online: r.online ? parseBool(r.online) : (existente?.online ?? false),
+        prof: existente?.prof ?? [],
+        descripcion: r.descripcion?.trim() || existente?.descripcion,
+        precioVisible: r.precioVisible ? parseBool(r.precioVisible) : (existente?.precioVisible ?? true),
+        precioVariable: r.precioVariable ? parseBool(r.precioVariable) : (existente?.precioVariable ?? false),
+        domicilio: r.domicilio ? parseBool(r.domicilio) : (existente?.domicilio ?? false),
+        comValor: parseFloat(r.comValor) || existente?.comValor || 0,
+        comTipo: (r.comTipo?.toLowerCase().includes('valor') || r.comTipo?.toLowerCase().includes('fijo')) ? 'valor' : (existente?.comTipo ?? 'porcentaje'),
+      })
+    })
+    onImport(srvs)
+  }
+
+  const toggleFila = (i: number) => {
+    setSeleccion(s => { const ns = new Set(s); ns.has(i) ? ns.delete(i) : ns.add(i); return ns })
+  }
+
+  const nuevos = filas.filter((r, i) => seleccion.has(i) && r.nombre && !nombreExistentes.has(r.nombre.toLowerCase().trim())).length
+  const actualizaciones = filas.filter((r, i) => seleccion.has(i) && r.nombre && nombreExistentes.has(r.nombre.toLowerCase().trim())).length
+
+  return (
+    <Modal onClose={onClose} width={780}>
+      <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
+        <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Servicios</div>
+            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>Importar servicios</h3>
+          </div>
+          <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}><Ic n="x" /></button>
+        </div>
+
+        {paso === 'subir' ? (
+          <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) leerArchivo(f) }}
+              style={{ border: '2px dashed var(--line)', borderRadius: 12, padding: '40px 24px', textAlign: 'center', cursor: 'pointer', transition: 'border-color .2s' }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--line)')}
+            >
+              <div style={{ fontSize: 36, color: 'var(--gold)', marginBottom: 12 }}><Ic n="file-xls" /></div>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Arrastra tu archivo aquí o haz clic para seleccionar</div>
+              <div className="muted" style={{ fontSize: 12.5 }}>Formatos soportados: .xlsx, .xls, .csv</div>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) leerArchivo(f); e.target.value = '' }} />
+            </div>
+
+            {errores.length > 0 && (
+              <div style={{ background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 8, padding: '12px 14px' }}>
+                {errores.map((e, i) => <div key={i} style={{ fontSize: 13, color: 'var(--st-canc)' }}>⚠ {e}</div>)}
+              </div>
+            )}
+
+            <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '14px 16px' }}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Columnas que se reconocen</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {['nombre *', 'cat / categoría', 'precio', 'dur / duración', 'descripcion', 'online', 'precioVisible', 'precioVariable', 'domicilio', 'comValor', 'comTipo'].map(c => (
+                  <span key={c} className="chip" style={{ fontSize: 11.5 }}>{c}</span>
+                ))}
+              </div>
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
+                * Obligatorio. Si el nombre coincide con uno existente, se actualiza el servicio. Las columnas extra se ignoran.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="card-pad vc gap16" style={{ borderBottom: '1px solid var(--line-soft)', flexWrap: 'wrap' }}>
+              <div className="vc gap8">
+                <span className="badge conf">{nuevos} nuevos</span>
+                {actualizaciones > 0 && <span className="badge pend">{actualizaciones} a actualizar</span>}
+                <span className="muted" style={{ fontSize: 12 }}>{seleccion.size} de {filas.length} seleccionados</span>
+              </div>
+              <div className="vc gap8" style={{ marginLeft: 'auto' }}>
+                <button className="chip" style={{ fontSize: 11.5 }} onClick={() => setSeleccion(new Set(filas.map((_, i) => i)))}>Todos</button>
+                <button className="chip" style={{ fontSize: 11.5 }} onClick={() => setSeleccion(new Set())}>Ninguno</button>
+                <button className="btn ghost sm" onClick={() => { setPaso('subir'); setFilas([]); setErrores([]) }}>
+                  <Ic n="arrow-left" size={13} />Cambiar archivo
+                </button>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto', maxHeight: '45vh' }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 36 }}></th>
+                    <th>Nombre</th>
+                    <th>Categoría</th>
+                    <th className="num">Precio</th>
+                    <th className="num">Dur.</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((r, i) => {
+                    const checked = seleccion.has(i)
+                    const esActualizacion = r.nombre && nombreExistentes.has(r.nombre.toLowerCase().trim())
+                    const sinNombre = !r.nombre?.trim()
+                    return (
+                      <tr key={i} style={{ opacity: sinNombre ? 0.4 : 1, cursor: sinNombre ? 'default' : 'pointer' }}
+                        onClick={() => !sinNombre && toggleFila(i)}>
+                        <td><input type="checkbox" checked={checked} disabled={sinNombre} readOnly style={{ accentColor: 'var(--gold)' }} /></td>
+                        <td style={{ fontWeight: 600, fontSize: 13 }}>{r.nombre || <span className="dim">—</span>}</td>
+                        <td style={{ fontSize: 12 }}>{r.cat || '—'}</td>
+                        <td className="num" style={{ fontSize: 12 }}>{r.precio ? `$${parseFloat(r.precio).toLocaleString()}` : '—'}</td>
+                        <td className="num" style={{ fontSize: 12 }}>{r.dur ? `${r.dur} min` : '—'}</td>
+                        <td>
+                          {esActualizacion
+                            ? <span className="badge pend">Actualizar</span>
+                            : <span className="badge conf">Nuevo</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="between card-pad" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 16 }}>
+              <button className="btn ghost" onClick={onClose}>Cancelar</button>
+              <button className="btn gold" disabled={seleccion.size === 0} onClick={confirmarImport}>
+                <Ic n="check" />Importar {seleccion.size} servicio{seleccion.size !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
 }
 
 function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, onClose }: ServicioEditorProps) {
