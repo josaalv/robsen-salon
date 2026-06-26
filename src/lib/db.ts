@@ -124,7 +124,7 @@ export const db = {
     const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true })
     if (error) { console.error('[storage.upload]', path, error.message); return null }
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
-    return data.publicUrl
+    return `${data.publicUrl}?t=${Date.now()}`
   },
 
   async deleteMedia(paths: string[]): Promise<void> {
@@ -352,6 +352,17 @@ export const db = {
     const { data, error } = await supabase
       .from('usuarios')
       .upsert(u, { onConflict: 'id' })
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    return data as Usuario
+  },
+  async clearUsuarioAvatar(id: string): Promise<Usuario> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase
+      .from('usuarios')
+      .update({ avatar: null })
+      .eq('id', id)
       .select()
       .single()
     if (error) throw new Error(error.message)
