@@ -104,10 +104,12 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
           body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
         }
       )
-      if (!res.ok) throw new Error('Error del servidor')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
       setForgotSent(true)
-    } catch {
-      setError('No se pudo enviar el correo. Intenta más tarde.')
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(`Error: ${msg}`)
     } finally {
       setLoading(false)
     }
