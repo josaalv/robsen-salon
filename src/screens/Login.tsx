@@ -43,12 +43,21 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
     }
   }, [])
 
-  useEffect(() => {
+  const cargarUsuarios = () => {
     if (!hasSupabase) { setCargando(false); return }
-    db.getUsuarios()
-      .then(list => setUsuarios(list.filter(u => u.activo)))
-      .catch(() => setError('No se pudo cargar los perfiles. Intenta de nuevo.'))
+    setCargando(true); setError('')
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 10000)
+    )
+    Promise.race([db.getUsuarios(), timeout])
+      .then((list: any) => setUsuarios((list as typeof usuarios).filter(u => u.activo)))
+      .catch(() => setError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.'))
       .finally(() => setCargando(false))
+  }
+
+  useEffect(() => {
+    cargarUsuarios()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -144,7 +153,7 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
           <div style={{ fontSize:10, letterSpacing:'.38em', textTransform:'uppercase', color:'var(--text-3)', marginTop:8 }}>
             Salón &amp; Spa · Sistema interno
           </div>
-          <div style={{ fontSize:9, color:'var(--text-3)', opacity:0.45, marginTop:4, letterSpacing:'.06em' }}>v1.02</div>
+          <div style={{ fontSize:9, color:'var(--text-3)', opacity:0.45, marginTop:4, letterSpacing:'.06em' }}>v1.03</div>
           <div style={{ marginTop:'auto' }}>
             <h2 className="display" style={{ fontSize:32, lineHeight:1.14 }}>
               El control total<br />de tu salón,<br />
@@ -271,11 +280,14 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
                 </button>
               </div>
 
-              {error && <ErrorBox msg={error} />}
-
               {cargando ? (
                 <div className="vc" style={{ gap:10, color:'var(--text-3)', fontSize:13, justifyContent:'center', padding:'32px 0' }}>
                   <Ic n="spinner" /> Cargando perfiles…
+                </div>
+              ) : error ? (
+                <div style={{ textAlign:'center', padding:'24px 0' }}>
+                  <div style={{ color:'var(--st-canc)', fontSize:13, marginBottom:14 }}>{error}</div>
+                  <button className="btn ghost" onClick={cargarUsuarios}><Ic n="arrows-clockwise" />Reintentar</button>
                 </div>
               ) : (
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:12 }}>

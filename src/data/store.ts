@@ -123,7 +123,7 @@ export const useStore = create<Store>()(
       updateConfig: (patch) => {
         set(s => ({ data: { ...s.data, config: { ...s.data.config, ...patch } } }))
         const cfg = get().data.config
-        db.saveConfig(cfg).catch(() => {})
+        db.saveConfig(cfg).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertCita: (cita) => {
@@ -137,12 +137,12 @@ export const useStore = create<Store>()(
             : [...hoy, merged].sort((a, b) => a.h.localeCompare(b.h))
           return { data: { ...s.data, hoy: newHoy } }
         })
-        db.upsertCita(merged!).catch(() => {})
+        db.upsertCita(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteCita: (id) => {
         set(s => ({ data: { ...s.data, hoy: s.data.hoy.filter(c => c.id !== id) } }))
-        db.deleteCita(id).catch(() => {})
+        db.deleteCita(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertCitaFutura: (cita) => {
@@ -159,12 +159,12 @@ export const useStore = create<Store>()(
               })
           return { data: { ...s.data, citasFuturas: newFuturas } }
         })
-        db.upsertCita(merged!).catch(() => {})
+        db.upsertCita(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteCitaFutura: (id) => {
         set(s => ({ data: { ...s.data, citasFuturas: (s.data.citasFuturas || []).filter(c => c.id !== id) } }))
-        db.deleteCita(id).catch(() => {})
+        db.deleteCita(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertClienta: (c) => {
@@ -178,12 +178,12 @@ export const useStore = create<Store>()(
             : [...clientas, merged]
           return { data: { ...s.data, clientas: newClientas } }
         })
-        db.upsertClienta(merged!).catch(() => {})
+        db.upsertClienta(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteClienta: (id) => {
         set(s => ({ data: { ...s.data, clientas: s.data.clientas.filter(c => c.id !== id) } }))
-        db.deleteClienta(id).catch(() => {})
+        db.deleteClienta(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertServicio: (srv) => {
@@ -197,12 +197,12 @@ export const useStore = create<Store>()(
             : [...servicios, merged]
           return { data: { ...s.data, servicios: newSrv } }
         })
-        db.upsertServicio(merged!).catch(() => {})
+        db.upsertServicio(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteServicio: (id) => {
         set(s => ({ data: { ...s.data, servicios: s.data.servicios.filter(x => x.id !== id) } }))
-        db.deleteServicio(id).catch(() => {})
+        db.deleteServicio(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertProducto: (p) => {
@@ -216,12 +216,12 @@ export const useStore = create<Store>()(
             : [...productos, merged]
           return { data: { ...s.data, productos: newP } }
         })
-        db.upsertProducto(merged!).catch(() => {})
+        db.upsertProducto(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteProducto: (id) => {
         set(s => ({ data: { ...s.data, productos: s.data.productos.filter(x => x.id !== id) } }))
-        db.deleteProducto(id).catch(() => {})
+        db.deleteProducto(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertEstilista: (e) => {
@@ -235,12 +235,12 @@ export const useStore = create<Store>()(
             : [...estilistas, merged]
           return { data: { ...s.data, estilistas: newE } }
         })
-        db.upsertEstilista(merged!).catch(() => {})
+        db.upsertEstilista(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteEstilista: (id) => {
         set(s => ({ data: { ...s.data, estilistas: s.data.estilistas.filter(x => x.id !== id) } }))
-        db.deleteEstilista(id).catch(() => {})
+        db.deleteEstilista(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       addVenta: (v) => {
@@ -315,15 +315,15 @@ export const useStore = create<Store>()(
         })
 
         // Supabase sync (fire-and-forget)
-        db.addVenta(v).catch(() => {})
-        syncProductos.forEach(p => db.upsertProducto(p).catch(() => {}))
-        if (syncClienta) db.upsertClienta(syncClienta).catch(() => {})
-        syncMovs.forEach(m => db.addMovimiento(m).catch(() => {}))
+        db.addVenta(v).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        syncProductos.forEach(p => db.upsertProducto(p).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') }))
+        if (syncClienta) db.upsertClienta(syncClienta).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        syncMovs.forEach(m => db.addMovimiento(m).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') }))
       },
 
       updateVenta: (id, patch) => {
         set(s => ({ data: { ...s.data, ventas: s.data.ventas.map(v => v.id === id ? { ...v, ...patch } : v) } }))
-        db.updateVenta(id, patch).catch(() => {})
+        db.updateVenta(id, patch).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertUsuario: (u) => {
@@ -337,7 +337,7 @@ export const useStore = create<Store>()(
             : [...usuarios, merged]
           return { data: { ...s.data, usuarios: newU } }
         })
-        db.upsertUsuario(merged!).catch(() => {})
+        db.upsertUsuario(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertPlantilla: (p) => {
@@ -351,7 +351,7 @@ export const useStore = create<Store>()(
             : [...plantillas, merged]
           return { data: { ...s.data, plantillas: newP } }
         })
-        db.upsertPlantilla(merged!).catch(() => {})
+        db.upsertPlantilla(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       upsertBloqueo: (b) => {
@@ -363,22 +363,22 @@ export const useStore = create<Store>()(
             : [...bloqueos, b]
           return { data: { ...s.data, bloqueos: newBloqueos } }
         })
-        db.upsertBloqueo(b).catch(() => {})
+        db.upsertBloqueo(b).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteBloqueo: (id) => {
         set(s => ({ data: { ...s.data, bloqueos: (s.data.bloqueos || []).filter(b => b.id !== id) } }))
-        db.deleteBloqueo(id).catch(() => {})
+        db.deleteBloqueo(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       addGasto: (g) => {
         set(s => ({ data: { ...s.data, gastos: [...(s.data.gastos || []), g] } }))
-        db.upsertGasto(g).catch(() => {})
+        db.upsertGasto(g).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       deleteGasto: (id) => {
         set(s => ({ data: { ...s.data, gastos: (s.data.gastos || []).filter(g => g.id !== id) } }))
-        db.deleteGasto(id).catch(() => {})
+        db.deleteGasto(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
       },
 
       ajustarStock: (productoId, cant, motivo) => {
@@ -406,8 +406,8 @@ export const useStore = create<Store>()(
           }
         })
 
-        if (syncProd) db.upsertProducto(syncProd).catch(() => {})
-        syncMov.forEach(m => db.addMovimiento(m).catch(() => {}))
+        if (syncProd) db.upsertProducto(syncProd).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        syncMov.forEach(m => db.addMovimiento(m).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') }))
       },
 
       venderProducto: (productoId, cant, clienta, pago, estId) => {

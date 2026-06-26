@@ -1,10 +1,29 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, Component } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
 import { PhosphorIcon as Ic } from './components/PhosphorIcon'
 import { Avatar, ToastHost, toast } from './components/ui'
 import { useStore } from './data/store'
 import { usuarios, roles } from './data/mockData'
+import { hasSupabase } from './lib/supabase'
 import type { NavGroup } from './types'
+
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  constructor(props: any) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(e: Error) { return { error: e } }
+  render() {
+    if (this.state.error) return (
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', gap:16, color:'var(--text-3)', padding:24 }}>
+        <Ic n="warning-circle" size={48} />
+        <div style={{ fontWeight:600, fontSize:16, color:'var(--text)' }}>Algo salió mal</div>
+        <div style={{ fontSize:13, maxWidth:380, textAlign:'center' }}>{this.state.error.message}</div>
+        <button className="btn gold" onClick={() => window.location.reload()}>
+          <Ic n="arrows-clockwise" />Recargar la página
+        </button>
+      </div>
+    )
+    return this.props.children
+  }
+}
 
 const NAV: NavGroup[] = [
   { grupo: 'Principal', items: [
@@ -138,7 +157,10 @@ function AppShell() {
             ? <img src={logo} alt={data.config?.nombre || 'Robsen'} className="brand-logo-img" />
             : <div className="logo">{data.config?.nombre || 'Robsen'}</div>}
           <div className="sub">Salón &amp; Spa · Interno</div>
-          <div style={{ fontSize:10, color:'var(--text-3)', opacity:0.5, marginTop:2, letterSpacing:'.04em' }}>v1.01</div>
+          <div style={{ fontSize:10, color:'var(--text-3)', opacity:0.5, marginTop:2, letterSpacing:'.04em' }}>v1.03</div>
+          {!hasSupabase && (
+            <div style={{ fontSize:10, color:'var(--st-canc)', marginTop:2 }}>⚠ Sin BD</div>
+          )}
         </div>
         <nav className="nav">
           {NAV.map(g => {
@@ -414,7 +436,15 @@ function LoginGate() {
   const [LoginScreen, setLoginScreen] = useState<React.ComponentType<any> | null>(null)
 
   useEffect(() => {
-    import('./screens/Login').then(m => setLoginScreen(() => m.ScreenLogin))
+    import('./screens/Login')
+      .then(m => setLoginScreen(() => m.ScreenLogin))
+      .catch(() => setLoginScreen(() => () => (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', gap:16, color:'var(--text-3)' }}>
+          <Ic n="warning-circle" size={40} />
+          <div style={{ fontWeight:600 }}>Error al cargar la pantalla de acceso</div>
+          <button className="btn gold" onClick={() => window.location.reload()}><Ic n="arrows-clockwise" />Reintentar</button>
+        </div>
+      )))
   }, [])
 
   if (user) return <AppShell />
@@ -424,8 +454,10 @@ function LoginGate() {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <LoginGate />
     </AuthProvider>
+    </ErrorBoundary>
   )
 }
