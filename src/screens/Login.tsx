@@ -9,15 +9,39 @@ const ROL_LABEL: Record<string, string> = {
   recepcion: 'Recepción', estilista: 'Estilista',
 }
 
+type Step = 'picker' | 'password' | 'forgot' | 'reset'
+
 export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
   const [usuarios, setUsuarios]   = useState<Usuario[]>([])
   const [cargando, setCargando]   = useState(true)
+  const [step, setStep]           = useState<Step>('picker')
   const [selected, setSelected]   = useState<Usuario | null>(null)
   const [pass, setPass]           = useState('')
   const [ver, setVer]             = useState(false)
   const [error, setError]         = useState('')
   const [loading, setLoading]     = useState(false)
   const passRef = useRef<HTMLInputElement>(null)
+
+  const [searchQ, setSearchQ]       = useState('')
+  const [searching, setSearching]   = useState(false)
+
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotSent, setForgotSent]   = useState(false)
+
+  const [resetToken, setResetToken] = useState('')
+  const [resetPass, setResetPass]   = useState('')
+  const [resetConf, setResetConf]   = useState('')
+  const [resetOk, setResetOk]       = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('reset')
+    if (token) {
+      setResetToken(token)
+      setStep('reset')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
 
   useEffect(() => {
     if (!hasSupabase) { setCargando(false); return }
@@ -27,13 +51,28 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
       .finally(() => setCargando(false))
   }, [])
 
-  // Enfocar contraseña al seleccionar perfil
   useEffect(() => {
-    if (selected) {
+    if (step === 'password' && selected) {
       setPass(''); setError(''); setVer(false)
       setTimeout(() => passRef.current?.focus(), 80)
     }
-  }, [selected])
+  }, [step, selected])
+
+  const seleccionar = (u: Usuario) => { setSelected(u); setStep('password') }
+
+  const buscarPorContacto = async () => {
+    if (!searchQ.trim()) return
+    setSearching(true); setError('')
+    try {
+      const u = await db.getUsuarioByEmailOrTel(searchQ.trim())
+      if (!u) { setError('No se encontró ningún usuario con ese correo o teléfono.'); return }
+      seleccionar(u)
+    } catch {
+      setError('Error al buscar. Intenta de nuevo.')
+    } finally {
+      setSearching(false)
+    }
+  }
 
   const entrar = async () => {
     if (!selected) return
@@ -45,6 +84,46 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
         return
       }
       onLogin(selected)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const enviarRecuperacion = async () => {
+    if (!forgotEmail.trim()) { setError('Ingresa tu correo electrónico.'); return }
+    setLoading(true); setError('')
+    try {
+      const res = await fetch(
+        'https://pkpwrifwrntjztprwcwp.supabase.co/functions/v1/send-reset-email',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
+          },
+          body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+        }
+      )
+      if (!res.ok) throw new Error('Error del servidor')
+      setForgotSent(true)
+    } catch {
+      setError('No se pudo enviar el correo. Intenta más tarde.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resetearPass = async () => {
+    if (!resetPass || !resetConf) { setError('Completa ambos campos.'); return }
+    if (resetPass.length < 8) { setError('La contraseña debe tener al menos 8 caracteres.'); return }
+    if (resetPass !== resetConf) { setError('Las contraseñas no coinciden.'); return }
+    setLoading(true); setError('')
+    try {
+      const ok = await db.consumeResetToken(resetToken, resetPass)
+      if (!ok) { setError('El enlace ya fue usado o expiró. Solicita uno nuevo.'); return }
+      setResetOk(true)
+    } catch {
+      setError('Error al cambiar la contraseña. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }
@@ -63,7 +142,6 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
           <div style={{ fontSize:10, letterSpacing:'.38em', textTransform:'uppercase', color:'var(--text-3)', marginTop:8 }}>
             Salón &amp; Spa · Sistema interno
           </div>
-
           <div style={{ marginTop:'auto' }}>
             <h2 className="display" style={{ fontSize:32, lineHeight:1.14 }}>
               El control total<br />de tu salón,<br />
@@ -73,7 +151,6 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
               Agenda, clientas, finanzas y seguimiento por WhatsApp. Cada miembro del equipo accede sólo a lo que necesita según su rol.
             </p>
           </div>
-
           <div style={{ marginTop:32, display:'flex', gap:22, position:'relative', zIndex:1 }}>
             {([['lock-key','Acceso por roles'],['shield-check','Datos protegidos'],['users-three','Equipo']] as [string,string][]).map(([ic, t]) => (
               <div key={t} className="vc gap8" style={{ fontSize:11.5, color:'var(--text-3)' }}>
@@ -88,13 +165,83 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
       <div className="book-main" style={{ alignItems:'center', justifyContent:'center' }}>
         <div style={{ width:'100%', maxWidth:460 }}>
 
-          {!selected ? (
-            /* ── PASO 1: elegir perfil ── */
+          {/* ── RESET desde link de email ── */}
+          {step === 'reset' && (
+            <>
+              <div className="eyebrow">Nueva contraseña</div>
+              <h1 className="display" style={{ fontSize:28, margin:'8px 0 18px' }}>Restablecer contraseña</h1>
+              {resetOk ? (
+                <div style={{ background:'rgba(80,180,80,0.1)', border:'1px solid rgba(80,180,80,0.3)', borderRadius:8, padding:'14px 16px', fontSize:13.5, color:'#6fcf6f', display:'flex', gap:8, alignItems:'center', marginBottom:20 }}>
+                  <Ic n="check-circle" /> Contraseña actualizada. Ahora puedes iniciar sesión.
+                </div>
+              ) : (
+                <>
+                  <div className="field" style={{ marginBottom:12 }}>
+                    <label>Nueva contraseña</label>
+                    <div className="search" style={{ width:'100%', borderRadius:'var(--r-sm)', padding:'11px 14px' }}>
+                      <Ic n="lock-simple" />
+                      <input type="password" value={resetPass} onChange={e => { setResetPass(e.target.value); setError('') }} placeholder="Mínimo 8 caracteres" disabled={loading} autoFocus />
+                    </div>
+                  </div>
+                  <div className="field" style={{ marginBottom:14 }}>
+                    <label>Confirmar contraseña</label>
+                    <div className="search" style={{ width:'100%', borderRadius:'var(--r-sm)', padding:'11px 14px' }}>
+                      <Ic n="lock-simple" />
+                      <input type="password" value={resetConf} onChange={e => { setResetConf(e.target.value); setError('') }} placeholder="Repite la contraseña" disabled={loading} onKeyDown={e => e.key === 'Enter' && resetearPass()} />
+                    </div>
+                  </div>
+                  {error && <ErrorBox msg={error} />}
+                  <button className="btn gold w100" style={{ justifyContent:'center', padding:'13px' }} onClick={resetearPass} disabled={loading}>
+                    {loading ? <><Ic n="spinner" />Guardando…</> : <><Ic n="check" />Guardar contraseña</>}
+                  </button>
+                </>
+              )}
+              <button onClick={() => setStep('picker')} style={{ marginTop:16, background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'flex', alignItems:'center', gap:6, padding:0 }}>
+                <Ic n="arrow-left" /> Volver al inicio
+              </button>
+            </>
+          )}
+
+          {/* ── RECUPERAR CONTRASEÑA ── */}
+          {step === 'forgot' && (
+            <>
+              <button onClick={() => { setStep('picker'); setForgotEmail(''); setForgotSent(false); setError('') }} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'flex', alignItems:'center', gap:6, marginBottom:24, padding:0 }}>
+                <Ic n="arrow-left" /> Volver
+              </button>
+              <div className="eyebrow">Acceso</div>
+              <h1 className="display" style={{ fontSize:28, margin:'8px 0 6px' }}>Recuperar contraseña</h1>
+              <p className="muted" style={{ fontSize:13.5, marginBottom:22 }}>
+                Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.
+              </p>
+              {forgotSent ? (
+                <div style={{ background:'rgba(80,180,80,0.1)', border:'1px solid rgba(80,180,80,0.3)', borderRadius:8, padding:'14px 16px', fontSize:13.5, color:'#6fcf6f', display:'flex', gap:8, alignItems:'center' }}>
+                  <Ic n="check-circle" /> Revisa tu correo. Si el email está registrado, recibirás el enlace en breve.
+                </div>
+              ) : (
+                <>
+                  <div className="field" style={{ marginBottom:12 }}>
+                    <label>Correo electrónico</label>
+                    <div className="search" style={{ width:'100%', borderRadius:'var(--r-sm)', padding:'11px 14px' }}>
+                      <Ic n="envelope-simple" />
+                      <input type="email" value={forgotEmail} onChange={e => { setForgotEmail(e.target.value); setError('') }} placeholder="tu@correo.com" disabled={loading} autoFocus onKeyDown={e => e.key === 'Enter' && enviarRecuperacion()} />
+                    </div>
+                  </div>
+                  {error && <ErrorBox msg={error} />}
+                  <button className="btn gold w100" style={{ justifyContent:'center', padding:'13px' }} onClick={enviarRecuperacion} disabled={loading}>
+                    {loading ? <><Ic n="spinner" />Enviando…</> : <><Ic n="paper-plane-tilt" />Enviar enlace</>}
+                  </button>
+                </>
+              )}
+            </>
+          )}
+
+          {/* ── PASO 1: selector de perfiles ── */}
+          {step === 'picker' && (
             <>
               <div className="eyebrow">Bienvenido de nuevo</div>
               <h1 className="display" style={{ fontSize:28, margin:'8px 0 4px' }}>¿Quién eres?</h1>
-              <p className="muted" style={{ fontSize:13.5, marginBottom:26 }}>
-                Selecciona tu perfil para continuar.
+              <p className="muted" style={{ fontSize:13.5, marginBottom:18 }}>
+                Selecciona tu perfil o búscate por correo / teléfono.
               </p>
 
               {!hasSupabase && (
@@ -103,20 +250,36 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
                 </div>
               )}
 
+              {/* Buscador por correo o teléfono */}
+              <div style={{ display:'flex', gap:8, marginBottom:20 }}>
+                <div className="search" style={{ flex:1, borderRadius:'var(--r-sm)', padding:'9px 12px' }}>
+                  <Ic n="magnifying-glass" />
+                  <input
+                    type="text"
+                    value={searchQ}
+                    onChange={e => { setSearchQ(e.target.value); setError('') }}
+                    placeholder="Buscar por correo o teléfono…"
+                    disabled={searching}
+                    onKeyDown={e => e.key === 'Enter' && buscarPorContacto()}
+                  />
+                </div>
+                <button className="btn ghost" style={{ padding:'9px 14px', whiteSpace:'nowrap' }} onClick={buscarPorContacto} disabled={searching || !searchQ.trim()}>
+                  {searching ? <Ic n="spinner" /> : 'Buscar'}
+                </button>
+              </div>
+
+              {error && <ErrorBox msg={error} />}
+
               {cargando ? (
                 <div className="vc" style={{ gap:10, color:'var(--text-3)', fontSize:13, justifyContent:'center', padding:'32px 0' }}>
                   <Ic n="spinner" /> Cargando perfiles…
-                </div>
-              ) : error ? (
-                <div style={{ background:'rgba(220,80,80,0.1)', border:'1px solid rgba(220,80,80,0.3)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'var(--st-canc)', display:'flex', gap:8, alignItems:'center' }}>
-                  <Ic n="warning-circle" /> {error}
                 </div>
               ) : (
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:12 }}>
                   {usuarios.map(u => (
                     <button
                       key={u.id}
-                      onClick={() => setSelected(u)}
+                      onClick={() => seleccionar(u)}
                       style={{
                         background:'var(--surface-2)', border:'1px solid var(--line-soft)',
                         borderRadius:14, padding:'20px 14px 16px', cursor:'pointer',
@@ -142,12 +305,14 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
                 </div>
               )}
             </>
-          ) : (
-            /* ── PASO 2: contraseña ── */
+          )}
+
+          {/* ── PASO 2: contraseña ── */}
+          {step === 'password' && selected && (
             <>
               {/* Avatar + nombre seleccionado */}
               <button
-                onClick={() => setSelected(null)}
+                onClick={() => { setStep('picker'); setSelected(null) }}
                 style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'flex', alignItems:'center', gap:6, marginBottom:24, padding:0 }}
               >
                 <Ic n="arrow-left" /> Cambiar perfil
@@ -194,11 +359,7 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
                   </div>
                 </div>
 
-                {error && (
-                  <div style={{ background:'rgba(220,80,80,0.1)', border:'1px solid rgba(220,80,80,0.3)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'var(--st-canc)', marginBottom:14, display:'flex', gap:8, alignItems:'center' }}>
-                    <Ic n="warning-circle" /> {error}
-                  </div>
-                )}
+                {error && <ErrorBox msg={error} />}
 
                 <button
                   type="submit"
@@ -210,11 +371,28 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
                     ? <><Ic n="spinner" />Verificando…</>
                     : <><Ic n="sign-in" />Entrar</>}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setStep('forgot'); setError('') }}
+                  style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, marginTop:14, display:'block', textAlign:'center', width:'100%' }}
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
               </form>
             </>
           )}
+
         </div>
       </div>
+    </div>
+  )
+}
+
+function ErrorBox({ msg }: { msg: string }) {
+  return (
+    <div style={{ background:'rgba(220,80,80,0.1)', border:'1px solid rgba(220,80,80,0.3)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'var(--st-canc)', marginBottom:14, display:'flex', gap:8, alignItems:'center' }}>
+      <Ic n="warning-circle" /> {msg}
     </div>
   )
 }

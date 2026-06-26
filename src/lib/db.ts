@@ -357,6 +357,42 @@ export const db = {
     if (error) throw new Error(error.message)
     return data as Usuario
   },
+  async getUsuarioByEmailOrTel(query: string): Promise<Usuario | null> {
+    if (!supabase) return null
+    const q = query.toLowerCase().trim()
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .or(`email.eq.${q},tel.eq.${q}`)
+      .eq('activo', true)
+      .maybeSingle()
+    if (error) console.error('[db.getUsuarioByEmailOrTel]', error.message)
+    return data as Usuario | null
+  },
+  async validateResetToken(token: string): Promise<{ valid: boolean; usuarioId?: string }> {
+    if (!supabase) return { valid: false }
+    const { data, error } = await supabase
+      .from('reset_tokens')
+      .select('*')
+      .eq('token', token)
+      .eq('used', false)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
+    if (error || !data) return { valid: false }
+    return { valid: true, usuarioId: data.usuario_id }
+  },
+  async consumeResetToken(token: string, newPass: string): Promise<boolean> {
+    if (!supabase) return false
+    const check = await db.validateResetToken(token)
+    if (!check.valid || !check.usuarioId) return false
+    const { error: uErr } = await supabase
+      .from('usuarios')
+      .update({ pass: newPass })
+      .eq('id', check.usuarioId)
+    if (uErr) return false
+    await supabase.from('reset_tokens').update({ used: true }).eq('token', token)
+    return true
+  },
   async clearUsuarioAvatar(id: string): Promise<Usuario> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { data, error } = await supabase
