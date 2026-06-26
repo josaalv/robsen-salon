@@ -92,16 +92,23 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
               </div>
               <div>
                 <h3 className="serif" style={{ fontSize: 19, margin: 0, fontWeight: 600 }}>{s.nombre}</h3>
-                <div className="vc gap16 mt10" style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
+                {s.descripcion && (
+                  <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '6px 0 0', lineHeight: 1.5,
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {s.descripcion}
+                  </p>
+                )}
+                <div className="vc gap12 mt10" style={{ fontSize: 12, color: 'var(--text-3)', flexWrap: 'wrap' }}>
                   <span className="vc" style={{ gap: 5 }}><Ic n="clock" />{s.dur} min</span>
                   <span className="vc" style={{ gap: 5, color: '#B08AC7' }}>
-                    <Ic n="users-three" />Com. {comPct}%
+                    <Ic n="users-three" />
+                    {s.comValor && s.comValor > 0
+                      ? s.comTipo === 'valor' ? `Com. ${mxn(s.comValor)}` : `Com. ${s.comValor}%`
+                      : `Com. ${comPct}%`}
                   </span>
-                  {s.anticipo && (
-                    <span className="vc" style={{ gap: 5, color: 'var(--gold)' }}>
-                      <Ic n="hand-coins" />Anticipo {anticipoPct}%
-                    </span>
-                  )}
+                  {s.anticipo && <span className="vc" style={{ gap: 5, color: 'var(--gold)' }}><Ic n="hand-coins" />Anticipo {anticipoPct}%</span>}
+                  {s.domicilio && <span className="vc" style={{ gap: 5, color: 'var(--st-conf)' }}><Ic n="house" />Domicilio</span>}
+                  {s.precioVariable && <span className="vc" style={{ gap: 5, color: 'var(--text-4)' }}><Ic n="arrows-out" />Precio variable</span>}
                 </div>
               </div>
               {stats.veces > 0 && (
@@ -122,8 +129,8 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
                     {profs.length} estilista{profs.length !== 1 ? 's' : ''}
                   </span>
                 </div>
-                <div className="num gold-text" style={{ fontFamily: 'var(--serif)', fontSize: 23, fontWeight: 600 }}>
-                  {mxn(s.precio)}
+                <div className="num gold-text" style={{ fontFamily: 'var(--serif)', fontSize: s.precioVisible === false ? 14 : 23, fontWeight: 600 }}>
+                  {s.precioVisible === false ? 'Consultar' : mxn(s.precio)}
                 </div>
               </div>
             </div>
@@ -181,6 +188,12 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
   const [online, setOnline] = useState(s.online ?? false)
   const [prof, setProf] = useState<string[]>(s.prof ?? [])
   const [catInput, setCatInput] = useState('')
+  const [descripcion, setDescripcion] = useState(s.descripcion ?? '')
+  const [precioVisible, setPrecioVisible] = useState(s.precioVisible ?? true)
+  const [precioVariable, setPrecioVariable] = useState(s.precioVariable ?? false)
+  const [domicilio, setDomicilio] = useState(s.domicilio ?? false)
+  const [comValor, setComValor] = useState(s.comValor ?? 0)
+  const [comTipo, setComTipo] = useState<'porcentaje' | 'valor'>(s.comTipo ?? 'porcentaje')
 
   const toggleProf = (id: string) => {
     setProf(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -192,18 +205,17 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
       id: s.id ?? ('s' + Date.now()),
       nombre: nombre.trim(),
       cat: cat || catInput.trim() || 'General',
-      dur,
-      precio,
-      anticipo,
-      online,
-      prof,
+      dur, precio, anticipo, online, prof,
+      descripcion: descripcion.trim() || undefined,
+      precioVisible, precioVariable, domicilio,
+      comValor, comTipo,
     })
   }
 
   const anticipoMonto = anticipo ? Math.round(precio * anticipoPct / 100) : 0
 
   return (
-    <Modal onClose={onClose} width={540}>
+    <Modal onClose={onClose} width={560}>
       <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
         <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
           <div>
@@ -213,7 +225,9 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
           <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}><Ic n="x" /></button>
         </div>
 
-        <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="card-pad scroll-y" style={{ display: 'flex', flexDirection: 'column', gap: 18, maxHeight: '65vh' }}>
+
+          {/* Info básica */}
           <div>
             <label className="label">Nombre del servicio</label>
             <input className="input" value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej. Corte + peinado" />
@@ -230,26 +244,55 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
             )}
           </div>
 
+          <div>
+            <label className="label">Descripción <span className="muted" style={{ fontWeight: 400 }}>(visible para las clientas al reservar)</span></label>
+            <textarea className="input" rows={3} value={descripcion} onChange={e => setDescripcion(e.target.value)}
+              placeholder="Ej. Incluye lavado, corte y secado profesional. Duración y precio pueden variar según el largo del cabello."
+              style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }} />
+          </div>
+
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <label className="label">Duración (min)</label>
               <input className="input" type="number" min={5} step={5} value={dur} onChange={e => setDur(Number(e.target.value))} />
             </div>
             <div>
-              <label className="label">Precio</label>
+              <label className="label">Precio base (MXN)</label>
               <input className="input" type="number" min={0} value={precio} onChange={e => setPrecio(Number(e.target.value))} />
             </div>
           </div>
 
+          {/* Comisión por servicio */}
+          <div>
+            <label className="label">Comisión por servicio</label>
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <select className="input" value={comTipo} onChange={e => setComTipo(e.target.value as 'porcentaje' | 'valor')}>
+                <option value="porcentaje">Porcentaje (%)</option>
+                <option value="valor">Valor fijo (MXN)</option>
+              </select>
+              <div style={{ position: 'relative' }}>
+                <input className="input" type="number" min={0} value={comValor} onChange={e => setComValor(Number(e.target.value))}
+                  placeholder={comTipo === 'porcentaje' ? '30' : '150'} />
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-4)' }}>
+                  {comTipo === 'porcentaje' ? '%' : '$'}
+                </span>
+              </div>
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              {comTipo === 'valor'
+                ? `La estilista recibe ${mxn(comValor)} fijo por este servicio`
+                : `La estilista recibe ${comValor}% del precio cobrado`}
+            </div>
+          </div>
+
+          {/* Estilistas */}
           <div>
             <label className="label">Estilistas que ofrecen este servicio</label>
             <div className="vc gap8" style={{ flexWrap: 'wrap', marginTop: 10 }}>
               {estilistas.map(e => {
                 const sel = prof.includes(e.id)
                 return (
-                  <button
-                    key={e.id}
-                    className="chip vc"
+                  <button key={e.id} className="chip vc"
                     style={{ gap: 6, borderColor: sel ? e.color : undefined, color: sel ? e.color : undefined, background: sel ? e.color + '18' : undefined }}
                     onClick={() => toggleProf(e.id)}
                   >
@@ -262,7 +305,8 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
             </div>
           </div>
 
-          <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Toggles */}
+          <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="between">
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13.5 }}>Requiere anticipo</div>
@@ -279,6 +323,32 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
                 <div className="muted" style={{ fontSize: 12 }}>Visible en el portal de reservas</div>
               </div>
               <Switch on={online} onClick={() => setOnline(v => !v)} />
+            </div>
+            <hr className="hr" />
+            <div className="between">
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>Mostrar precio en el sitio</div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {precioVisible ? `Se mostrará ${mxn(precio)}` : 'Se mostrará "Consultar precio"'}
+                </div>
+              </div>
+              <Switch on={precioVisible} onClick={() => setPrecioVisible(v => !v)} />
+            </div>
+            <hr className="hr" />
+            <div className="between">
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>Precio / duración variable</div>
+                <div className="muted" style={{ fontSize: 12 }}>El costo puede variar según el cabello o diseño</div>
+              </div>
+              <Switch on={precioVariable} onClick={() => setPrecioVariable(v => !v)} />
+            </div>
+            <hr className="hr" />
+            <div className="between">
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>Servicio a domicilio</div>
+                <div className="muted" style={{ fontSize: 12 }}>Disponible para atención fuera del salón</div>
+              </div>
+              <Switch on={domicilio} onClick={() => setDomicilio(v => !v)} />
             </div>
           </div>
         </div>

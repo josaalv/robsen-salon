@@ -177,11 +177,29 @@ export const db = {
   async getServicios(): Promise<Servicio[]> {
     if (!supabase) return []
     const { data } = await supabase.from('servicios').select('*')
-    return (data ?? []) as Servicio[]
+    return (data ?? []).map((r: any): Servicio => ({
+      id: r.id, nombre: r.nombre, cat: r.cat, precio: r.precio, dur: r.dur,
+      anticipo: r.anticipo ?? false, online: r.online ?? false, prof: r.prof ?? [],
+      descripcion: r.descripcion ?? undefined,
+      precioVisible: r.precio_visible ?? true,
+      precioVariable: r.precio_variable ?? false,
+      domicilio: r.domicilio ?? false,
+      comValor: r.com_valor ?? 0,
+      comTipo: r.com_tipo ?? 'porcentaje',
+    }))
   },
   async upsertServicio(s: Servicio) {
     if (!supabase) return
-    const { error } = await supabase.from('servicios').upsert(s, { onConflict: 'id' })
+    const { error } = await supabase.from('servicios').upsert({
+      id: s.id, nombre: s.nombre, cat: s.cat, precio: s.precio, dur: s.dur,
+      anticipo: s.anticipo, online: s.online, prof: s.prof,
+      descripcion: s.descripcion ?? null,
+      precio_visible: s.precioVisible ?? true,
+      precio_variable: s.precioVariable ?? false,
+      domicilio: s.domicilio ?? false,
+      com_valor: s.comValor ?? 0,
+      com_tipo: s.comTipo ?? 'porcentaje',
+    }, { onConflict: 'id' })
     if (error) console.error('[db.upsertServicio]', error.message)
   },
   async deleteServicio(id: string) {

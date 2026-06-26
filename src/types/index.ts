@@ -28,6 +28,12 @@ export interface Servicio {
   anticipo: boolean
   online: boolean
   prof: string[]
+  descripcion?: string
+  precioVisible?: boolean   // mostrar precio en sitio de agendamiento
+  precioVariable?: boolean  // precio/duración variable, consultar
+  domicilio?: boolean       // servicio a domicilio disponible
+  comValor?: number         // comisión fija en MXN por servicio
+  comTipo?: 'porcentaje' | 'valor'  // tipo de comisión
 }
 
 export interface FotoEntry {
