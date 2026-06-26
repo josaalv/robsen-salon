@@ -63,8 +63,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   const quitarAvatar = async () => {
     setSaving(true)
     try {
-      const patch = { ...user, avatar: undefined }
-      const saved = await db.upsertUsuario(patch)
+      const saved = await db.clearUsuarioAvatar(user.id)
       setAvatar('')
       upsertUsuario(saved)
       login(saved)

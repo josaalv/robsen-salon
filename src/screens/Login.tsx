@@ -145,6 +145,7 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
           ) : (
             /* ── PASO 2: contraseña ── */
             <>
+              {/* Avatar + nombre seleccionado */}
               <button
                 onClick={() => setSelected(null)}
                 style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'flex', alignItems:'center', gap:6, marginBottom:24, padding:0 }}
@@ -165,6 +166,7 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
                 </div>
               </div>
 
+              {/* Trampa invisible para evitar autofill del navegador */}
               <div style={{ display:'none', height:0, overflow:'hidden', opacity:0, position:'absolute' }} aria-hidden="true">
                 <input type="text" name="rb_fake_user" tabIndex={-1} />
                 <input type="password" name="rb_fake_pass" tabIndex={-1} />
