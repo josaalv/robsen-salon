@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef } from 'react'
 import { Avatar, Seg, Switch, CardHead, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, ventaCalc } from '../lib/helpers'
 import type { Producto, Estilista } from '../types'
+import * as XLSX from 'xlsx'
 
 export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => void }) {
   const [tab, setTab] = useState('Inventario')
@@ -12,6 +13,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   const [vender, setVender] = useState<Producto | null>(null)
   const [ajuste, setAjuste] = useState<Producto | null>(null)
   const [ordenCompra, setOrdenCompra] = useState<Producto | null>(null)
+  const [importando, setImportando] = useState(false)
 
   const { data, upsertProducto, deleteProducto, venderProducto, ajustarStock } = useStore()
   const { productos, movimientos, transacciones, clientas, estilistas, marcas } = data
@@ -40,6 +42,9 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
           </div>
         </div>
         <div className="vc gap10">
+          <button className="btn ghost" onClick={() => setImportando(true)}>
+            <Ic n="upload-simple" />Importar
+          </button>
           <button className="btn ghost" onClick={() => setOrdenCompra(productos[0] || null)}>
             <Ic n="shopping-cart-simple" />Orden de compra
           </button>
@@ -378,6 +383,18 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
             setVender(null)
           }}
           onClose={() => setVender(null)}
+        />
+      )}
+
+      {importando && (
+        <ImportarProductosModal
+          productosExistentes={productos}
+          onImport={prods => {
+            prods.forEach(p => upsertProducto(p))
+            toast(`${prods.length} productos importados correctamente`)
+            setImportando(false)
+          }}
+          onClose={() => setImportando(false)}
         />
       )}
     </div>
@@ -1006,6 +1023,242 @@ function AjusteStockModal({ productos, sel: initialSel, onConfirm, onClose }: Aj
           <button className="btn gold" onClick={() => onConfirm(sel.id, tipo === 'entrada' ? cant : -cant, motivo)}>
             <Ic n="check" />Registrar movimiento
           </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── ImportarProductosModal ──────────────────────────────────────────────────
+
+const COLUMNAS_ESPERADAS = ['nombre', 'sku', 'marca', 'cat', 'uso', 'costo', 'precio', 'stock', 'min']
+
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().trim()
+    .replace(/categoría|categoria|category/i, 'cat')
+    .replace(/costo.*|cost.*/i, 'costo')
+    .replace(/precio.*venta.*|sale.*price.*/i, 'precio')
+    .replace(/stock.*actual.*|current.*stock.*/i, 'stock')
+    .replace(/mínimo|minimo|min.*stock.*/i, 'min')
+    .replace(/uso.*|use.*/i, 'uso')
+    .replace(/marca.*|brand.*/i, 'marca')
+}
+
+interface ImportarProductosModalProps {
+  productosExistentes: Producto[]
+  onImport: (prods: Producto[]) => void
+  onClose: () => void
+}
+
+function ImportarProductosModal({ productosExistentes, onImport, onClose }: ImportarProductosModalProps) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [filas, setFilas] = useState<Record<string, string>[]>([])
+  const [errores, setErrores] = useState<string[]>([])
+  const [seleccion, setSeleccion] = useState<Set<number>>(new Set())
+  const [paso, setPaso] = useState<'subir' | 'preview'>('subir')
+  const [modo, setModo] = useState<'agregar' | 'reemplazar'>('agregar')
+
+  const leerArchivo = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const json: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
+
+        if (json.length === 0) { setErrores(['El archivo está vacío o no tiene datos.']); return }
+
+        // Normalize headers
+        const normalized = json.map(row => {
+          const nr: Record<string, string> = {}
+          Object.entries(row).forEach(([k, v]) => { nr[normalizeHeader(k)] = String(v ?? '') })
+          return nr
+        })
+
+        const errs: string[] = []
+        if (!normalized[0].nombre) errs.push('No se encontró la columna "Nombre". Revisa los encabezados.')
+        setErrores(errs)
+        setFilas(normalized)
+        setSeleccion(new Set(normalized.map((_, i) => i)))
+        if (errs.length === 0) setPaso('preview')
+      } catch {
+        setErrores(['No se pudo leer el archivo. Asegúrate de que sea .xlsx o .csv válido.'])
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const confirmarImport = () => {
+    const skusExistentes = new Set(productosExistentes.map(p => p.sku).filter(Boolean))
+    const prods: Producto[] = []
+
+    Array.from(seleccion).forEach(i => {
+      const r = filas[i]
+      const nombre = r.nombre?.trim()
+      if (!nombre) return
+      const uso = r.uso?.toLowerCase().includes('interno') ? 'interno' : 'retail'
+      const sku = r.sku?.trim() || ''
+      // Si ya existe por SKU, reutiliza el id para upsert
+      const existente = sku ? productosExistentes.find(p => p.sku === sku) : undefined
+      prods.push({
+        id: existente ? existente.id : ('p' + Date.now() + i),
+        nombre,
+        sku,
+        marca: r.marca?.trim() || 'Sin marca',
+        cat: r.cat?.trim() || 'General',
+        uso,
+        costo: parseFloat(r.costo) || 0,
+        precio: parseFloat(r.precio) || 0,
+        stock: parseInt(r.stock) || 0,
+        min: parseInt(r.min) || 3,
+        vendidos: existente?.vendidos ?? 0,
+      })
+    })
+    onImport(prods)
+  }
+
+  const toggleFila = (i: number) => {
+    setSeleccion(s => {
+      const ns = new Set(s)
+      ns.has(i) ? ns.delete(i) : ns.add(i)
+      return ns
+    })
+  }
+
+  const skusExistentes = new Set(productosExistentes.map(p => p.sku).filter(Boolean))
+  const nuevos = filas.filter((r, i) => seleccion.has(i) && r.sku && !skusExistentes.has(r.sku.trim())).length
+  const actualizaciones = filas.filter((r, i) => seleccion.has(i) && r.sku && skusExistentes.has(r.sku.trim())).length
+
+  return (
+    <Modal onClose={onClose} width={780}>
+      <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
+        <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Inventario</div>
+            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>Importar productos</h3>
+          </div>
+          <button className="btn ghost icon-btn" onClick={onClose} style={{ padding: '6px 8px' }}><Ic n="x" /></button>
+        </div>
+
+        {paso === 'subir' ? (
+          <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* Drop zone */}
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) leerArchivo(f) }}
+              style={{
+                border: '2px dashed var(--line)', borderRadius: 12, padding: '40px 24px',
+                textAlign: 'center', cursor: 'pointer', transition: 'border-color .2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--line)')}
+            >
+              <div style={{ fontSize: 36, color: 'var(--gold)', marginBottom: 12 }}><Ic n="file-xls" /></div>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Arrastra tu archivo aquí o haz clic para seleccionar</div>
+              <div className="muted" style={{ fontSize: 12.5 }}>Formatos soportados: .xlsx, .xls, .csv</div>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) leerArchivo(f); e.target.value = '' }} />
+            </div>
+
+            {errores.length > 0 && (
+              <div style={{ background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 8, padding: '12px 14px' }}>
+                {errores.map((e, i) => <div key={i} style={{ fontSize: 13, color: 'var(--st-canc)' }}>⚠ {e}</div>)}
+              </div>
+            )}
+
+            {/* Formato esperado */}
+            <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '14px 16px' }}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Columnas que se reconocen</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {['nombre *', 'sku', 'marca', 'cat / categoría', 'uso', 'costo', 'precio', 'stock', 'min'].map(c => (
+                  <span key={c} className="chip" style={{ fontSize: 11.5 }}>{c}</span>
+                ))}
+              </div>
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
+                * Obligatorio. Las columnas extra se ignoran. Si el SKU coincide con uno existente, se actualiza el producto.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* Summary bar */}
+            <div className="card-pad vc gap16" style={{ borderBottom: '1px solid var(--line-soft)', flexWrap: 'wrap' }}>
+              <div className="vc gap8">
+                <span className="badge conf">{nuevos} nuevos</span>
+                {actualizaciones > 0 && <span className="badge pend">{actualizaciones} a actualizar</span>}
+                <span className="muted" style={{ fontSize: 12 }}>{seleccion.size} de {filas.length} seleccionados</span>
+              </div>
+              <div className="vc gap8" style={{ marginLeft: 'auto' }}>
+                <button className="chip" style={{ fontSize: 11.5 }} onClick={() => setSeleccion(new Set(filas.map((_, i) => i)))}>Todos</button>
+                <button className="chip" style={{ fontSize: 11.5 }} onClick={() => setSeleccion(new Set())}>Ninguno</button>
+                <button className="btn ghost sm" onClick={() => { setPaso('subir'); setFilas([]); setErrores([]) }}>
+                  <Ic n="arrow-left" size={13} />Cambiar archivo
+                </button>
+              </div>
+            </div>
+
+            {/* Preview table */}
+            <div style={{ overflowX: 'auto', maxHeight: '45vh' }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 36 }}></th>
+                    <th>Nombre</th>
+                    <th>SKU</th>
+                    <th>Marca</th>
+                    <th>Categoría</th>
+                    <th>Uso</th>
+                    <th className="num">Costo</th>
+                    <th className="num">Precio</th>
+                    <th className="num">Stock</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((r, i) => {
+                    const checked = seleccion.has(i)
+                    const esActualizacion = r.sku && skusExistentes.has(r.sku.trim())
+                    const sinNombre = !r.nombre?.trim()
+                    return (
+                      <tr key={i} style={{ opacity: sinNombre ? 0.4 : 1, cursor: sinNombre ? 'default' : 'pointer' }}
+                        onClick={() => !sinNombre && toggleFila(i)}>
+                        <td>
+                          <input type="checkbox" checked={checked} disabled={sinNombre} readOnly
+                            style={{ accentColor: 'var(--gold)' }} />
+                        </td>
+                        <td style={{ fontWeight: 600, fontSize: 13 }}>{r.nombre || <span className="dim">—</span>}</td>
+                        <td className="muted" style={{ fontSize: 12 }}>{r.sku || '—'}</td>
+                        <td style={{ fontSize: 13 }}>{r.marca || '—'}</td>
+                        <td><span className="badge neutral" style={{ fontSize: 10.5 }}>{r.cat || 'General'}</span></td>
+                        <td style={{ fontSize: 12 }}>{r.uso?.toLowerCase().includes('interno') ? 'Interno' : 'Retail'}</td>
+                        <td className="num muted">{r.costo ? mxn(parseFloat(r.costo)) : '—'}</td>
+                        <td className="num gold-text" style={{ fontWeight: 600 }}>{r.precio ? mxn(parseFloat(r.precio)) : '—'}</td>
+                        <td className="num">{r.stock || '0'}</td>
+                        <td>
+                          {sinNombre
+                            ? <span className="badge bad" style={{ fontSize: 10 }}>Sin nombre</span>
+                            : esActualizacion
+                            ? <span className="badge pend" style={{ fontSize: 10 }}>Actualizar</span>
+                            : <span className="badge conf" style={{ fontSize: 10 }}>Nuevo</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="between card-pad" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 16 }}>
+          <button className="btn ghost" onClick={onClose}>Cancelar</button>
+          {paso === 'preview' && (
+            <button className="btn gold" disabled={seleccion.size === 0} onClick={confirmarImport}>
+              <Ic n="upload-simple" />Importar {seleccion.size} producto{seleccion.size !== 1 ? 's' : ''}
+            </button>
+          )}
         </div>
       </div>
     </Modal>
