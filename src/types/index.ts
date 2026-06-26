@@ -3,7 +3,7 @@ export type EstadoClienta = 'VIP' | 'Frecuente' | 'Activa' | 'Nueva' | 'Inactiva
 export type RolUsuario = 'admin' | 'gerente' | 'recepcion' | 'estilista'
 export type UsoProducto = 'retail' | 'interno'
 export type TipoLinea = 'servicio' | 'producto' | 'adicional'
-export type EstadoVenta = 'pagada' | 'parcial' | 'pendiente'
+export type EstadoVenta = 'pagada' | 'parcial' | 'pendiente' | 'apartado'
 export type TipoMovimiento = 'entrada' | 'salida' | 'consumo'
 export type EstadoMensaje = 'enviado' | 'entregado' | 'respondido'
 
@@ -94,6 +94,7 @@ export interface Venta {
   desc: number
   anticipo: number
   lineas: LineaVenta[]
+  citaId?: string
 }
 
 export interface Producto {

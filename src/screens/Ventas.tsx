@@ -204,7 +204,10 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return true
   }
 
+  const apartados = ventas.filter(v => v.estado === 'apartado')
+
   const lista = ventas.filter(v => {
+    if (v.estado === 'apartado') return false
     if (!periodFilter(v)) return false
     if (q && !v.cliente.toLowerCase().includes(q.toLowerCase()) && !v.ticket.includes(q)) return false
     if (filtroTipo === 'Con producto') return v.lineas.some(l => l.tipo === 'producto')
@@ -283,6 +286,45 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
         </div>
       </div>
 
+      {apartados.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, border: '1px solid rgba(200,161,74,0.25)' }}>
+          <div className="card-pad between" style={{ paddingBottom: 10, borderBottom: '1px solid var(--line-soft)' }}>
+            <div className="vc gap8">
+              <Ic n="calendar-check" style={{ color: 'var(--gold)' }} />
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Apartados de citas</span>
+              <span className="badge pend">{apartados.length}</span>
+            </div>
+            <span className="muted" style={{ fontSize: 12 }}>Anticipos registrados desde Agenda · pendientes de cobro final</span>
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Ref.</th><th>Fecha</th><th>Clienta</th><th>Servicio</th>
+                <th className="num">Total cita</th><th className="num">Anticipo</th><th className="num">Saldo</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {apartados.map(v => {
+                const totalApt = totalVenta(v)
+                const saldoApt = saldo(v)
+                return (
+                  <tr key={v.id} onClick={() => setDetalle(v)}>
+                    <td className="num" style={{ fontWeight: 700, color: 'var(--gold)', fontSize: 12 }}>{v.ticket}</td>
+                    <td className="muted">{v.fecha}</td>
+                    <td style={{ fontWeight: 600 }}>{v.cliente}</td>
+                    <td className="muted">{v.lineas[0]?.nombre || '—'}</td>
+                    <td className="num">{mxn(totalApt)}</td>
+                    <td className="num" style={{ color: 'var(--st-conf)', fontWeight: 600 }}>{mxn(v.anticipo)}</td>
+                    <td className="num" style={{ color: 'var(--st-pend)', fontWeight: 600 }}>{mxn(saldoApt)}</td>
+                    <td><Ic n="caret-right" /></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="card">
         <table className="table">
           <thead>
@@ -318,6 +360,8 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                       ? <span className="badge conf"><span className="d" />Pagada</span>
                       : v.estado === 'parcial'
                       ? <span className="badge pend"><span className="d" />Saldo pendiente</span>
+                      : v.estado === 'apartado'
+                      ? <span className="badge gold"><span className="d" />Apartado</span>
                       : <span className="badge canc"><span className="d" />Pendiente</span>}
                   </td>
                   <td><Ic n="caret-right" /></td>

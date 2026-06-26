@@ -3,7 +3,8 @@ import { Avatar, EstadoBadge, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn } from '../lib/helpers'
-import type { Cita, EstadoCita, Bloqueo } from '../types'
+import type { Cita, EstadoCita, Bloqueo, Venta } from '../types'
+import { db } from '../lib/db'
 
 const PXH = 60
 const DIAS_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -126,16 +127,37 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const displayH = availableSlots.includes(h) ? h : (availableSlots[0] || h)
   const saldoPreview = Math.max(0, srv.precio - (+ant || 0))
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!cl.trim() || availableSlots.length === 0) return
     const id = cita.id || ('a' + Date.now())
+    const antFinal = Math.min(srv.precio, Math.max(0, +ant || 0))
     const newCita: Cita = {
       id, cl: cl.trim(), srv: srv.nombre, est, h: displayH, dur: srv.dur,
-      estado, total: srv.precio, ant: Math.max(0, +ant || 0),
+      estado, total: srv.precio, ant: antFinal,
       ...(isToday ? {} : { fecha: selectedDate }),
     }
     if (isToday) upsertCita(newCita)
     else upsertCitaFutura(newCita)
+
+    // Sincronizar venta de apartado cuando hay anticipo
+    if (antFinal > 0) {
+      const existing = await db.getVentaByCitaId(id)
+      const hoy = new Date().toISOString().slice(0, 10)
+      const ticket = `APT-${id.slice(-6).toUpperCase()}`
+      if (existing) {
+        await db.updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= srv.precio ? 'pagada' : 'apartado' })
+      } else {
+        const ventaApartado: Venta = {
+          id: 'v' + Date.now(), ticket, fecha: hoy,
+          cliente: cl.trim(), clienteId: '', pago: 'efectivo',
+          estado: antFinal >= srv.precio ? 'pagada' : 'apartado',
+          desc: 0, anticipo: antFinal, citaId: id,
+          lineas: [{ tipo: 'servicio', nombre: srv.nombre, est, cant: 1, precio: srv.precio, com: 0 }],
+        }
+        await db.addVenta(ventaApartado)
+      }
+    }
+
     toast(nuevo ? 'Cita agendada correctamente' : 'Cita actualizada')
     onSaved(newCita)
   }
@@ -203,8 +225,8 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             </div>
             <div className="field">
               <label>Anticipo (MXN)</label>
-              <input className="input num" type="number" min="0" value={ant || ''} placeholder="0"
-                onChange={e => setAnt(Math.max(0, +e.target.value))} />
+              <input className="input num" type="number" min="0" max={srv.precio} value={ant || ''} placeholder="0"
+                onChange={e => setAnt(Math.min(srv.precio, Math.max(0, +e.target.value)))} />
             </div>
           </div>
           <div className="card" style={{ background: 'var(--surface)', padding: 14 }}>

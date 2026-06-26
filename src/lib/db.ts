@@ -38,6 +38,7 @@ const mapVenta = (r: any, lineas: any[]): Venta => ({
   pago: r.pago, estado: r.estado,
   desc: r.descuento ?? 0,
   anticipo: r.anticipo ?? 0,
+  citaId: r.cita_id ?? undefined,
   lineas: lineas.filter(l => l.venta_id === r.id).map(l => ({
     tipo: l.tipo, nombre: l.nombre, est: l.est ?? null,
     cant: l.cant, precio: l.precio, com: l.com,
@@ -240,7 +241,7 @@ export const db = {
     const { error } = await supabase.from('ventas').insert({
       id: v.id, ticket: v.ticket, fecha: v.fecha, cliente: v.cliente,
       cliente_id: v.clienteId || null, pago: v.pago, estado: v.estado,
-      descuento: v.desc, anticipo: v.anticipo,
+      descuento: v.desc, anticipo: v.anticipo, cita_id: v.citaId ?? null,
     })
     if (error) { console.error('[db.addVenta]', error.message); return }
     if (v.lineas.length > 0) {
@@ -260,6 +261,13 @@ export const db = {
     if (patch.desc      !== undefined) row.descuento = patch.desc
     if (patch.pago      !== undefined) row.pago      = patch.pago
     if (Object.keys(row).length) await supabase.from('ventas').update(row).eq('id', id)
+  },
+  async getVentaByCitaId(citaId: string): Promise<Venta | null> {
+    if (!supabase) return null
+    const { data: vRow } = await supabase.from('ventas').select('*').eq('cita_id', citaId).maybeSingle()
+    if (!vRow) return null
+    const { data: lineas } = await supabase.from('lineas_venta').select('*').eq('venta_id', vRow.id)
+    return mapVenta(vRow, lineas ?? [])
   },
 
   // — Productos —
