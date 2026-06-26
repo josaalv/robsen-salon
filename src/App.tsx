@@ -138,6 +138,7 @@ function AppShell() {
             ? <img src={logo} alt={data.config?.nombre || 'Robsen'} className="brand-logo-img" />
             : <div className="logo">{data.config?.nombre || 'Robsen'}</div>}
           <div className="sub">Salón &amp; Spa · Interno</div>
+          <div style={{ fontSize:10, color:'var(--text-3)', opacity:0.5, marginTop:2, letterSpacing:'.04em' }}>v1.01</div>
         </div>
         <nav className="nav">
           {NAV.map(g => {
