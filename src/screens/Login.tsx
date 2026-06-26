@@ -1,14 +1,11 @@
 import React, { useState } from 'react'
-import { Avatar } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
-import { roles } from '../data/mockData'
-import { useStore } from '../data/store'
 import { db } from '../lib/db'
+import { hasSupabase } from '../lib/supabase'
 import type { Usuario } from '../types'
 
 export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
-  const { data } = useStore()
-  const [email, setEmail] = useState('roberto@robsen.com.mx')
+  const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
   const [ver, setVer] = useState(false)
   const [error, setError] = useState('')
@@ -20,24 +17,21 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
       setError('Ingresa tu correo y contraseña.')
       return
     }
+    if (!hasSupabase) {
+      setError('No hay conexión con la base de datos. Contacta al administrador.')
+      return
+    }
     setLoading(true)
     try {
-      // Intentar cargar desde Supabase primero; si falla, usar datos locales
-      let usuarios = data.usuarios
-      try {
-        const fromDb = await db.getUsuarios()
-        if (fromDb.length) usuarios = fromDb
-      } catch { /* usar datos locales */ }
-
+      const usuarios = await db.getUsuarios()
       const u = usuarios.find(x => x.email.toLowerCase() === email.trim().toLowerCase())
       if (!u) { setError('No existe una cuenta con ese correo.'); return }
       if (!u.activo) { setError('Esta cuenta está desactivada.'); return }
-      const correctPass = u.pass || 'robsen2026'
-      if (pass.trim() !== correctPass) { setError('Contraseña incorrecta. Prueba: robsen2026'); return }
+      if (!u.pass || pass.trim() !== u.pass) { setError('Contraseña incorrecta.'); return }
       onLogin(u)
     } catch (e) {
       console.error('[login]', e)
-      setError('Error al iniciar sesión. Intenta de nuevo.')
+      setError('Error al conectar con la base de datos. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }
@@ -104,31 +98,6 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
           <button className="btn gold w100" style={{ justifyContent: 'center', padding: '13px', marginBottom: 8 }} onClick={entrar} disabled={loading}>
             {loading ? <><Ic n="spinner" />Verificando…</> : <><Ic n="sign-in" />Entrar</>}
           </button>
-
-          {/* Acceso rápido demo */}
-          <div style={{ marginTop: 28 }}>
-            <div className="vc gap12" style={{ marginBottom: 12 }}>
-              <hr className="hr" style={{ flex: 1 }} />
-              <span className="dim" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>Acceso demo por rol</span>
-              <hr className="hr" style={{ flex: 1 }} />
-            </div>
-            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {data.usuarios.filter(u => u.activo).map(u => {
-                const r = roles[u.rol]
-                return (
-                  <div key={u.id} className="opt-card" style={{ padding: '12px 14px' }}
-                    onClick={() => { setEmail(u.email); setPass(u.pass || 'robsen2026'); setError('') }}>
-                    <Avatar ini={u.ini} color={u.color} size="sm" />
-                    <div className="f1" style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{r?.nombre || u.rol}</div>
-                      <div className="dim" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nombre}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <p className="dim" style={{ fontSize: 11, textAlign: 'center', marginTop: 10 }}>Contraseña demo: <strong>robsen2026</strong></p>
-          </div>
         </div>
       </div>
     </div>
