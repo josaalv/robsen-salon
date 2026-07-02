@@ -713,24 +713,30 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
   const { data } = useStore()
   const [modal, setModal] = useState<Partial<Usuario> | null | false>(false)
   const rolBadge: Record<string, string> = { admin: 'vip', gerente: 'pay', recepcion: 'conf', estilista: 'done' }
+  const esAdmin = user.rol === 'admin'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {modal !== false && (
-        <UsuarioModal usr={modal} selfId={user.id} esAdmin={user.rol === 'admin'} onClose={() => setModal(false)} />
+        <UsuarioModal usr={modal} selfId={user.id} esAdmin={esAdmin} onClose={() => setModal(false)} />
       )}
       <div className="card">
         <div className="card-head">
           <div><div className="eyebrow">Accesos al sistema</div><h3 style={{ marginTop: 4 }}>Usuarios del equipo</h3></div>
-          <button className="btn gold sm" onClick={() => setModal(null)}><Ic n="user-plus" />Nuevo usuario</button>
+          {esAdmin && <button className="btn gold sm" onClick={() => setModal(null)}><Ic n="user-plus" />Nuevo usuario</button>}
         </div>
+        {!esAdmin && (
+          <div className="dim" style={{ fontSize: 11.5, padding: '0 20px 12px' }}>
+            Solo un administrador puede crear o editar usuarios. Esta lista es de solo lectura para tu rol.
+          </div>
+        )}
         <table className="table" style={{ marginTop: 6 }}>
           <thead>
             <tr><th>Usuario</th><th>Rol</th><th>Último acceso</th><th>Estado</th><th>Acceso</th><th></th></tr>
           </thead>
           <tbody>
             {data.usuarios.map(u => (
-              <tr key={u.id} style={{ cursor: 'pointer' }} onClick={() => setModal(u)}>
+              <tr key={u.id} style={{ cursor: esAdmin ? 'pointer' : 'default' }} onClick={() => { if (esAdmin) setModal(u) }}>
                 <td>
                   <div className="cell-name">
                     <Avatar ini={u.ini} color={u.color} size="sm" />

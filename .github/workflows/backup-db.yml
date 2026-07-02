@@ -1,0 +1,33 @@
+name: Backup de la base de datos
+
+on:
+  schedule:
+    - cron: '0 8 * * 0' # domingos 08:00 UTC (~2:00 am hora Ciudad de México)
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente de Postgres
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Generar respaldo
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Falta el secret SUPABASE_DB_URL. Agrégalo en GitHub → Settings → Secrets and variables → Actions, con la connection string de Supabase (Dashboard → Project Settings → Database → Connection string → modo 'Session pooler')."
+            exit 1
+          fi
+          mkdir -p backups
+          FECHA=$(date +%Y-%m-%d_%H%M)
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file="backups/robsen-$FECHA.dump"
+          echo "Respaldo generado: backups/robsen-$FECHA.dump"
+
+      - name: Subir respaldo
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-robsen-${{ github.run_id }}
+          path: backups/*.dump
+          retention-days: 90

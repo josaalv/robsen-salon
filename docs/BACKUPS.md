@@ -1,30 +1,104 @@
-# Respaldos — recomendación
+# Respaldos
 
-No hay un respaldo automatizado configurado todavía. Esto es lo que recomendamos, sin implementar nada a ciegas hasta confirmar el plan de Supabase y dónde se van a guardar las copias.
+## Cómo funciona ahora
 
-## 1. Revisa tu plan de Supabase
+Hay un respaldo automático real cada semana vía GitHub Actions
+(`.github/workflows/backup-db.yml`): corre `pg_dump` contra la base de datos
+de Supabase y sube el archivo como un **artifact** de esa ejecución (privado
+al repo, solo lo pueden descargar quienes tengan acceso a él), con 90 días de
+retención. También se puede disparar a mano cuando quieras, sin esperar al
+domingo.
 
-En el dashboard → Project Settings → Add-ons (o Billing):
+**Falta un solo paso de tu parte para que funcione:** agregar el secret
+`SUPABASE_DB_URL` en GitHub. Sin ese secret, el workflow corre pero falla en
+rojo con un mensaje claro — no falla en silencio.
 
-- **Plan Pro o superior:** Supabase ya guarda backups diarios automáticos por 7 días, y ofrece **PITR** (Point-in-Time Recovery) como add-on pagado — permite restaurar la base de datos a cualquier minuto de los últimos días, no solo al último backup diario. Recomendado para producción real con dinero y citas de clientas.
-- **Plan Free:** No hay backups automáticos gestionados por Supabase. Hay que resolverlo manualmente (ver abajo).
+### Cómo agregar el secret
 
-## 2. Respaldo manual mínimo (mientras no haya plan Pro)
+1. Supabase Dashboard → tu proyecto → **Project Settings → Database →
+   Connection string**.
+2. Elige el modo **"Session pooler"** (funciona mejor desde GitHub Actions
+   que la conexión directa) y copia la URI completa — incluye tu contraseña
+   de base de datos, no la anon key ni la service role key.
+3. GitHub → este repo → **Settings → Secrets and variables → Actions → New
+   repository secret**.
+   - Nombre: `SUPABASE_DB_URL`
+   - Valor: la connection string que copiaste.
+4. Ejecuta el workflow una vez a mano (**Actions → Backup de la base de
+   datos → Run workflow**) para confirmar que funciona.
 
-Un `pg_dump` semanal es suficiente para un salón de este tamaño. Opciones, de más simple a más robusta:
+### Cómo correr un respaldo manual desde tu computadora
 
-- **Manual, vía Dashboard:** Supabase → Database → Backups tiene un botón de exportación manual. Suficiente si alguien se acuerda de hacerlo cada semana — el riesgo es justo que alguien se olvide.
-- **Automatizado con GitHub Actions:** un workflow programado (`schedule: cron`) que corra `pg_dump` contra la base y suba el archivo a un storage privado (otro bucket de Supabase con acceso restringido, o un bucket de un proveedor externo). Requiere decidir dónde vive ese respaldo y con qué credenciales — no lo implementamos todavía porque necesita esa decisión tuya primero.
+```bash
+export DATABASE_URL="postgresql://postgres.xxxx:tu-password@aws-0-region.pooler.supabase.com:6543/postgres"
+./scripts/backup-db.sh
+```
 
-## 3. Qué NO hacer
+Genera un archivo en `backups/robsen-FECHA.dump` — esa carpeta está en
+`.gitignore`, nunca se sube al repo. Muévelo a un lugar seguro (no lo dejes
+en tu carpeta de Descargas indefinidamente).
 
-- No guardar el respaldo en el mismo proyecto de Supabase sin cifrar ni restringir acceso — si alguien compromete el proyecto, se lleva también los respaldos.
-- No depender solo de la memoria de alguien del equipo para "acordarse de exportar".
+## Cómo restaurar
 
-## 4. Prueba de restauración
+**Nunca pruebes una restauración contra el proyecto de producción.** Crea un
+proyecto de Supabase nuevo (gratis) solo para probar, y apunta `DATABASE_URL`
+a ese proyecto de prueba:
 
-Un respaldo que nunca se probó restaurar no es un respaldo confiable. Recomendamos, al menos una vez, restaurar el dump más reciente en un proyecto de Supabase nuevo (no en producción) y confirmar que la app enciende con esos datos.
+```bash
+export DATABASE_URL="postgresql://postgres.xxxx:password@aws-0-region.pooler.supabase.com:6543/postgres"
+./scripts/restore-db.sh backups/robsen-2026-07-02_0800.dump
+```
 
----
+El script pide que escribas "restaurar" para confirmar, justamente para que
+no sea un solo comando accidental el que sobreescriba algo.
 
-**Siguiente paso sugerido:** confirmar el plan actual de Supabase y decidir si vale la pena subir a Pro para tener PITR automático, dado que el sistema ya maneja ventas y dinero real.
+## Prueba de restauración (hazla al menos una vez)
+
+Un respaldo que nunca se probó restaurar no es un respaldo confiable:
+
+1. Crea un proyecto de Supabase nuevo (plan gratis, no afecta el real).
+2. Descarga el artifact más reciente del workflow de backup.
+3. Corre `restore-db.sh` apuntando a ese proyecto nuevo.
+4. Confirma que las tablas y filas están ahí (`select count(*) from clientas;`
+   en el SQL Editor, por ejemplo).
+5. Borra el proyecto de prueba cuando termines — no lo dejes corriendo.
+
+## Si Supabase pasa a plan Pro
+
+Si en algún momento el salón decide pagar el plan Pro de Supabase, hay
+backups diarios automáticos gestionados por Supabase (7 días de retención) y
+la opción de contratar **PITR** (Point-in-Time Recovery) como add-on, que
+permite restaurar a cualquier minuto exacto, no solo al último backup diario.
+Eso sería una capa adicional sobre este proceso, no un reemplazo — el
+workflow de GitHub Actions sigue siendo útil como copia independiente fuera
+de Supabase (si alguna vez hay un problema con la cuenta de Supabase misma,
+no con solo los datos).
+
+## Si se borra una cita, venta o clienta por accidente
+
+1. Antes que nada: la mayoría de los borrados accidentales quedan
+   registrados en `audit_logs` (Ajustes → solo visible para admin/gerente vía
+   consultas SQL directas por ahora, no hay una pantalla dedicada) — eso dice
+   quién borró qué y cuándo, con los valores anteriores completos en
+   `valores_antes`. A veces se puede reconstruir el registro manualmente
+   desde ahí sin necesitar restaurar nada.
+2. Si el borrado es grande o afecta a muchos registros, usa el respaldo más
+   reciente: restáuralo en un proyecto de prueba (nunca directo a
+   producción), extrae solo lo que se perdió, e insértalo de vuelta a mano en
+   producción.
+3. Restaurar el dump completo directo sobre producción es el último
+   recurso — sobreescribe TODO lo que pasó desde ese respaldo hasta ahora
+   (ventas nuevas, citas nuevas, etc.). Solo hazlo si el daño es mayor que
+   perder esas horas/días de actividad reciente.
+
+## Diferencia entre backup y exportar a CSV
+
+Son cosas distintas y no se reemplazan entre sí:
+
+- **Backup (`pg_dump`):** una copia completa y exacta de toda la base de
+  datos — esquema, relaciones, todas las tablas. Sirve para recuperar el
+  sistema completo si algo sale mal.
+- **Exportar a CSV/Excel** (si existe esa función en Ventas/Finanzas): una
+  vista de una sola tabla en un momento dado, útil para análisis o
+  contabilidad, pero no permite reconstruir el sistema — no tiene relaciones
+  entre tablas, RLS, triggers, etc.
