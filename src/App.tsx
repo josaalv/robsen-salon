@@ -432,7 +432,7 @@ function NotifPop({ onClose, go }: any) {
 }
 
 function LoginGate() {
-  const { user, login } = useAuth()
+  const { user, loading } = useAuth()
   const [LoginScreen, setLoginScreen] = useState<React.ComponentType<any> | null>(null)
 
   useEffect(() => {
@@ -447,8 +447,9 @@ function LoginGate() {
       )))
   }, [])
 
+  if (loading) return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
   if (user) return <AppShell />
-  if (LoginScreen) return <><LoginScreen onLogin={login} /><ToastHost /></>
+  if (LoginScreen) return <><LoginScreen /><ToastHost /></>
   return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
 }
 

@@ -4,6 +4,7 @@ import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
+import { supabase } from '../lib/supabase'
 import { mxn } from '../lib/helpers'
 import type { Usuario, SlotMinutos, RolUsuario } from '../types'
 
@@ -22,10 +23,9 @@ function SettingRow({ title, desc, children, last }: { title: string; desc?: str
 // ─── Mi perfil ───────────────────────────────────────────────────────────────
 function AjustesPerfil({ user }: { user: Usuario }) {
   const { upsertUsuario } = useStore()
-  const { login } = useAuth()
+  const { refreshUser } = useAuth()
   const [nombre, setNombre] = useState(user.nombre)
   const [tel, setTel] = useState(user.tel || '')
-  const [pwActual, setPwActual] = useState('')
   const [pwNueva, setPwNueva] = useState('')
   const [pwConf, setPwConf] = useState('')
   const [showPw, setShowPw] = useState(false)
@@ -48,7 +48,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
       const saved = await db.upsertUsuario(patch)
       setAvatar(url)
       upsertUsuario(saved)
-      login(saved)
+      await refreshUser()
       toast('Foto actualizada')
     } catch (err) {
       URL.revokeObjectURL(preview)
@@ -66,7 +66,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
       const saved = await db.clearUsuarioAvatar(user.id)
       setAvatar('')
       upsertUsuario(saved)
-      login(saved)
+      await refreshUser()
     } catch (err) {
       toast('Error al quitar la foto — intenta de nuevo')
       console.error('[avatar remove]', err)
@@ -83,7 +83,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
       const patch = { ...user, nombre: nombre.trim(), tel, ini }
       const saved = await db.upsertUsuario(patch)
       upsertUsuario(saved)
-      login(saved)
+      await refreshUser()
       toast('Perfil actualizado')
     } catch (err) {
       toast('Error al guardar — intenta de nuevo')
@@ -94,20 +94,16 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   }
 
   const cambiarPw = async () => {
-    if (!pwActual || !pwNueva || !pwConf) { toast('Completa todos los campos de contraseña'); return }
+    if (!pwNueva || !pwConf) { toast('Completa ambos campos de contraseña'); return }
     if (pwNueva.length < 8) { toast('La nueva contraseña debe tener al menos 8 caracteres'); return }
     if (pwNueva !== pwConf) { toast('Las contraseñas no coinciden'); return }
+    if (!supabase) { toast('Sin conexión a la base de datos'); return }
     setSaving(true)
     try {
-      const fresh = await db.getUsuarioById(user.id)
-      if (!fresh?.pass) { toast('No se pudo verificar la contraseña actual'); return }
-      if (pwActual !== fresh.pass) { toast('La contraseña actual es incorrecta'); return }
-      const patch = { ...user, pass: pwNueva }
-      const saved = await db.upsertUsuario(patch)
-      upsertUsuario(saved)
-      login(saved)
+      const { error: err } = await supabase.auth.updateUser({ password: pwNueva })
+      if (err) throw err
       toast('Contraseña actualizada correctamente')
-      setPwActual(''); setPwNueva(''); setPwConf('')
+      setPwNueva(''); setPwConf('')
     } catch (err) {
       toast('Error al actualizar contraseña — intenta de nuevo')
       console.error('[cambiarPw]', err)
@@ -146,18 +142,17 @@ function AjustesPerfil({ user }: { user: Usuario }) {
         <div className="eyebrow" style={{ marginBottom: 16 }}>Cambiar contraseña</div>
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
           <div className="field">
-            <label>Contraseña actual</label>
+            <label>Nueva contraseña</label>
             <div style={{ position: 'relative' }}>
-              <input className="input" type={showPw ? 'text' : 'password'} value={pwActual} onChange={e => setPwActual(e.target.value)} placeholder="••••••••" style={{ paddingRight: 42 }} />
+              <input className="input" type={showPw ? 'text' : 'password'} value={pwNueva} onChange={e => setPwNueva(e.target.value)} placeholder="Mín. 8 caracteres" style={{ paddingRight: 42 }} />
               <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
                 <Ic n={showPw ? 'eye-slash' : 'eye'} size={16} />
               </button>
             </div>
           </div>
-          <div className="field"><label>Nueva contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwNueva} onChange={e => setPwNueva(e.target.value)} placeholder="Mín. 8 caracteres" /></div>
           <div className="field"><label>Confirmar contraseña</label><input className="input" type={showPw ? 'text' : 'password'} value={pwConf} onChange={e => setPwConf(e.target.value)} placeholder="••••••••" /></div>
         </div>
-        <button className="btn ghost sm mt14" disabled={saving} onClick={cambiarPw}><Ic n={saving ? 'spinner' : 'lock-key'} />{saving ? 'Verificando…' : 'Actualizar contraseña'}</button>
+        <button className="btn ghost sm mt14" disabled={saving} onClick={cambiarPw}><Ic n={saving ? 'spinner' : 'lock-key'} />{saving ? 'Guardando…' : 'Actualizar contraseña'}</button>
       </div>
     </div>
   )
@@ -539,17 +534,13 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
   const [rol, setRol] = useState<RolUsuario>(usr?.rol || 'recepcion')
   const [color, setColor] = useState(usr?.color || COLORES_USR[0])
   const [activo, setActivo] = useState(usr?.activo !== false)
-  const [newPass, setNewPass] = useState('')
-  const [showPass, setShowPass] = useState(false)
 
   const save = () => {
     if (!nombre.trim()) { toast('El nombre es requerido'); return }
     if (!email.trim() || !email.includes('@')) { toast('Ingresa un correo válido'); return }
-    if (newPass && newPass.length < 8) { toast('La contraseña debe tener al menos 8 caracteres'); return }
     const id = usr?.id || 'u' + Date.now()
     const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
-    const pass = newPass || usr?.pass || 'robsen2026'
-    upsertUsuario({ id, nombre: nombre.trim(), email, tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—', pass })
+    upsertUsuario({ id, nombre: nombre.trim(), email, tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—' })
     toast(isNew ? 'Usuario creado' : 'Usuario actualizado')
     onClose()
   }
@@ -575,15 +566,11 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
           <div className="field"><label>Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" /></div>
           <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
         </div>
-        <div className="field">
-          <label>{isNew ? 'Contraseña inicial' : 'Nueva contraseña'} <span className="dim" style={{ fontWeight: 400 }}>{isNew ? '' : '(dejar vacío para no cambiar)'}</span></label>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <input className="input" type={showPass ? 'text' : 'password'} value={newPass} onChange={e => setNewPass(e.target.value)} placeholder={isNew ? 'Mín. 8 caracteres (default: robsen2026)' : '••••••••'} style={{ paddingRight: 42 }} />
-            <button type="button" onClick={() => setShowPass(v => !v)} style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
-              <Ic n={showPass ? 'eye-slash' : 'eye'} size={16} />
-            </button>
+        {isNew && (
+          <div style={{ background: 'rgba(200,161,74,0.06)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
+            Este formulario solo crea el perfil dentro de la app. Para darle acceso de inicio de sesión, crea su cuenta con este mismo correo desde Supabase → Authentication → Users.
           </div>
-        </div>
+        )}
         <div className="field">
           <label>Color de identificación</label>
           <div className="vc gap10">

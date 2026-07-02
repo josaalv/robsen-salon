@@ -373,6 +373,12 @@ export const db = {
     if (error) console.error('[db.getUsuarioById]', error.message)
     return data as Usuario | null
   },
+  async getUsuarioByAuthId(authUserId: string): Promise<Usuario | null> {
+    if (!supabase) return null
+    const { data, error } = await supabase.from('usuarios').select('*').eq('auth_user_id', authUserId).maybeSingle()
+    if (error) console.error('[db.getUsuarioByAuthId]', error.message)
+    return data as Usuario | null
+  },
   async upsertUsuario(u: Usuario): Promise<Usuario> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { data, error } = await supabase
@@ -394,30 +400,6 @@ export const db = {
       .maybeSingle()
     if (error) console.error('[db.getUsuarioByEmailOrTel]', error.message)
     return data as Usuario | null
-  },
-  async validateResetToken(token: string): Promise<{ valid: boolean; usuarioId?: string }> {
-    if (!supabase) return { valid: false }
-    const { data, error } = await supabase
-      .from('reset_tokens')
-      .select('*')
-      .eq('token', token)
-      .eq('used', false)
-      .gt('expires_at', new Date().toISOString())
-      .maybeSingle()
-    if (error || !data) return { valid: false }
-    return { valid: true, usuarioId: data.usuario_id }
-  },
-  async consumeResetToken(token: string, newPass: string): Promise<boolean> {
-    if (!supabase) return false
-    const check = await db.validateResetToken(token)
-    if (!check.valid || !check.usuarioId) return false
-    const { error: uErr } = await supabase
-      .from('usuarios')
-      .update({ pass: newPass })
-      .eq('id', check.usuarioId)
-    if (uErr) return false
-    await supabase.from('reset_tokens').update({ used: true }).eq('token', token)
-    return true
   },
   async clearUsuarioAvatar(id: string): Promise<Usuario> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
@@ -491,10 +473,7 @@ export const db = {
         await supabase.from('plantillas').upsert(data.plantillas, { onConflict: 'id' })
 
       if (data.usuarios.length)
-        await supabase.from('usuarios').upsert(
-          data.usuarios.map(u => ({ ...u, pass: u.pass || 'robsen2026' })),
-          { onConflict: 'id' }
-        )
+        await supabase.from('usuarios').upsert(data.usuarios, { onConflict: 'id' })
 
       for (const v of data.ventas) {
         await supabase.from('ventas').upsert({

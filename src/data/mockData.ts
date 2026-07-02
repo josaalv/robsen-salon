@@ -146,11 +146,11 @@ export const roles: Record<string, Rol> = {
 }
 
 export const usuarios: Usuario[] = [
-  { id:'u1', nombre:'Roberto Benítez',  rol:'admin',     ini:'RB', color:null,      email:'roberto@robsen.com.mx',    tel:'33 3826 0774', activo:true,  ultimo:'Hoy · 08:42', pass:'robsen2026' },
-  { id:'u2', nombre:'Lucía Fuentes',    rol:'gerente',   ini:'LF', color:'#B08AC7', email:'lucia@robsen.com.mx',      tel:'33 1188 2204', activo:true,  ultimo:'Hoy · 09:15', pass:'robsen2026' },
-  { id:'u3', nombre:'Daniela Cortés',   rol:'recepcion', ini:'DC', color:'#C77B7B', email:'recepcion@robsen.com.mx',  tel:'33 2200 7781', activo:true,  ultimo:'Hoy · 08:05', pass:'robsen2026' },
-  { id:'u4', nombre:'Valeria Mendoza',  rol:'estilista', ini:'VM', color:'#C8A14A', email:'valeria@robsen.com.mx',    tel:'33 3341 9920', activo:true,  ultimo:'Ayer · 19:30', pass:'robsen2026' },
-  { id:'u5', nombre:'Renata Ochoa',     rol:'estilista', ini:'RO', color:'#93B58C', email:'renata@robsen.com.mx',     tel:'33 4419 0087', activo:false, ultimo:'10 Jun · 18:10', pass:'robsen2026' },
+  { id:'u1', nombre:'Roberto Benítez',  rol:'admin',     ini:'RB', color:null,      email:'roberto@robsen.com.mx',    tel:'33 3826 0774', activo:true,  ultimo:'Hoy · 08:42' },
+  { id:'u2', nombre:'Lucía Fuentes',    rol:'gerente',   ini:'LF', color:'#B08AC7', email:'lucia@robsen.com.mx',      tel:'33 1188 2204', activo:true,  ultimo:'Hoy · 09:15' },
+  { id:'u3', nombre:'Daniela Cortés',   rol:'recepcion', ini:'DC', color:'#C77B7B', email:'recepcion@robsen.com.mx',  tel:'33 2200 7781', activo:true,  ultimo:'Hoy · 08:05' },
+  { id:'u4', nombre:'Valeria Mendoza',  rol:'estilista', ini:'VM', color:'#C8A14A', email:'valeria@robsen.com.mx',    tel:'33 3341 9920', activo:true,  ultimo:'Ayer · 19:30' },
+  { id:'u5', nombre:'Renata Ochoa',     rol:'estilista', ini:'RO', color:'#93B58C', email:'renata@robsen.com.mx',     tel:'33 4419 0087', activo:false, ultimo:'10 Jun · 18:10' },
 ]
 
 export const adicionales: Adicional[] = [

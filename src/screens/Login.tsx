@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { db } from '../lib/db'
-import { hasSupabase } from '../lib/supabase'
+import { supabase, hasSupabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import type { Usuario } from '../types'
 
 const ROL_LABEL: Record<string, string> = {
@@ -11,7 +12,8 @@ const ROL_LABEL: Record<string, string> = {
 
 type Step = 'picker' | 'password' | 'forgot' | 'reset'
 
-export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
+export function ScreenLogin() {
+  const { passwordRecovery, clearPasswordRecovery } = useAuth()
   const [usuarios, setUsuarios]   = useState<Usuario[]>([])
   const [cargando, setCargando]   = useState(true)
   const [step, setStep]           = useState<Step>('picker')
@@ -28,20 +30,15 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
   const [forgotEmail, setForgotEmail] = useState('')
   const [forgotSent, setForgotSent]   = useState(false)
 
-  const [resetToken, setResetToken] = useState('')
   const [resetPass, setResetPass]   = useState('')
   const [resetConf, setResetConf]   = useState('')
   const [resetOk, setResetOk]       = useState(false)
 
+  // Supabase dispara el evento PASSWORD_RECOVERY cuando la persona abre el
+  // enlace de "olvidé mi contraseña" desde su correo.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const token = params.get('reset')
-    if (token) {
-      setResetToken(token)
-      setStep('reset')
-      window.history.replaceState({}, '', window.location.pathname)
-    }
-  }, [])
+    if (passwordRecovery) setStep('reset')
+  }, [passwordRecovery])
 
   const cargarUsuarios = () => {
     if (!hasSupabase) { setCargando(false); return }
@@ -84,57 +81,51 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
   }
 
   const entrar = async () => {
-    if (!selected) return
+    if (!selected || !supabase) return
     if (!pass.trim()) { setError('Ingresa tu contraseña.'); return }
     setLoading(true); setError('')
     try {
-      if (!selected.pass || pass.trim() !== selected.pass) {
-        setError('Contraseña incorrecta.')
-        return
-      }
-      onLogin(selected)
+      const { error: authErr } = await supabase.auth.signInWithPassword({
+        email: selected.email, password: pass,
+      })
+      if (authErr) { setError('Correo o contraseña incorrectos.'); return }
+      // El AuthProvider detecta la sesión y carga el perfil automáticamente.
+    } catch {
+      setError('Error al iniciar sesión. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }
   }
 
   const enviarRecuperacion = async () => {
-    if (!forgotEmail.trim()) { setError('Ingresa tu correo electrónico.'); return }
+    if (!forgotEmail.trim() || !supabase) { setError('Ingresa tu correo electrónico.'); return }
     setLoading(true); setError('')
     try {
-      const res = await fetch(
-        'https://pkpwrifwrntjztprwcwp.supabase.co/functions/v1/send-reset-email',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
-          },
-          body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
-        }
+      const { error: err } = await supabase.auth.resetPasswordForEmail(
+        forgotEmail.trim().toLowerCase(),
+        { redirectTo: window.location.origin }
       )
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
+      if (err) throw err
       setForgotSent(true)
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setError(`Error: ${msg}`)
+    } catch {
+      setError('No se pudo enviar el enlace. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }
   }
 
   const resetearPass = async () => {
-    if (!resetPass || !resetConf) { setError('Completa ambos campos.'); return }
+    if (!resetPass || !resetConf || !supabase) { setError('Completa ambos campos.'); return }
     if (resetPass.length < 8) { setError('La contraseña debe tener al menos 8 caracteres.'); return }
     if (resetPass !== resetConf) { setError('Las contraseñas no coinciden.'); return }
     setLoading(true); setError('')
     try {
-      const ok = await db.consumeResetToken(resetToken, resetPass)
-      if (!ok) { setError('El enlace ya fue usado o expiró. Solicita uno nuevo.'); return }
+      const { error: err } = await supabase.auth.updateUser({ password: resetPass })
+      if (err) throw err
       setResetOk(true)
+      clearPasswordRecovery()
     } catch {
-      setError('Error al cambiar la contraseña. Intenta de nuevo.')
+      setError('El enlace expiró o ya fue usado. Solicita uno nuevo.')
     } finally {
       setLoading(false)
     }
@@ -208,7 +199,7 @@ export function ScreenLogin({ onLogin }: { onLogin: (u: Usuario) => void }) {
                   </button>
                 </>
               )}
-              <button onClick={() => setStep('picker')} style={{ marginTop:16, background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'flex', alignItems:'center', gap:6, padding:0 }}>
+              <button onClick={() => { clearPasswordRecovery(); setStep('picker') }} style={{ marginTop:16, background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'flex', alignItems:'center', gap:6, padding:0 }}>
                 <Ic n="arrow-left" /> Volver al inicio
               </button>
             </>

@@ -169,8 +169,8 @@ export interface Usuario {
   tel: string
   activo: boolean
   ultimo: string
-  pass?: string
   avatar?: string
+  estilistaId?: string
 }
 
 export interface Rol {
