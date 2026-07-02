@@ -431,6 +431,16 @@ export const db = {
     if (data?.error) throw new Error(data.error)
     return { invited: !!data?.invited }
   },
+  // Elimina el perfil y, si tenía cuenta de acceso, también la cuenta
+  // de Supabase Auth. Solo un admin autenticado puede llamarlo.
+  async eliminarUsuario(usuarioId: string): Promise<void> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('eliminar-usuario', {
+      body: { usuarioId },
+    })
+    if (error) throw new Error(data?.error || error.message)
+    if (data?.error) throw new Error(data.error)
+  },
   async clearUsuarioAvatar(id: string): Promise<Usuario> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { data, error } = await supabase

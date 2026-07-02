@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Avatar } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn } from '../lib/helpers'
+import { mxn, telefonoValido, telefonoError } from '../lib/helpers'
 import type { Servicio, Estilista } from '../types'
 
 const DIAS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -96,7 +96,7 @@ export function ScreenBooking() {
   const back = () => setStep(s => Math.max(1, s - 1))
   const canNext = (step === 1 && !!srv) || (step === 2 && !!prof) || (step === 3 && !!hora)
 
-  const telValido = /^\d{10}$/.test(clienteTel.replace(/\D/g, ''))
+  const telValido = telefonoValido(clienteTel)
   const emailValido = !clienteEmail.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clienteEmail.trim())
   const step4Ok = clienteNombre.trim() && telValido && emailValido
 
@@ -285,12 +285,12 @@ export function ScreenBooking() {
                   <label>Teléfono (WhatsApp)</label>
                   <input
                     className="input"
-                    placeholder="3300000000"
+                    placeholder="33 1234 5678"
                     value={clienteTel}
                     onChange={e => setClienteTel(e.target.value)}
                     style={{ borderColor: clienteTel && !telValido ? 'var(--st-canc)' : undefined }}
                   />
-                  {clienteTel && !telValido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>Ingresa 10 dígitos</div>}
+                  {clienteTel && !telValido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(clienteTel)}</div>}
                 </div>
                 <div className="field" style={{ gridColumn: '1 / -1' }}>
                   <label>Correo (opcional)</label>

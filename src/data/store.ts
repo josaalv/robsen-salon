@@ -30,6 +30,7 @@ interface Store {
   updateVenta: (id: string, patch: Partial<Venta>) => void
   venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => void
   upsertUsuario: (u: Partial<Usuario> & { id: string }) => void
+  deleteUsuario: (id: string) => void
   upsertPlantilla: (p: Partial<Plantilla> & { id: string }) => void
   ajustarStock: (productoId: string, cant: number, motivo: string) => void
   upsertBloqueo: (b: Bloqueo) => void
@@ -350,6 +351,13 @@ export const useStore = create<Store>()(
           return { data: { ...s.data, usuarios: newU } }
         })
         db.upsertUsuario(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+      },
+
+      // La eliminación real (perfil + cuenta de Auth) ya ocurrió vía
+      // db.eliminarUsuario antes de llamar esto — aquí solo se sincroniza
+      // el estado local.
+      deleteUsuario: (id) => {
+        set(s => ({ data: { ...s.data, usuarios: s.data.usuarios.filter(u => u.id !== id) } }))
       },
 
       upsertPlantilla: (p) => {

@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Avatar, Switch, CardHead, Seg, toast, Modal } from '../components/ui'
+import { Avatar, Switch, CardHead, Seg, toast, Modal, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
 import { supabase } from '../lib/supabase'
-import { mxn } from '../lib/helpers'
+import { mxn, telefonoValido, telefonoError } from '../lib/helpers'
 import type { Usuario, SlotMinutos, RolUsuario } from '../types'
 
 function SettingRow({ title, desc, children, last }: { title: string; desc?: string; children: React.ReactNode; last?: boolean }) {
@@ -75,8 +75,11 @@ function AjustesPerfil({ user }: { user: Usuario }) {
     }
   }
 
+  const telInvalido = !!tel.trim() && !telefonoValido(tel)
+
   const guardar = async () => {
     if (!nombre.trim()) { toast('El nombre no puede estar vacío'); return }
+    if (telInvalido) { toast('Ingresa un teléfono válido a 10 dígitos'); return }
     setSaving(true)
     try {
       const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
@@ -131,10 +134,15 @@ function AjustesPerfil({ user }: { user: Usuario }) {
           <div className="field"><label>Nombre completo</label><input className="input" value={nombre} onChange={e => setNombre(e.target.value)} /></div>
           <div className="field"><label>Rol</label><input className="input" value={user.rol} disabled style={{ opacity: 0.6 }} /></div>
           <div className="field"><label>Correo electrónico</label><input className="input" value={user.email} disabled style={{ opacity: 0.6 }} /></div>
-          <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
+          <div className="field">
+            <label>Teléfono</label>
+            <input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="33 1234 5678"
+              style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }} />
+            {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
+          </div>
         </div>
         <div className="vc gap8 mt14">
-          <button className="btn gold" disabled={saving} onClick={guardar}><Ic n={saving ? 'spinner' : 'check'} />{saving ? 'Guardando…' : 'Guardar cambios'}</button>
+          <button className="btn gold" disabled={saving || telInvalido} onClick={guardar}><Ic n={saving ? 'spinner' : 'check'} />{saving ? 'Guardando…' : 'Guardar cambios'}</button>
           <button className="btn ghost" disabled={saving} onClick={() => { setNombre(user.nombre); setTel(user.tel || '') }}>Cancelar</button>
         </div>
       </div>
@@ -191,7 +199,11 @@ function AjustesSalon() {
     updateConfig({ logo: undefined })
   }
 
+  const telInvalido = !!tel.trim() && !telefonoValido(tel)
+  const whatsappInvalido = !!whatsapp.trim() && !telefonoValido(whatsapp)
+
   const guardar = () => {
+    if (telInvalido || whatsappInvalido) { toast('Revisa los teléfonos — deben tener 10 dígitos con lada'); return }
     updateConfig({ nombre, direccion, tel, whatsapp })
     toast('Datos del salón guardados')
   }
@@ -220,13 +232,23 @@ function AjustesSalon() {
           <div className="field"><label>Nombre comercial</label><input className="input" value={nombre} onChange={e => setNombre(e.target.value)} /></div>
           <div className="field"><label>Dirección</label><input className="input" value={direccion} onChange={e => setDireccion(e.target.value)} /></div>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} /></div>
-            <div className="field"><label>WhatsApp</label><input className="input" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} /></div>
+            <div className="field">
+              <label>Teléfono</label>
+              <input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="33 1234 5678"
+                style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }} />
+              {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
+            </div>
+            <div className="field">
+              <label>WhatsApp</label>
+              <input className="input" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="33 1234 5678"
+                style={{ borderColor: whatsappInvalido ? 'var(--st-canc)' : undefined }} />
+              {whatsappInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(whatsapp)}</div>}
+            </div>
           </div>
         </div>
       </div>
       <div className="vc gap8">
-        <button className="btn gold" onClick={guardar}><Ic n="check" />Guardar</button>
+        <button className="btn gold" disabled={telInvalido || whatsappInvalido} onClick={guardar}><Ic n="check" />Guardar</button>
         <button className="btn ghost" onClick={() => { setNombre(cfg.nombre); setDireccion(cfg.direccion); setTel(cfg.tel); setWhatsapp(cfg.whatsapp) }}>Cancelar</button>
       </div>
     </div>
@@ -526,7 +548,7 @@ const ROLES_LIST: { val: RolUsuario; label: string }[] = [
 ]
 
 function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; selfId: string; onClose: () => void }) {
-  const { upsertUsuario } = useStore()
+  const { upsertUsuario, deleteUsuario } = useStore()
   const isNew = !usr?.id
   const necesitaAcceso = isNew || !usr?.authUserId
   const [nombre, setNombre] = useState(usr?.nombre || '')
@@ -536,10 +558,30 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
   const [color, setColor] = useState(usr?.color || COLORES_USR[0])
   const [activo, setActivo] = useState(usr?.activo !== false)
   const [guardando, setGuardando] = useState(false)
+  const [eliminando, setEliminando] = useState(false)
+  const [confirmarBorrar, setConfirmarBorrar] = useState(false)
+  const telInvalido = !!tel.trim() && !telefonoValido(tel)
+
+  const eliminar = async () => {
+    if (!usr?.id) return
+    setEliminando(true)
+    try {
+      await db.eliminarUsuario(usr.id)
+      deleteUsuario(usr.id)
+      toast('Usuario eliminado')
+      onClose()
+    } catch (err) {
+      toast('No se pudo eliminar: ' + (err instanceof Error ? err.message : 'error'))
+    } finally {
+      setEliminando(false)
+      setConfirmarBorrar(false)
+    }
+  }
 
   const save = async () => {
     if (!nombre.trim()) { toast('El nombre es requerido'); return }
     if (!email.trim() || !email.includes('@')) { toast('Ingresa un correo válido'); return }
+    if (telInvalido) { toast('Ingresa un teléfono válido a 10 dígitos con lada'); return }
     setGuardando(true)
     try {
       const id = usr?.id || 'u' + Date.now()
@@ -588,7 +630,12 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
             </select>
           </div>
           <div className="field"><label>Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" /></div>
-          <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
+          <div className="field">
+            <label>Teléfono</label>
+            <input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="33 1234 5678"
+              style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }} />
+            {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
+          </div>
         </div>
         {necesitaAcceso ? (
           <div style={{ background: 'rgba(200,161,74,0.06)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
@@ -628,13 +675,26 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
           </SettingRow>
         )}
         <div className="vc gap8 mt6">
-          <button className="btn gold f1" style={{ justifyContent: 'center' }} disabled={guardando} onClick={save}>
+          <button className="btn gold f1" style={{ justifyContent: 'center' }} disabled={guardando || telInvalido} onClick={save}>
             <Ic n={guardando ? 'spinner' : 'check'} />
             {guardando ? 'Guardando…' : isNew ? 'Crear usuario' : 'Guardar cambios'}
           </button>
           <button className="btn ghost" disabled={guardando} onClick={onClose}>Cancelar</button>
         </div>
+        {usr?.id && usr.id !== selfId && (
+          <button className="btn danger w100" style={{ justifyContent: 'center' }} disabled={guardando || eliminando} onClick={() => setConfirmarBorrar(true)}>
+            <Ic n="trash" />Eliminar usuario
+          </button>
+        )}
       </div>
+      {confirmarBorrar && (
+        <ConfirmModal
+          title="¿Eliminar este usuario?"
+          desc={`${usr?.nombre} perderá acceso al sistema de inmediato${usr?.authUserId ? ' y su cuenta de inicio de sesión se elimina también' : ''}. Esta acción no se puede deshacer.`}
+          onConfirm={eliminar}
+          onCancel={() => setConfirmarBorrar(false)}
+        />
+      )}
     </Modal>
   )
 }

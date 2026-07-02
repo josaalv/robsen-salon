@@ -3,7 +3,7 @@ import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, toast, ConfirmModal }
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
-import { mxn, helpers } from '../lib/helpers'
+import { mxn, helpers, normalizarTel as normalizarTelShared, telefonoValido, telefonoError } from '../lib/helpers'
 import type { Clienta, EstadoClienta, FotoEntry } from '../types'
 
 function waUrl(tel: string, msg: string): string {
@@ -22,7 +22,7 @@ function fechaHoy() {
   const d = new Date()
   return `${d.getDate()} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`
 }
-const normalizarTel = (t: string) => (t || '').replace(/\D/g, '')
+const normalizarTel = normalizarTelShared
 
 // ─── Modal nueva / editar clienta ───────────────────────────────────────────
 function ClientaModal({ c, onClose, onSaved }: {
@@ -46,8 +46,11 @@ function ClientaModal({ c, onClose, onSaved }: {
     ? data.clientas.find(x => x.id !== c.id && normalizarTel(x.tel) === telNorm)
     : undefined
 
+  const telInvalido = !!tel.trim() && !telefonoValido(tel)
+
   const guardar = () => {
     if (!nombre.trim()) return
+    if (telInvalido) return
     if (duplicado && !forzarDuplicado) return
     const id = c.id || ('c' + Date.now())
     const ini = nombre.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
@@ -89,7 +92,14 @@ function ClientaModal({ c, onClose, onSaved }: {
             </div>
             <div className="field">
               <label>Teléfono (WhatsApp)</label>
-              <input className="input" value={tel} onChange={e => { setTel(e.target.value); setForzarDuplicado(false) }} placeholder="33 0000 0000" />
+              <input
+                className="input"
+                value={tel}
+                onChange={e => { setTel(e.target.value); setForzarDuplicado(false) }}
+                placeholder="33 1234 5678"
+                style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }}
+              />
+              {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
             </div>
             {duplicado && (
               <div style={{ gridColumn: '1 / -1', background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--st-canc)', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -135,7 +145,10 @@ function ClientaModal({ c, onClose, onSaved }: {
           <button
             className="btn gold"
             onClick={guardar}
-            style={{ opacity: nombre.trim() && (!duplicado || forzarDuplicado) ? 1 : .4, pointerEvents: nombre.trim() && (!duplicado || forzarDuplicado) ? 'auto' : 'none' }}
+            style={(() => {
+              const ok = !!nombre.trim() && !telInvalido && (!duplicado || forzarDuplicado)
+              return { opacity: ok ? 1 : .4, pointerEvents: ok ? 'auto' : 'none' }
+            })()}
           >
             <Ic n="check" />{nuevo ? 'Registrar clienta' : 'Guardar cambios'}
           </button>

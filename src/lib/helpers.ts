@@ -8,6 +8,20 @@ const DIA = 86400000
 export const mxn = (n: number) => '$' + Number(n).toLocaleString('es-MX')
 export const mxn0 = (n: number) => Number(n).toLocaleString('es-MX')
 
+// Teléfono: acepta con o sin código de país (52) y con o sin el 1 de
+// celular (521…), siempre y cuando el número local (con lada) sean 10 dígitos.
+export const normalizarTel = (t: string): string => (t || '').replace(/\D/g, '')
+
+export const telefonoValido = (t: string): boolean => {
+  let d = normalizarTel(t)
+  if (d.length === 13 && d.startsWith('521')) d = d.slice(3)
+  else if (d.length === 12 && d.startsWith('52')) d = d.slice(2)
+  return d.length === 10
+}
+
+export const telefonoError = (t: string): string =>
+  !t.trim() || telefonoValido(t) ? '' : 'Ingresa un teléfono a 10 dígitos con lada, ej. 33 1234 5678'
+
 export type EscalaTramo = { limite: number | null; pct: number }
 
 // Calcula comisión progresiva por tramos (tipo brackets fiscales).
