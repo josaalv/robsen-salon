@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Avatar } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, telefonoValido, telefonoError } from '../lib/helpers'
+import { mxn, telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
 import type { Servicio, Estilista } from '../types'
 
 const DIAS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -287,7 +287,7 @@ export function ScreenBooking() {
                     className="input"
                     placeholder="33 1234 5678"
                     value={clienteTel}
-                    onChange={e => setClienteTel(e.target.value)}
+                    onChange={e => setClienteTel(filtrarTel(e.target.value))}
                     style={{ borderColor: clienteTel && !telValido ? 'var(--st-canc)' : undefined }}
                   />
                   {clienteTel && !telValido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(clienteTel)}</div>}

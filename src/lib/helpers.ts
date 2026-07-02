@@ -12,6 +12,10 @@ export const mxn0 = (n: number) => Number(n).toLocaleString('es-MX')
 // celular (521…), siempre y cuando el número local (con lada) sean 10 dígitos.
 export const normalizarTel = (t: string): string => (t || '').replace(/\D/g, '')
 
+// Filtra lo que se escribe en los campos de teléfono: solo dígitos, espacios
+// y un "+" inicial (para formatos tipo "+52 33 1234 5678"). Bloquea letras.
+export const filtrarTel = (t: string): string => (t || '').replace(/[^\d\s+]/g, '')
+
 export const telefonoValido = (t: string): boolean => {
   let d = normalizarTel(t)
   if (d.length === 13 && d.startsWith('521')) d = d.slice(3)

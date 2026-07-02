@@ -5,7 +5,7 @@ import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
 import { supabase } from '../lib/supabase'
-import { mxn, telefonoValido, telefonoError } from '../lib/helpers'
+import { mxn, telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
 import type { Usuario, SlotMinutos, RolUsuario } from '../types'
 
 function SettingRow({ title, desc, children, last }: { title: string; desc?: string; children: React.ReactNode; last?: boolean }) {
@@ -136,7 +136,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
           <div className="field"><label>Correo electrónico</label><input className="input" value={user.email} disabled style={{ opacity: 0.6 }} /></div>
           <div className="field">
             <label>Teléfono</label>
-            <input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="33 1234 5678"
+            <input className="input" value={tel} onChange={e => setTel(filtrarTel(e.target.value))} placeholder="33 1234 5678"
               style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }} />
             {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
           </div>
@@ -234,13 +234,13 @@ function AjustesSalon() {
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className="field">
               <label>Teléfono</label>
-              <input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="33 1234 5678"
+              <input className="input" value={tel} onChange={e => setTel(filtrarTel(e.target.value))} placeholder="33 1234 5678"
                 style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }} />
               {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
             </div>
             <div className="field">
               <label>WhatsApp</label>
-              <input className="input" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="33 1234 5678"
+              <input className="input" value={whatsapp} onChange={e => setWhatsapp(filtrarTel(e.target.value))} placeholder="33 1234 5678"
                 style={{ borderColor: whatsappInvalido ? 'var(--st-canc)' : undefined }} />
               {whatsappInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(whatsapp)}</div>}
             </div>
@@ -632,7 +632,7 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
           <div className="field"><label>Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" /></div>
           <div className="field">
             <label>Teléfono</label>
-            <input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="33 1234 5678"
+            <input className="input" value={tel} onChange={e => setTel(filtrarTel(e.target.value))} placeholder="33 1234 5678"
               style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }} />
             {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
           </div>

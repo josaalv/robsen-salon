@@ -3,7 +3,7 @@ import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, toast, ConfirmModal }
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
-import { mxn, helpers, normalizarTel as normalizarTelShared, telefonoValido, telefonoError } from '../lib/helpers'
+import { mxn, helpers, normalizarTel as normalizarTelShared, telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
 import type { Clienta, EstadoClienta, FotoEntry } from '../types'
 
 function waUrl(tel: string, msg: string): string {
@@ -95,7 +95,7 @@ function ClientaModal({ c, onClose, onSaved }: {
               <input
                 className="input"
                 value={tel}
-                onChange={e => { setTel(e.target.value); setForzarDuplicado(false) }}
+                onChange={e => { setTel(filtrarTel(e.target.value)); setForzarDuplicado(false) }}
                 placeholder="33 1234 5678"
                 style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }}
               />
