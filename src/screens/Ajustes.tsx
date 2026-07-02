@@ -528,21 +528,45 @@ const ROLES_LIST: { val: RolUsuario; label: string }[] = [
 function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; selfId: string; onClose: () => void }) {
   const { upsertUsuario } = useStore()
   const isNew = !usr?.id
+  const necesitaAcceso = isNew || !usr?.authUserId
   const [nombre, setNombre] = useState(usr?.nombre || '')
   const [email, setEmail] = useState(usr?.email || '')
   const [tel, setTel] = useState(usr?.tel || '')
   const [rol, setRol] = useState<RolUsuario>(usr?.rol || 'recepcion')
   const [color, setColor] = useState(usr?.color || COLORES_USR[0])
   const [activo, setActivo] = useState(usr?.activo !== false)
+  const [guardando, setGuardando] = useState(false)
 
-  const save = () => {
+  const save = async () => {
     if (!nombre.trim()) { toast('El nombre es requerido'); return }
     if (!email.trim() || !email.includes('@')) { toast('Ingresa un correo válido'); return }
-    const id = usr?.id || 'u' + Date.now()
-    const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
-    upsertUsuario({ id, nombre: nombre.trim(), email, tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—' })
-    toast(isNew ? 'Usuario creado' : 'Usuario actualizado')
-    onClose()
+    setGuardando(true)
+    try {
+      const id = usr?.id || 'u' + Date.now()
+      const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+      const saved = await db.upsertUsuario({
+        id, nombre: nombre.trim(), email: email.trim(), tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—',
+      } as Usuario)
+      upsertUsuario(saved)
+
+      if (necesitaAcceso) {
+        try {
+          const { invited } = await db.crearAccesoUsuario(saved.id, saved.email)
+          toast(invited
+            ? `Usuario guardado. Se envió una invitación por correo a ${saved.email} para que configure su acceso.`
+            : 'Usuario guardado y cuenta de acceso vinculada.')
+        } catch (err) {
+          toast('El perfil se guardó, pero no se pudo crear el acceso: ' + (err instanceof Error ? err.message : 'intenta de nuevo'))
+        }
+      } else {
+        toast('Usuario actualizado')
+      }
+      onClose()
+    } catch (err) {
+      toast('No se pudo guardar el usuario: ' + (err instanceof Error ? err.message : 'error'))
+    } finally {
+      setGuardando(false)
+    }
   }
 
   return (
@@ -566,9 +590,15 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
           <div className="field"><label>Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" /></div>
           <div className="field"><label>Teléfono</label><input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="+52 33 1234 5678" /></div>
         </div>
-        {isNew && (
+        {necesitaAcceso ? (
           <div style={{ background: 'rgba(200,161,74,0.06)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
-            Este formulario solo crea el perfil dentro de la app. Para darle acceso de inicio de sesión, crea su cuenta con este mismo correo desde Supabase → Authentication → Users.
+            {isNew
+              ? 'Al guardar, se le enviará una invitación por correo a esta persona para que configure su propia contraseña.'
+              : 'Esta persona todavía no tiene acceso al sistema. Al guardar, se le enviará una invitación por correo.'}
+          </div>
+        ) : (
+          <div style={{ background: 'rgba(147,181,140,0.06)', border: '1px solid rgba(147,181,140,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--st-conf)', lineHeight: 1.5 }}>
+            ✓ Ya tiene acceso al sistema con este correo.
           </div>
         )}
         <div className="field">
@@ -598,8 +628,11 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
           </SettingRow>
         )}
         <div className="vc gap8 mt6">
-          <button className="btn gold f1" style={{ justifyContent: 'center' }} onClick={save}><Ic n="check" />{isNew ? 'Crear usuario' : 'Guardar cambios'}</button>
-          <button className="btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn gold f1" style={{ justifyContent: 'center' }} disabled={guardando} onClick={save}>
+            <Ic n={guardando ? 'spinner' : 'check'} />
+            {guardando ? 'Guardando…' : isNew ? 'Crear usuario' : 'Guardar cambios'}
+          </button>
+          <button className="btn ghost" disabled={guardando} onClick={onClose}>Cancelar</button>
         </div>
       </div>
     </Modal>
@@ -623,7 +656,7 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
         </div>
         <table className="table" style={{ marginTop: 6 }}>
           <thead>
-            <tr><th>Usuario</th><th>Rol</th><th>Último acceso</th><th>Estado</th><th></th></tr>
+            <tr><th>Usuario</th><th>Rol</th><th>Último acceso</th><th>Estado</th><th>Acceso</th><th></th></tr>
           </thead>
           <tbody>
             {data.usuarios.map(u => (
@@ -641,6 +674,11 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
                 <td className="muted">{u.ultimo || '—'}</td>
                 <td>
                   <span className={'badge ' + (u.activo ? 'conf' : 'canc')}>{u.activo ? 'Activo' : 'Inactivo'}</span>
+                </td>
+                <td>
+                  {u.authUserId
+                    ? <span className="badge conf" title="Puede iniciar sesión"><Ic n="check-circle" size={12} />Con acceso</span>
+                    : <span className="badge pend" title="Todavía no puede iniciar sesión">Sin acceso</span>}
                 </td>
                 <td><Ic n="caret-right" /></td>
               </tr>

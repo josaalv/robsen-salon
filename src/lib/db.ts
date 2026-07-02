@@ -117,6 +117,15 @@ const mapClienta = (r: any): Clienta => ({
   fotos: r.fotos ?? [],
 })
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapUsuario = (r: any): Usuario => ({
+  id: r.id, nombre: r.nombre, rol: r.rol, ini: r.ini, color: r.color,
+  email: r.email, tel: r.tel, activo: r.activo, ultimo: r.ultimo,
+  avatar: r.avatar ?? undefined,
+  estilistaId: r.estilista_id ?? undefined,
+  authUserId: r.auth_user_id ?? undefined,
+})
+
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export const db = {
@@ -374,19 +383,19 @@ export const db = {
     if (!supabase) return []
     const { data, error } = await supabase.from('usuarios').select('*')
     if (error) console.error('[db.getUsuarios]', error.message)
-    return (data ?? []) as Usuario[]
+    return (data ?? []).map(mapUsuario)
   },
   async getUsuarioById(id: string): Promise<Usuario | null> {
     if (!supabase) return null
     const { data, error } = await supabase.from('usuarios').select('*').eq('id', id).maybeSingle()
     if (error) console.error('[db.getUsuarioById]', error.message)
-    return data as Usuario | null
+    return data ? mapUsuario(data) : null
   },
   async getUsuarioByAuthId(authUserId: string): Promise<Usuario | null> {
     if (!supabase) return null
     const { data, error } = await supabase.from('usuarios').select('*').eq('auth_user_id', authUserId).maybeSingle()
     if (error) console.error('[db.getUsuarioByAuthId]', error.message)
-    return data as Usuario | null
+    return data ? mapUsuario(data) : null
   },
   async upsertUsuario(u: Usuario): Promise<Usuario> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
@@ -396,7 +405,7 @@ export const db = {
       .select()
       .single()
     if (error) throw new Error(error.message)
-    return data as Usuario
+    return mapUsuario(data)
   },
   async getUsuarioByEmailOrTel(query: string): Promise<Usuario | null> {
     if (!supabase) return null
@@ -408,7 +417,19 @@ export const db = {
       .eq('activo', true)
       .maybeSingle()
     if (error) console.error('[db.getUsuarioByEmailOrTel]', error.message)
-    return data as Usuario | null
+    return data ? mapUsuario(data) : null
+  },
+  // Crea (o vincula, si ya existía) la cuenta de Supabase Auth de un usuario
+  // y le envía un correo de invitación para que configure su contraseña.
+  // Solo un admin autenticado puede llamar esto (lo valida la función también).
+  async crearAccesoUsuario(usuarioId: string, email: string): Promise<{ invited: boolean }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('crear-acceso-usuario', {
+      body: { usuarioId, email },
+    })
+    if (error) throw new Error(data?.error || error.message)
+    if (data?.error) throw new Error(data.error)
+    return { invited: !!data?.invited }
   },
   async clearUsuarioAvatar(id: string): Promise<Usuario> {
     if (!supabase) throw new Error('Sin conexión a Supabase')

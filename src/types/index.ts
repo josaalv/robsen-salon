@@ -192,6 +192,7 @@ export interface Usuario {
   ultimo: string
   avatar?: string
   estilistaId?: string
+  authUserId?: string
 }
 
 export interface Rol {
