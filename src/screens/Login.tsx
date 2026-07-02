@@ -123,7 +123,10 @@ export function ScreenLogin() {
       const { error: err } = await supabase.auth.updateUser({ password: resetPass })
       if (err) throw err
       setResetOk(true)
-      clearPasswordRecovery()
+      // No se llama clearPasswordRecovery() aquí a propósito: mientras
+      // siga en true, LoginGate mantiene esta pantalla visible para que
+      // la persona vea la confirmación. Se limpia al pulsar "Volver al
+      // inicio", que es cuando de verdad debe continuar a la app.
     } catch {
       setError('El enlace expiró o ya fue usado. Solicita uno nuevo.')
     } finally {

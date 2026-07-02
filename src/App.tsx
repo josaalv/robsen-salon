@@ -447,7 +447,7 @@ function NotifPop({ onClose, go }: any) {
 }
 
 function LoginGate() {
-  const { user, loading } = useAuth()
+  const { user, loading, passwordRecovery } = useAuth()
   const [LoginScreen, setLoginScreen] = useState<React.ComponentType<any> | null>(null)
 
   useEffect(() => {
@@ -463,7 +463,10 @@ function LoginGate() {
   }, [])
 
   if (loading) return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
-  if (user) return <AppShell />
+  // Un enlace de recuperación de contraseña deja una sesión válida (así
+  // funciona Supabase Auth), pero eso no debe saltarse la pantalla de
+  // "pon tu nueva contraseña" — se revisa antes que "user" a propósito.
+  if (!passwordRecovery && user) return <AppShell />
   if (LoginScreen) return <><LoginScreen /><ToastHost /></>
   return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
 }
