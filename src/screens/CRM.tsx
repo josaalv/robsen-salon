@@ -294,10 +294,27 @@ function AntesDesTab({ c }: { c: Clienta }) {
   const [uploading, setUploading] = useState(false)
   const antesRef = useRef<HTMLInputElement>(null)
   const despuesRef = useRef<HTMLInputElement>(null)
+  // fotos[].antes/despues guardan el path del bucket privado, no una URL.
+  // Para mostrarlas hay que pedir una URL firmada (expira) por cada path.
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
 
   useEffect(() => {
     setFotos(c.fotos || [])
   }, [c.id])
+
+  useEffect(() => {
+    const paths = fotos.flatMap(f => [f.antes, f.despues]).filter(Boolean)
+    const faltantes = paths.filter(p => !signedUrls[p])
+    if (faltantes.length === 0) return
+    Promise.all(faltantes.map(async p => [p, await db.getSignedUrl(p)] as const)).then(pairs => {
+      setSignedUrls(prev => {
+        const next = { ...prev }
+        for (const [p, url] of pairs) if (url) next[p] = url
+        return next
+      })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fotos])
 
   const handleFile = (file: File, type: 'antes' | 'despues') => {
     if (file.size > 15 * 1024 * 1024) { toast('La imagen debe pesar menos de 15 MB'); return }
@@ -324,16 +341,16 @@ function AntesDesTab({ c }: { c: Clienta }) {
     setUploading(true)
     try {
       const id = 'p' + Date.now()
-      const [antesUrl, despuesUrl] = await Promise.all([
-        antesFile ? db.uploadMedia(`fotos/${c.id}/${id}-antes`, antesFile) : Promise.resolve(null),
-        despuesFile ? db.uploadMedia(`fotos/${c.id}/${id}-despues`, despuesFile) : Promise.resolve(null),
+      const [antesPath, despuesPath] = await Promise.all([
+        antesFile ? db.uploadMediaPrivado(`${c.id}/${id}-antes`, antesFile) : Promise.resolve(null),
+        despuesFile ? db.uploadMediaPrivado(`${c.id}/${id}-despues`, despuesFile) : Promise.resolve(null),
       ])
-      if (antesFile && !antesUrl) { toast('Error al subir la foto de antes'); return }
-      if (despuesFile && !despuesUrl) { toast('Error al subir la foto de después'); return }
+      if (antesFile && !antesPath) { toast('Error al subir la foto de antes'); return }
+      if (despuesFile && !despuesPath) { toast('Error al subir la foto de después'); return }
       const entry: FotoEntry = {
         id,
-        antes: antesUrl || '',
-        despues: despuesUrl || '',
+        antes: antesPath || '',
+        despues: despuesPath || '',
         fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
         nota,
       }
@@ -351,8 +368,8 @@ function AntesDesTab({ c }: { c: Clienta }) {
   const eliminar = (id: string) => {
     const f = fotos.find(x => x.id === id)
     if (f) {
-      const paths = [f.antes, f.despues].filter(Boolean).map(url => db.pathFromUrl(url))
-      if (paths.length) db.deleteMedia(paths)
+      const paths = [f.antes, f.despues].filter(Boolean)
+      if (paths.length) db.deleteMediaPrivado(paths)
     }
     const next = fotos.filter(f => f.id !== id)
     setFotos(next)
@@ -420,13 +437,17 @@ function AntesDesTab({ c }: { c: Clienta }) {
             {f.antes && (
               <div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4 }}>ANTES</div>
-                <img src={f.antes} alt="Antes" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 8 }} />
+                {signedUrls[f.antes]
+                  ? <img src={signedUrls[f.antes]} alt="Antes" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 8 }} />
+                  : <div style={{ width: '100%', height: 160, borderRadius: 8, background: 'var(--surface-2)' }} />}
               </div>
             )}
             {f.despues && (
               <div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4 }}>DESPUÉS</div>
-                <img src={f.despues} alt="Después" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 8 }} />
+                {signedUrls[f.despues]
+                  ? <img src={signedUrls[f.despues]} alt="Después" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 8 }} />
+                  : <div style={{ width: '100%', height: 160, borderRadius: 8, background: 'var(--surface-2)' }} />}
               </div>
             )}
           </div>

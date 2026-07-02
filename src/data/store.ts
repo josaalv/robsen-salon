@@ -10,9 +10,7 @@ const STORAGE_KEY = 'rb_data_v3'
 interface Store {
   data: RBData
   syncing: boolean
-  resetData: () => void
   loadFromSupabase: () => Promise<boolean>
-  migrateToSupabase: () => Promise<boolean>
   updateConfig: (patch: Partial<SalonConfig>) => void
   upsertCita: (cita: Partial<Cita> & { id: string }) => void
   deleteCita: (id: string) => void
@@ -44,8 +42,6 @@ export const useStore = create<Store>()(
     (set, get) => ({
       data: defaultData,
       syncing: false,
-
-      resetData: () => set({ data: defaultData }),
 
       // ─── Cargar desde Supabase al iniciar sesión ─────────────────────────
       loadFromSupabase: async () => {
@@ -106,16 +102,6 @@ export const useStore = create<Store>()(
           return true
         } catch {
           return false
-        } finally {
-          set({ syncing: false })
-        }
-      },
-
-      // ─── Migrar datos locales a Supabase ─────────────────────────────────
-      migrateToSupabase: async () => {
-        set({ syncing: true })
-        try {
-          return await db.seedAll(get().data)
         } finally {
           set({ syncing: false })
         }

@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja } from '../types'
 
 const BUCKET = 'media'
+const BUCKET_PRIVADO = 'fotos-clientas'
 
 // ─── Mappers DB ↔ TypeScript ──────────────────────────────────────────────────
 
@@ -126,6 +127,14 @@ const mapUsuario = (r: any): Usuario => ({
   authUserId: r.auth_user_id ?? undefined,
 })
 
+// Mapper para el selector de login (anon): solo trae columnas seguras
+// (sin tel/auth_user_id), así que los campos que faltan se rellenan vacíos.
+const mapUsuarioPublico = (r: any): Usuario => ({
+  id: r.id, nombre: r.nombre, rol: r.rol, ini: r.ini, color: r.color,
+  email: r.email, tel: '', activo: r.activo, ultimo: '',
+  avatar: r.avatar ?? undefined,
+})
+
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export const db = {
@@ -150,6 +159,30 @@ export const db = {
     const marker = `/object/public/${BUCKET}/`
     const idx = url.indexOf(marker)
     return idx >= 0 ? url.slice(idx + marker.length) : ''
+  },
+
+  // ─── Storage privado: fotos antes/después de clientas ──────────────────────
+  // El bucket "fotos-clientas" no es público. Se sube y se guarda solo el
+  // path (no una URL), y para mostrarlas hay que pedir una URL firmada que
+  // expira — nunca queda un enlace público permanente a una foto de clienta.
+  async uploadMediaPrivado(path: string, file: File): Promise<string | null> {
+    if (!supabase) return null
+    const { error } = await supabase.storage.from(BUCKET_PRIVADO).upload(path, file, { upsert: true })
+    if (error) { console.error('[storage.uploadPrivado]', path, error.message); return null }
+    return path
+  },
+
+  async deleteMediaPrivado(paths: string[]): Promise<void> {
+    if (!supabase || paths.length === 0) return
+    const { error } = await supabase.storage.from(BUCKET_PRIVADO).remove(paths)
+    if (error) console.error('[storage.deletePrivado]', error.message)
+  },
+
+  async getSignedUrl(path: string, expiresIn = 3600): Promise<string | null> {
+    if (!supabase || !path) return null
+    const { data, error } = await supabase.storage.from(BUCKET_PRIVADO).createSignedUrl(path, expiresIn)
+    if (error) { console.error('[storage.signedUrl]', path, error.message); return null }
+    return data?.signedUrl ?? null
   },
 
   // — Config —
@@ -385,6 +418,14 @@ export const db = {
     if (error) console.error('[db.getUsuarios]', error.message)
     return (data ?? []).map(mapUsuario)
   },
+  // Selector de login (contexto anon, antes de autenticar): usa una función
+  // que solo expone columnas seguras, nunca select('*') sobre la tabla real.
+  async getUsuariosPublicos(): Promise<Usuario[]> {
+    if (!supabase) return []
+    const { data, error } = await supabase.rpc('listar_usuarios_publicos')
+    if (error) console.error('[db.getUsuariosPublicos]', error.message)
+    return (data ?? []).map(mapUsuarioPublico)
+  },
   async getUsuarioById(id: string): Promise<Usuario | null> {
     if (!supabase) return null
     const { data, error } = await supabase.from('usuarios').select('*').eq('id', id).maybeSingle()
@@ -410,14 +451,20 @@ export const db = {
   async getUsuarioByEmailOrTel(query: string): Promise<Usuario | null> {
     if (!supabase) return null
     const q = query.toLowerCase().trim()
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('*')
-      .or(`email.eq.${q},tel.eq.${q}`)
-      .eq('activo', true)
-      .maybeSingle()
+    const { data, error } = await supabase.rpc('buscar_usuario_login', { q })
     if (error) console.error('[db.getUsuarioByEmailOrTel]', error.message)
-    return data ? mapUsuario(data) : null
+    const row = Array.isArray(data) ? data[0] : data
+    return row ? mapUsuarioPublico(row) : null
+  },
+  // Indica si un usuario tiene historial real (auditoría o cortes de caja
+  // a su nombre), para advertir antes de eliminarlo permanentemente.
+  async tieneHistorial(usuarioId: string): Promise<boolean> {
+    if (!supabase) return false
+    const [audit, cierres] = await Promise.all([
+      supabase.from('audit_logs').select('id', { count: 'exact', head: true }).eq('usuario_id', usuarioId),
+      supabase.from('cierres_caja').select('id', { count: 'exact', head: true }).eq('usuario_id', usuarioId),
+    ])
+    return (audit.count ?? 0) > 0 || (cierres.count ?? 0) > 0
   },
   // Crea (o vincula, si ya existía) la cuenta de Supabase Auth de un usuario
   // y le envía un correo de invitación para que configure su contraseña.

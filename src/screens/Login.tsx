@@ -46,7 +46,7 @@ export function ScreenLogin() {
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 10000)
     )
-    Promise.race([db.getUsuarios(), timeout])
+    Promise.race([db.getUsuariosPublicos(), timeout])
       .then((list: any) => setUsuarios((list as typeof usuarios).filter(u => u.activo)))
       .catch(() => setError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.'))
       .finally(() => setCargando(false))

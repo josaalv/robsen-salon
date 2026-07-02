@@ -547,7 +547,7 @@ const ROLES_LIST: { val: RolUsuario; label: string }[] = [
   { val: 'estilista', label: 'Estilista' },
 ]
 
-function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; selfId: string; onClose: () => void }) {
+function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario> | null; selfId: string; esAdmin: boolean; onClose: () => void }) {
   const { upsertUsuario, deleteUsuario } = useStore()
   const isNew = !usr?.id
   const necesitaAcceso = isNew || !usr?.authUserId
@@ -560,7 +560,12 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
   const [guardando, setGuardando] = useState(false)
   const [eliminando, setEliminando] = useState(false)
   const [confirmarBorrar, setConfirmarBorrar] = useState(false)
+  const [tieneHistorial, setTieneHistorial] = useState(false)
   const telInvalido = !!tel.trim() && !telefonoValido(tel)
+
+  useEffect(() => {
+    if (usr?.id) db.tieneHistorial(usr.id).then(setTieneHistorial)
+  }, [usr?.id])
 
   const eliminar = async () => {
     if (!usr?.id) return
@@ -681,16 +686,21 @@ function UsuarioModal({ usr, selfId, onClose }: { usr: Partial<Usuario> | null; 
           </button>
           <button className="btn ghost" disabled={guardando} onClick={onClose}>Cancelar</button>
         </div>
-        {usr?.id && usr.id !== selfId && (
+        {usr?.id && usr.id !== selfId && esAdmin && (
           <button className="btn danger w100" style={{ justifyContent: 'center' }} disabled={guardando || eliminando} onClick={() => setConfirmarBorrar(true)}>
             <Ic n="trash" />Eliminar usuario
           </button>
+        )}
+        {usr?.id && usr.id !== selfId && !esAdmin && (
+          <div className="dim" style={{ fontSize: 11.5, textAlign: 'center' }}>Solo un administrador puede eliminar usuarios. Usa "Cuenta activa" para quitarle el acceso.</div>
         )}
       </div>
       {confirmarBorrar && (
         <ConfirmModal
           title="¿Eliminar este usuario?"
-          desc={`${usr?.nombre} perderá acceso al sistema de inmediato${usr?.authUserId ? ' y su cuenta de inicio de sesión se elimina también' : ''}. Esta acción no se puede deshacer.`}
+          desc={`${usr?.nombre} perderá acceso al sistema de inmediato${usr?.authUserId ? ' y su cuenta de inicio de sesión se elimina también' : ''}. Esta acción no se puede deshacer.${
+            tieneHistorial ? ' Este usuario tiene ventas, citas o cierres de caja registrados a su nombre — el historial se conserva, pero considera desactivarlo en vez de eliminarlo si quieres mantener la referencia.' : ''
+          }`}
           onConfirm={eliminar}
           onCancel={() => setConfirmarBorrar(false)}
         />
@@ -707,7 +717,7 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {modal !== false && (
-        <UsuarioModal usr={modal} selfId={user.id} onClose={() => setModal(false)} />
+        <UsuarioModal usr={modal} selfId={user.id} esAdmin={user.rol === 'admin'} onClose={() => setModal(false)} />
       )}
       <div className="card">
         <div className="card-head">
@@ -887,15 +897,7 @@ function applyTema(t: string) {
 }
 
 function AjustesApariencia() {
-  const { data, updateConfig, resetData, migrateToSupabase, syncing } = useStore()
-  const [migStatus, setMigStatus] = useState<'idle'|'ok'|'err'>('idle')
-
-  const handleMigrate = async () => {
-    if (!confirm('¿Subir todos los datos actuales a Supabase? Los datos existentes en la nube serán sobreescritos.')) return
-    const ok = await migrateToSupabase()
-    setMigStatus(ok ? 'ok' : 'err')
-    toast(ok ? 'Datos migrados a Supabase correctamente' : 'Error al migrar — revisa la consola')
-  }
+  const { data, updateConfig } = useStore()
   const ACENTOS = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8834A', '#5B8DB8']
   const [acento, setAcento] = useState(data.config.acento || ACENTOS[0])
   const [tema, setTema] = useState(() => localStorage.getItem('rb_tema') || 'Oscuro')
@@ -924,13 +926,6 @@ function AjustesApariencia() {
     updateConfig({ acento: c })
   }
 
-  const handleReset = () => {
-    if (confirm('¿Restablecer todos los datos de demostración? Esta acción no se puede deshacer.')) {
-      resetData()
-      document.documentElement.style.setProperty('--gold', '#C8A14A')
-      toast('Datos de demostración restablecidos')
-    }
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -961,35 +956,6 @@ function AjustesApariencia() {
             <option value="en">English (coming soon)</option>
           </select>
         </SettingRow>
-      </div>
-      <div className="card card-pad" style={{ borderColor: 'rgba(147,181,140,0.3)' }}>
-        <div className="eyebrow" style={{ marginBottom: 4, color: 'var(--st-conf)' }}>Supabase · Base de datos en la nube</div>
-        <div className="between" style={{ paddingTop: 12 }}>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13.5 }}>Migrar datos a Supabase</div>
-            <div className="dim" style={{ fontSize: 12, marginTop: 3 }}>
-              Sube clientas, citas, ventas, productos y configuración a la nube. Después de migrar, cada cambio se sincroniza automáticamente.
-            </div>
-            {migStatus === 'ok'  && <div style={{ fontSize: 12, color: 'var(--st-conf)', marginTop: 6 }}>✓ Migración completada · los datos ya están en Supabase</div>}
-            {migStatus === 'err' && <div style={{ fontSize: 12, color: 'var(--st-canc)', marginTop: 6 }}>✗ Error — verifica las credenciales en .env.local</div>}
-          </div>
-          <button className="btn gold" onClick={handleMigrate} disabled={syncing} style={{ flexShrink: 0 }}>
-            <Ic n={syncing ? 'spinner' : 'cloud-arrow-up'} />
-            {syncing ? 'Subiendo…' : 'Migrar ahora'}
-          </button>
-        </div>
-      </div>
-      <div className="card card-pad" style={{ borderColor: 'rgba(199,123,123,0.3)' }}>
-        <div className="eyebrow" style={{ marginBottom: 8, color: 'var(--st-canc)' }}>Zona de peligro</div>
-        <div className="between">
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13.5 }}>Restablecer datos demo</div>
-            <div className="dim" style={{ fontSize: 12, marginTop: 3 }}>Regresa todos los datos a los valores de ejemplo originales. No afecta la configuración.</div>
-          </div>
-          <button className="btn" style={{ background: 'rgba(199,123,123,0.12)', border: '1px solid rgba(199,123,123,0.3)', color: 'var(--st-canc)' }} onClick={handleReset}>
-            <Ic n="arrow-circle-down" />Restablecer
-          </button>
-        </div>
       </div>
     </div>
   )

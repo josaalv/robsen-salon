@@ -1,0 +1,2 @@
+ALTER TABLE estilistas ADD COLUMN IF NOT EXISTS foto text;
+ALTER TABLE estilistas ADD COLUMN IF NOT EXISTS bio text;
