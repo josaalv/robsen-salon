@@ -46,10 +46,15 @@ const NAV: NavGroup[] = [
 ]
 const ALL = NAV.flatMap(g => g.items)
 
+function initialRoute() {
+  const path = window.location.pathname.replace(/^\/+/, '')
+  return ALL.some(i => i.id === path) ? path : 'dashboard'
+}
+
 function AppShell() {
   const { user, logout } = useAuth()
   const { data, syncing, loadFromSupabase } = useStore()
-  const [route, setRoute] = useState('dashboard')
+  const [route, setRoute] = useState(initialRoute)
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [topPop, setTopPop] = useState<'agenda' | 'notif' | null>(null)
@@ -79,6 +84,11 @@ function AppShell() {
   }, [])
 
   useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null); setSearchQ(''); setMobileNavOpen(false) }, [route])
+
+  useEffect(() => {
+    const path = '/' + route
+    if (window.location.pathname !== path) window.history.replaceState(null, '', path)
+  }, [route])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
