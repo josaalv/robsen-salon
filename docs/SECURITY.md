@@ -20,6 +20,34 @@ y `011_create_reset_tokens.sql`).
   inactivo no puede iniciar sesión ni operar nada, pero su historial de
   ventas/citas queda intacto y se puede reactivar después.
 
+### Pendiente manual: servicio de correo propio (SMTP)
+
+Por defecto, Supabase envía los correos de invitación y recuperación de
+contraseña con su propio servicio de prueba
+(`noreply@mail.app.supabase.io`). Ese servicio **no es para producción**:
+tiene un límite muy bajo de correos por hora (compartido entre todos los
+tipos de correo — invitaciones, recuperación, etc.), y a veces cae en spam.
+Ya lo confirmamos en la práctica: 3 solicitudes de recuperación en pocos
+minutos fueron suficientes para agotar el límite (`error_code:
+over_email_send_rate_limit`) — el frontend ahora avisa con un mensaje claro
+cuando pasa esto, en vez de un error genérico, pero el límite en sí sigue
+siendo el del servicio de prueba.
+
+Para que esto no le pase al equipo real del salón (que sí necesita mandar
+invitaciones y recuperar contraseñas sin restricciones tan estrictas):
+
+1. Supabase Dashboard → **Project Settings → Authentication → SMTP
+   Settings**.
+2. Configura un proveedor de correo transaccional (Resend, Postmark,
+   SendGrid, Amazon SES, o incluso una cuenta de Gmail/Google Workspace con
+   contraseña de aplicación para un volumen bajo). Necesitas: host, puerto,
+   usuario, contraseña, y el correo remitente (idealmente algo como
+   `no-reply@robseninterno.com` si ya tienen ese dominio en Hostinger).
+3. Guarda y prueba enviando una invitación de prueba.
+4. Efecto: los límites de envío pasan a ser los de tu proveedor de correo
+   (normalmente mucho más generosos), y los correos dejan de venir de un
+   dominio genérico de Supabase.
+
 ### Pendiente manual: Leaked Password Protection
 
 Supabase puede rechazar contraseñas que aparecen en filtraciones conocidas

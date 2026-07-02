@@ -107,8 +107,18 @@ export function ScreenLogin() {
       )
       if (err) throw err
       setForgotSent(true)
-    } catch {
-      setError('No se pudo enviar el enlace. Intenta de nuevo.')
+    } catch (err) {
+      // Supabase limita cuántos correos puede mandar en poco tiempo (más
+      // estricto todavía con el servicio de correo de prueba por defecto).
+      // Reintentar de inmediato solo empeora el límite, así que se avisa
+      // en vez de invitar a insistir.
+      const status = (err as { status?: number })?.status
+      const msg = err instanceof Error ? err.message : ''
+      if (status === 429 || /rate.?limit/i.test(msg)) {
+        setError('Se enviaron demasiados correos en poco tiempo. Espera unos minutos antes de volver a intentarlo — no sirve de nada reintentar de inmediato.')
+      } else {
+        setError('No se pudo enviar el enlace. Intenta de nuevo.')
+      }
     } finally {
       setLoading(false)
     }
