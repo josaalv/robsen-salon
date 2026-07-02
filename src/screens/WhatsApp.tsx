@@ -279,7 +279,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
       </div>
 
       {/* Main layout */}
-      <div style={{ display:'grid', gridTemplateColumns:'220px 1fr 290px', gap:14, alignItems:'start' }}>
+      <div className="whatsapp-layout" style={{ display:'grid', gridTemplateColumns:'220px 1fr 290px', gap:14, alignItems:'start' }}>
 
         {/* Left nav */}
         <div className="card" style={{ padding:8, position:'sticky', top:92 }}>

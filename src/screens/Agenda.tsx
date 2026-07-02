@@ -529,7 +529,8 @@ function WeekView({ onSel, weekOffset, onWeekChange }: {
         </span>
         <button className="btn ghost" onClick={() => onWeekChange(1)}>Siguiente<Ic n="caret-right" /></button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 12 }}>
+      <div className="agenda-scroll-x">
+      <div style={{ minWidth: 700, display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 12 }}>
         {dias.map(({ label, date, iso, isHoy }, i) => {
           const items = isHoy
             ? data.hoy
@@ -575,6 +576,7 @@ function WeekView({ onSel, weekOffset, onWeekChange }: {
             </div>
           )
         })}
+      </div>
       </div>
     </div>
   )
@@ -739,7 +741,8 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
         {/* Vista día */}
         {vista === 'Día' && (
           <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `64px repeat(${visibles.length},1fr)`, borderBottom: '1px solid var(--line-soft)' }}>
+          <div className="agenda-scroll-x">
+            <div style={{ minWidth: 64 + visibles.length * 130, display: 'grid', gridTemplateColumns: `64px repeat(${visibles.length},1fr)`, borderBottom: '1px solid var(--line-soft)' }}>
               <div />
               {visibles.map(e => (
                 <div key={e.id} className="vc gap8" style={{ padding: '14px 12px', borderLeft: '1px solid var(--line-soft)' }}>
@@ -751,7 +754,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                 </div>
               ))}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: `64px repeat(${visibles.length},1fr)`, position: 'relative' }}>
+            <div style={{ minWidth: 64 + visibles.length * 130, display: 'grid', gridTemplateColumns: `64px repeat(${visibles.length},1fr)`, position: 'relative' }}>
               <div>
                 {horas.map(h => (
                   <div key={h} style={{ height: PXH, padding: '4px 10px 0', textAlign: 'right', fontSize: 11, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
@@ -804,6 +807,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                 </div>
               ))}
             </div>
+          </div>
           </div>
         )}
 

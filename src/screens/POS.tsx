@@ -154,7 +154,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
           <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', flex: 1, minHeight: 0 }}>
+        <div className="pos-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', flex: 1, minHeight: 0 }}>
           {/* Catálogo */}
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: '1px solid var(--line-soft)' }}>
             <div style={{ padding: '14px 22px 0' }}>

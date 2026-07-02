@@ -51,6 +51,7 @@ function AppShell() {
   const { data, syncing, loadFromSupabase } = useStore()
   const [route, setRoute] = useState('dashboard')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [topPop, setTopPop] = useState<'agenda' | 'notif' | null>(null)
   const [searchQ, setSearchQ] = useState('')
   const searchRef = useRef<HTMLDivElement>(null)
@@ -77,7 +78,7 @@ function AppShell() {
       root.setAttribute('data-theme', 'light')
   }, [])
 
-  useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null); setSearchQ('') }, [route])
+  useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null); setSearchQ(''); setMobileNavOpen(false) }, [route])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -151,7 +152,8 @@ function AppShell() {
   return (
     <div className="app">
       {/* Sidebar */}
-      <aside className="sidebar">
+      <div className={'sidebar-backdrop' + (mobileNavOpen ? ' show' : '')} onClick={() => setMobileNavOpen(false)} />
+      <aside className={'sidebar' + (mobileNavOpen ? ' mobile-open' : '')}>
         <div className="brand">
           {logo
             ? <img src={logo} alt={data.config?.nombre || 'Robsen'} className="brand-logo-img" />
@@ -206,6 +208,9 @@ function AppShell() {
       {/* Main */}
       <div className="main">
         <header className="topbar">
+          <button className="icon-btn mobile-menu-btn" onClick={() => setMobileNavOpen(v => !v)} title="Menú">
+            <Ic n="list" />
+          </button>
           <div>
             <div className="page-title">{meta.title}</div>
             <div className="page-sub">{meta.sub}</div>
