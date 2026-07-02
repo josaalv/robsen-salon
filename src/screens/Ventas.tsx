@@ -1,10 +1,12 @@
-import React, { useState } from 'react'
-import { Stat, Avatar, toast } from '../components/ui'
+import React, { useState, useEffect } from 'react'
+import { Stat, Avatar, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { useAuth } from '../lib/auth'
+import { db } from '../lib/db'
 import { mxn, ventaCalc } from '../lib/helpers'
 import { POSBuilder } from './POS'
-import type { Venta } from '../types'
+import type { Venta, CierreCaja } from '../types'
 
 function waLink(tel: string, msg: string): string {
   const digits = tel.replace(/\D/g, '')
@@ -29,7 +31,11 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
     : data.clientas.find(c => c.nombre === v.cliente)?.tel) || ''
 
   const cobrarSaldo = () => {
-    updateVenta(v.id, { estado: 'pagada', anticipo: ventaCalc.total(v), pago: pagoSaldo })
+    const montoCobrado = ventaCalc.saldo(v)
+    updateVenta(v.id, {
+      estado: 'pagada', anticipo: ventaCalc.total(v), pago: pagoSaldo,
+      saldoCobradoEn: new Date().toISOString(), saldoCobradoMonto: montoCobrado,
+    })
     toast('Saldo cobrado · venta marcada como pagada')
     onClose()
   }
@@ -173,11 +179,183 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
   )
 }
 
+// ─── Corte de caja ────────────────────────────────────────────────────────────
+const esMismaFecha = (iso: string | undefined, ref: Date) => {
+  if (!iso) return false
+  const d = new Date(iso)
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate()
+}
+
+function CierreCajaModal({ onClose, ventas, pendientes, usuarioNombre, usuarioId, todayStr }: {
+  onClose: () => void
+  ventas: Venta[]
+  pendientes: Venta[]
+  usuarioNombre: string
+  usuarioId?: string
+  todayStr: string
+}) {
+  const [efectivoContado, setEfectivoContado] = useState('')
+  const [notas, setNotas] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [historial, setHistorial] = useState<CierreCaja[]>([])
+  const [cargandoHist, setCargandoHist] = useState(true)
+
+  useEffect(() => {
+    db.getCierresCaja().then(setHistorial).finally(() => setCargandoHist(false))
+  }, [])
+
+  const hoy = new Date()
+  const totalLinea = (l: { precio: number; cant: number }) => l.precio * l.cant
+  const totalVenta = (v: Venta) => v.lineas.reduce((s, l) => s + totalLinea(l), 0) - (v.desc || 0)
+
+  const creadasHoy = ventas.filter(v => v.fecha.startsWith(todayStr))
+  // Saldos de citas/ventas creadas en otro día pero cobrados hoy — se cuentan aparte para no duplicar.
+  const saldosHoy = ventas.filter(v => esMismaFecha(v.saldoCobradoEn, hoy) && !v.fecha.startsWith(todayStr))
+
+  const montoRecibidoAlCrear = (v: Venta) => {
+    if (v.estado === 'pagada') return totalVenta(v)
+    if (v.estado === 'parcial' || v.estado === 'apartado') return v.anticipo || 0
+    return 0
+  }
+
+  const porMetodo: Record<string, number> = { efectivo: 0, transferencia: 0, tarjeta: 0 }
+  const sumar = (metodo: string, monto: number) => {
+    const key = (metodo || '').toLowerCase()
+    if (key in porMetodo) porMetodo[key] += monto
+    else porMetodo[key] = (porMetodo[key] || 0) + monto
+  }
+  creadasHoy.forEach(v => sumar(v.pago, montoRecibidoAlCrear(v)))
+  saldosHoy.forEach(v => sumar(v.pago, v.saldoCobradoMonto || 0))
+
+  const totalEfectivo = porMetodo.efectivo
+  const totalTransferencia = porMetodo.transferencia
+  const totalTarjeta = porMetodo.tarjeta
+  const otrosMetodos = Object.entries(porMetodo).filter(([k]) => !['efectivo', 'transferencia', 'tarjeta'].includes(k))
+
+  const anticiposCobrados = creadasHoy
+    .filter(v => v.estado === 'parcial' || v.estado === 'apartado')
+    .reduce((s, v) => s + (v.anticipo || 0), 0)
+  const saldosCobrados = saldosHoy.reduce((s, v) => s + (v.saldoCobradoMonto || 0), 0)
+  const totalPendiente = pendientes.reduce((s, v) => s + Math.max(0, totalVenta(v) - (v.anticipo || 0)), 0)
+  const ventasTotal = creadasHoy.reduce((s, v) => s + totalVenta(v), 0)
+  const totalRecibidoHoy = totalEfectivo + totalTransferencia + totalTarjeta + otrosMetodos.reduce((s, [, v]) => s + v, 0)
+
+  const efectivoNum = parseFloat(efectivoContado.replace(',', '.')) || 0
+  const diferencia = efectivoContado.trim() ? efectivoNum - totalEfectivo : 0
+
+  const guardar = async () => {
+    setGuardando(true)
+    try {
+      await db.addCierreCaja({
+        fecha: `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`,
+        usuarioId, usuarioNombre,
+        totalEfectivo, totalTransferencia, totalTarjeta, totalPendiente,
+        anticiposCobrados, saldosCobrados, ventasTotal,
+        efectivoContado: efectivoNum, diferencia,
+        notas: notas.trim() || undefined,
+      })
+      toast('Caja cerrada correctamente')
+      onClose()
+    } catch {
+      toast('No se pudo guardar el cierre. Intenta de nuevo.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const Fila = ({ label, val, strong }: { label: string; val: string; strong?: boolean }) => (
+    <div className="between" style={{ fontSize: 13, padding: '7px 0' }}>
+      <span className="muted">{label}</span>
+      <span className="num" style={{ fontWeight: strong ? 700 : 600 }}>{val}</span>
+    </div>
+  )
+
+  return (
+    <Modal onClose={onClose} width={620}>
+      <div className="card-head">
+        <div>
+          <div className="eyebrow">Consolida las ventas del día, no las sustituye</div>
+          <h3 style={{ marginTop: 4 }}>Cerrar caja de hoy</h3>
+        </div>
+        <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
+      </div>
+      <div className="card-pad scroll-y" style={{ maxHeight: '65vh' }}>
+        <div className="card" style={{ background: 'var(--surface)', padding: 14, marginBottom: 16 }}>
+          <Fila label="Ventas totales de hoy" val={mxn(ventasTotal)} strong />
+          <hr className="hr" style={{ margin: '6px 0' }} />
+          <Fila label="Efectivo" val={mxn(totalEfectivo)} />
+          <Fila label="Transferencia" val={mxn(totalTransferencia)} />
+          <Fila label="Tarjeta" val={mxn(totalTarjeta)} />
+          {otrosMetodos.filter(([, v]) => v > 0).map(([k, v]) => (
+            <Fila key={k} label={k.charAt(0).toUpperCase() + k.slice(1)} val={mxn(v)} />
+          ))}
+          <hr className="hr" style={{ margin: '6px 0' }} />
+          <Fila label="Anticipos recibidos hoy" val={mxn(anticiposCobrados)} />
+          <Fila label="Saldos cobrados hoy (de citas de otros días)" val={mxn(saldosCobrados)} />
+          <Fila label="Pendiente por cobrar (todo, a la fecha)" val={mxn(totalPendiente)} />
+        </div>
+
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 8 }}>
+          <div className="field">
+            <label>Efectivo contado en caja</label>
+            <input className="input num" type="number" min="0" value={efectivoContado}
+              onChange={e => setEfectivoContado(e.target.value)} placeholder={mxn(totalEfectivo)} />
+          </div>
+          <div className="field">
+            <label>Diferencia</label>
+            <div className="input" style={{ display: 'flex', alignItems: 'center', color: !efectivoContado.trim() ? 'var(--text-4)' : diferencia === 0 ? 'var(--st-conf)' : 'var(--st-canc)', fontWeight: 700 }}>
+              {efectivoContado.trim() ? (diferencia > 0 ? '+' : '') + mxn(diferencia) : '—'}
+            </div>
+          </div>
+        </div>
+        <div className="field" style={{ marginBottom: 4 }}>
+          <label>Notas (opcional)</label>
+          <textarea className="input" rows={2} value={notas} onChange={e => setNotas(e.target.value)}
+            placeholder="Ej. Faltaron $50, se dio cambio de más en el ticket #1042…" style={{ resize: 'vertical' }} />
+        </div>
+
+        <hr className="hr" style={{ margin: '18px 0 12px' }} />
+        <div className="eyebrow" style={{ marginBottom: 10 }}>Historial de cierres</div>
+        {cargandoHist ? (
+          <div className="dim" style={{ fontSize: 12.5, padding: '8px 0' }}>Cargando…</div>
+        ) : historial.length === 0 ? (
+          <div className="dim" style={{ fontSize: 12.5, padding: '8px 0' }}>Sin cierres registrados todavía.</div>
+        ) : (
+          <table className="table" style={{ marginTop: 0 }}>
+            <thead><tr><th>Fecha</th><th>Responsable</th><th className="num">Ventas</th><th className="num">Diferencia</th></tr></thead>
+            <tbody>
+              {historial.slice(0, 10).map(h => (
+                <tr key={h.id} style={{ cursor: 'default' }}>
+                  <td className="muted">{h.fecha}</td>
+                  <td>{h.usuarioNombre}</td>
+                  <td className="num">{mxn(h.ventasTotal)}</td>
+                  <td className="num" style={{ color: h.diferencia === 0 ? 'var(--st-conf)' : 'var(--st-canc)', fontWeight: 600 }}>
+                    {h.diferencia > 0 ? '+' : ''}{mxn(h.diferencia)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <hr className="hr" />
+      <div className="card-pad vc gap12" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn gold" disabled={guardando} onClick={guardar}>
+          <Ic n={guardando ? 'spinner' : 'check'} />{guardando ? 'Guardando…' : 'Cerrar caja'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }) {
   const { data, addVenta } = useStore()
+  const { user } = useAuth()
   const ventas = data.ventas
   const [pos, setPos] = useState(false)
   const [detalle, setDetalle] = useState<Venta | null>(null)
+  const [cierreCaja, setCierreCaja] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('Todas')
   const [filtroPeriodo, setFiltroPeriodo] = useState('Todo')
   const [q, setQ] = useState('')
@@ -241,7 +419,12 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
             {pendientes.length > 0 && <> · <span style={{ color: 'var(--st-pend)' }}>{pendientes.length} con saldo pendiente</span></>}
           </div>
         </div>
-        <button className="btn gold" onClick={() => setPos(true)}><Ic n="plus-circle" />Nueva venta</button>
+        <div className="vc gap10">
+          {user && ['admin', 'gerente', 'recepcion'].includes(user.rol) && (
+            <button className="btn ghost" onClick={() => setCierreCaja(true)}><Ic n="lock-simple" />Cerrar caja del día</button>
+          )}
+          <button className="btn gold" onClick={() => setPos(true)}><Ic n="plus-circle" />Nueva venta</button>
+        </div>
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 18 }}>
@@ -377,6 +560,16 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
 
       {pos && <POSBuilder onClose={() => setPos(false)} onConfirm={registrarVenta} nextTicket={nextTicket} />}
       {detalle && <VentaDetalle v={detalle} onClose={() => setDetalle(null)} />}
+      {cierreCaja && (
+        <CierreCajaModal
+          onClose={() => setCierreCaja(false)}
+          ventas={ventas}
+          pendientes={pendientes}
+          usuarioNombre={user?.nombre || ''}
+          usuarioId={user?.id}
+          todayStr={todayStr}
+        />
+      )}
     </div>
   )
 }

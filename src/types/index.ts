@@ -104,6 +104,26 @@ export interface Venta {
   anticipo: number
   lineas: LineaVenta[]
   citaId?: string
+  saldoCobradoEn?: string
+  saldoCobradoMonto?: number
+}
+
+export interface CierreCaja {
+  id: string
+  fecha: string
+  usuarioId?: string
+  usuarioNombre: string
+  totalEfectivo: number
+  totalTransferencia: number
+  totalTarjeta: number
+  totalPendiente: number
+  anticiposCobrados: number
+  saldosCobrados: number
+  ventasTotal: number
+  efectivoContado: number
+  diferencia: number
+  notas?: string
+  cerradoEn: string
 }
 
 export interface Producto {

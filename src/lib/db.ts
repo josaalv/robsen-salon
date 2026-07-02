@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto } from '../types'
+import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja } from '../types'
 
 const BUCKET = 'media'
 
@@ -39,6 +39,8 @@ const mapVenta = (r: any, lineas: any[]): Venta => ({
   desc: r.descuento ?? 0,
   anticipo: r.anticipo ?? 0,
   citaId: r.cita_id ?? undefined,
+  saldoCobradoEn: r.saldo_cobrado_en ?? undefined,
+  saldoCobradoMonto: r.saldo_cobrado_monto ?? undefined,
   lineas: lineas.filter(l => l.venta_id === r.id).map(l => ({
     tipo: l.tipo, nombre: l.nombre, est: l.est ?? null,
     cant: l.cant, precio: l.precio, com: l.com,
@@ -276,11 +278,16 @@ export const db = {
   async updateVenta(id: string, patch: Partial<Venta>) {
     if (!supabase) return
     const row: Record<string, unknown> = {}
-    if (patch.estado    !== undefined) row.estado    = patch.estado
-    if (patch.anticipo  !== undefined) row.anticipo  = patch.anticipo
-    if (patch.desc      !== undefined) row.descuento = patch.desc
-    if (patch.pago      !== undefined) row.pago      = patch.pago
-    if (Object.keys(row).length) await supabase.from('ventas').update(row).eq('id', id)
+    if (patch.estado         !== undefined) row.estado            = patch.estado
+    if (patch.anticipo       !== undefined) row.anticipo           = patch.anticipo
+    if (patch.desc           !== undefined) row.descuento          = patch.desc
+    if (patch.pago           !== undefined) row.pago               = patch.pago
+    if (patch.saldoCobradoEn     !== undefined) row.saldo_cobrado_en     = patch.saldoCobradoEn
+    if (patch.saldoCobradoMonto  !== undefined) row.saldo_cobrado_monto  = patch.saldoCobradoMonto
+    if (Object.keys(row).length) {
+      const { error } = await supabase.from('ventas').update(row).eq('id', id)
+      if (error) { console.error('[db.updateVenta]', error.message); throw error }
+    }
   },
   async getVentaByCitaId(citaId: string): Promise<Venta | null> {
     if (!supabase) return null
@@ -413,6 +420,32 @@ export const db = {
       .single()
     if (error) throw new Error(error.message)
     return data as Usuario
+  },
+
+  // — Cierres de caja —
+  async getCierresCaja(): Promise<CierreCaja[]> {
+    if (!supabase) return []
+    const { data, error } = await supabase.from('cierres_caja').select('*').order('cerrado_en', { ascending: false }).limit(60)
+    if (error) { console.error('[db.getCierresCaja]', error.message); return [] }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (data ?? []).map((r: any): CierreCaja => ({
+      id: r.id, fecha: r.fecha, usuarioId: r.usuario_id ?? undefined, usuarioNombre: r.usuario_nombre ?? '',
+      totalEfectivo: r.total_efectivo, totalTransferencia: r.total_transferencia, totalTarjeta: r.total_tarjeta,
+      totalPendiente: r.total_pendiente, anticiposCobrados: r.anticipos_cobrados, saldosCobrados: r.saldos_cobrados,
+      ventasTotal: r.ventas_total, efectivoContado: r.efectivo_contado, diferencia: r.diferencia,
+      notas: r.notas ?? undefined, cerradoEn: r.cerrado_en,
+    }))
+  },
+  async addCierreCaja(c: Omit<CierreCaja, 'id' | 'cerradoEn'>): Promise<void> {
+    if (!supabase) return
+    const { error } = await supabase.from('cierres_caja').insert({
+      fecha: c.fecha, usuario_id: c.usuarioId ?? null, usuario_nombre: c.usuarioNombre,
+      total_efectivo: c.totalEfectivo, total_transferencia: c.totalTransferencia, total_tarjeta: c.totalTarjeta,
+      total_pendiente: c.totalPendiente, anticipos_cobrados: c.anticiposCobrados, saldos_cobrados: c.saldosCobrados,
+      ventas_total: c.ventasTotal, efectivo_contado: c.efectivoContado, diferencia: c.diferencia,
+      notas: c.notas ?? null,
+    })
+    if (error) { console.error('[db.addCierreCaja]', error.message); throw error }
   },
 
   // ─── Carga completa desde Supabase ────────────────────────────────────────
