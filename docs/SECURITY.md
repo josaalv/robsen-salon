@@ -33,20 +33,47 @@ over_email_send_rate_limit`) — el frontend ahora avisa con un mensaje claro
 cuando pasa esto, en vez de un error genérico, pero el límite en sí sigue
 siendo el del servicio de prueba.
 
-Para que esto no le pase al equipo real del salón (que sí necesita mandar
-invitaciones y recuperar contraseñas sin restricciones tan estrictas):
+**Proveedor elegido: Resend** (ya es el que se va a usar para todas las
+comunicaciones por correo del salón, no solo Auth). Pasos exactos:
 
-1. Supabase Dashboard → **Project Settings → Authentication → SMTP
-   Settings**.
-2. Configura un proveedor de correo transaccional (Resend, Postmark,
-   SendGrid, Amazon SES, o incluso una cuenta de Gmail/Google Workspace con
-   contraseña de aplicación para un volumen bajo). Necesitas: host, puerto,
-   usuario, contraseña, y el correo remitente (idealmente algo como
-   `no-reply@robseninterno.com` si ya tienen ese dominio en Hostinger).
-3. Guarda y prueba enviando una invitación de prueba.
-4. Efecto: los límites de envío pasan a ser los de tu proveedor de correo
-   (normalmente mucho más generosos), y los correos dejan de venir de un
-   dominio genérico de Supabase.
+1. **Cuenta y dominio en Resend** (resend.com, plan gratis alcanza de sobra
+   para este volumen):
+   - Crea la cuenta si no existe todavía.
+   - **Domains → Add Domain** → `robseninterno.com` (o un subdominio como
+     `mail.robseninterno.com` si prefieres separar el correo transaccional
+     del sitio principal).
+   - Resend te da 2-3 registros DNS (normalmente TXT/CNAME para SPF, DKIM y
+     a veces DMARC). Esos registros se agregan en el panel de DNS de
+     Hostinger, donde ya está apuntando el dominio — no es lo mismo que la
+     configuración FTP de deploy.
+   - Espera a que Resend marque el dominio como **Verified** (puede tardar
+     de minutos a un par de horas según la propagación de DNS).
+2. **API key**: Resend → **API Keys → Create API Key** (permiso de envío
+   basta, no hace falta acceso total). Cópiala — es la única vez que se
+   muestra completa.
+3. **Conectar Resend a Supabase Auth**: Supabase Dashboard → **Project
+   Settings → Authentication → SMTP Settings** → actívalo y llena:
+   - Host: `smtp.resend.com`
+   - Puerto: `465` (SSL) o `587` (TLS) — cualquiera funciona, 465 es el que
+     Resend recomienda por defecto.
+   - Usuario: `resend` (literal, no es tu correo)
+   - Contraseña: la API key de Resend del paso 2
+   - Correo remitente: algo del dominio ya verificado, ej.
+     `no-reply@robseninterno.com`
+   - Nombre del remitente: `Robsen Salón & Spa`
+4. Guarda y **prueba enviando una invitación real** desde Ajustes →
+   Usuarios y roles, o un "olvidé mi contraseña" — confirma que llega y que
+   el remitente ya no es `noreply@mail.app.supabase.io`.
+5. Efecto: los límites de envío pasan a ser los de tu plan de Resend (miles
+   de correos/mes incluso en el plan gratis, muy por encima del límite del
+   servicio de prueba de Supabase), y los correos llegan desde tu propio
+   dominio en vez de uno genérico — mejor entregabilidad, menos riesgo de
+   caer en spam.
+
+No hay forma de hacer este último tramo (la API key de Resend, la
+verificación del dominio) por código ni por MCP — la cuenta de Resend y el
+panel de SMTP de Supabase son configuración de dashboard, y la API key es
+un secreto que nunca debe pegarse en un chat ni en el repo.
 
 ### Pendiente manual: Leaked Password Protection
 
