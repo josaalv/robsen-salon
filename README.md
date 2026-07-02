@@ -1,25 +1,42 @@
-# CODING AGENTS: READ THIS FIRST
+# Robsen Salón & Spa — Sistema interno
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+CRM/ERP interno para la operación diaria del salón: agenda, clientas, punto de venta, corte de caja, inventario, comisiones y seguimiento por WhatsApp.
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+## Stack
 
-## What you should do — IMPORTANT
+- **Frontend:** React 18 + TypeScript + Vite, estado con Zustand (`src/data/store.ts`).
+- **Backend:** Supabase (Postgres + Auth + Storage). No hay servidor propio — el frontend habla directo con Supabase usando RLS (Row Level Security) para aplicar permisos por rol.
+- **Autenticación:** Supabase Auth (`supabase.auth`). Los roles del sistema (`admin`, `gerente`, `recepcion`, `estilista`) viven en la tabla `usuarios`, vinculada a `auth.users` por `auth_user_id`.
+- **Deploy:** GitHub Actions construye el proyecto y lo sube por FTP a Hostinger en cada push a `main` (ver `.github/workflows/deploy.yml`). El sitio es estático — no requiere Node en el hosting.
 
-**Read the chat transcripts first.** There are 1 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
+## Desarrollo local
 
-**Read `project/index.html` in full.** The user had this file open when they triggered the handoff, so it's almost certainly the primary design they want built. Read it top to bottom — don't skim. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+```bash
+npm install
+cp .env.example .env.local   # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
+npm run dev
+```
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+`npm run build` genera el sitio estático en `dist/`.
 
-## About the design files
+## Estructura
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
+```
+src/
+  lib/         cliente de Supabase, capa de datos (db.ts), sesión (auth.tsx)
+  data/        store de Zustand y datos de ejemplo (mockData.ts, solo fallback local)
+  screens/     una pantalla por archivo (Agenda, CRM, Ventas, Servicios, Ajustes…)
+  components/  UI compartida (botones, badges, modales, iconos)
+  types/       tipos compartidos entre frontend y base de datos
+supabase/migrations/   historial de migraciones SQL, en orden
+```
 
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
+## Base de datos y seguridad
 
-## Bundle contents
+- Todas las tablas tienen RLS habilitado con políticas reales por rol (no hay acceso abierto con la anon key).
+- Los cambios a `citas`, `ventas`, `servicios`, `usuarios` y `clientas` quedan registrados en `audit_logs`.
+- Las migraciones en `supabase/migrations/` documentan el esquema en orden; se aplican vía el SQL Editor de Supabase o el MCP de Supabase, no hay un pipeline de migración automático todavía.
 
-- `README.md` — this file
-- `chats/` — conversation transcripts (read these!)
-- `project/` — the `CRM ROBSEN` project files (HTML prototypes, assets, components)
+## Carpetas fuera de la app
+
+`_archive/design-handoff/` contiene el material del handoff de diseño original (prototipos HTML/JS y transcripciones de chat) que dio origen a este proyecto. No es parte de la aplicación real — se conserva solo como referencia histórica.
