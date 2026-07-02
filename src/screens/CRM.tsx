@@ -22,6 +22,7 @@ function fechaHoy() {
   const d = new Date()
   return `${d.getDate()} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`
 }
+const normalizarTel = (t: string) => (t || '').replace(/\D/g, '')
 
 // ─── Modal nueva / editar clienta ───────────────────────────────────────────
 function ClientaModal({ c, onClose, onSaved }: {
@@ -36,11 +37,18 @@ function ClientaModal({ c, onClose, onSaved }: {
   const [fav, setFav] = useState(c.fav || data.servicios[0].nombre)
   const [cumple, setCumple] = useState(c.cumple || '')
   const [ciclo, setCiclo] = useState(c.ciclo || 8)
+  const [forzarDuplicado, setForzarDuplicado] = useState(false)
 
   const estadosCl: EstadoClienta[] = ['VIP', 'Frecuente', 'Activa', 'Nueva', 'Inactiva']
 
+  const telNorm = normalizarTel(tel)
+  const duplicado = telNorm.length >= 8
+    ? data.clientas.find(x => x.id !== c.id && normalizarTel(x.tel) === telNorm)
+    : undefined
+
   const guardar = () => {
     if (!nombre.trim()) return
+    if (duplicado && !forzarDuplicado) return
     const id = c.id || ('c' + Date.now())
     const ini = nombre.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
     upsertClienta({
@@ -81,8 +89,18 @@ function ClientaModal({ c, onClose, onSaved }: {
             </div>
             <div className="field">
               <label>Teléfono (WhatsApp)</label>
-              <input className="input" value={tel} onChange={e => setTel(e.target.value)} placeholder="33 0000 0000" />
+              <input className="input" value={tel} onChange={e => { setTel(e.target.value); setForzarDuplicado(false) }} placeholder="33 0000 0000" />
             </div>
+            {duplicado && (
+              <div style={{ gridColumn: '1 / -1', background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--st-canc)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span>Ya existe una clienta con este teléfono: <b>{duplicado.nombre}</b>. ¿Es la misma persona?</span>
+                {!forzarDuplicado && (
+                  <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => setForzarDuplicado(true)}>
+                    Es una persona distinta, guardar de todas formas
+                  </button>
+                )}
+              </div>
+            )}
             <div className="field">
               <label>Estado</label>
               <select className="select" value={estado} onChange={e => setEstado(e.target.value as EstadoClienta)}>
@@ -117,7 +135,7 @@ function ClientaModal({ c, onClose, onSaved }: {
           <button
             className="btn gold"
             onClick={guardar}
-            style={{ opacity: nombre.trim() ? 1 : .4, pointerEvents: nombre.trim() ? 'auto' : 'none' }}
+            style={{ opacity: nombre.trim() && (!duplicado || forzarDuplicado) ? 1 : .4, pointerEvents: nombre.trim() && (!duplicado || forzarDuplicado) ? 'auto' : 'none' }}
           >
             <Ic n="check" />{nuevo ? 'Registrar clienta' : 'Guardar cambios'}
           </button>

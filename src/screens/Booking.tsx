@@ -50,7 +50,7 @@ export function ScreenBooking() {
   const [diaIdx, setDiaIdx] = useState(0)
   const selectedDay = nextDays[diaIdx] || nextDays[0]
 
-  const online = data.servicios.filter(s => s.online)
+  const online = data.servicios.filter(s => s.online && s.activo !== false)
   const profs: Estilista[] = srv
     ? srv.prof.map(id => data.estilistas.find(e => e.id === id)).filter((e): e is Estilista => Boolean(e))
     : []

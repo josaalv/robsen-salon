@@ -204,6 +204,7 @@ export const defaultData: RBData = {
     pay:  { k:'pay',  label:'Anticipo pagado' },
     done: { k:'done', label:'Completada' },
     canc: { k:'canc', label:'Cancelada' },
+    no_asistio: { k:'no_asistio', label:'No asistió' },
   },
   hoy,
   citasFuturas: [],

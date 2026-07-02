@@ -58,7 +58,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
   const [pago, setPago] = useState(pagoOpts[0] || 'Tarjeta')
 
   const catalogo: Record<string, CartItem[]> = {
-    Servicios: data.servicios.map(s => ({
+    Servicios: data.servicios.filter(s => s.activo !== false).map(s => ({
       tipo: 'servicio' as const,
       key: s.id,
       nombre: s.nombre,

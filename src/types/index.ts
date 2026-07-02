@@ -1,4 +1,4 @@
-export type EstadoCita = 'pend' | 'conf' | 'pay' | 'done' | 'canc'
+export type EstadoCita = 'pend' | 'conf' | 'pay' | 'done' | 'canc' | 'no_asistio'
 export type EstadoClienta = 'VIP' | 'Frecuente' | 'Activa' | 'Nueva' | 'Inactiva'
 export type RolUsuario = 'admin' | 'gerente' | 'recepcion' | 'estilista'
 export type UsoProducto = 'retail' | 'interno'
@@ -34,6 +34,7 @@ export interface Servicio {
   domicilio?: boolean       // servicio a domicilio disponible
   comValor?: number         // comisión fija en MXN por servicio
   comTipo?: 'porcentaje' | 'valor'  // tipo de comisión
+  activo?: boolean          // false = no aparece para nuevas citas/ventas, sigue en historial
 }
 
 export interface FotoEntry {

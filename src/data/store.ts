@@ -169,7 +169,9 @@ export const useStore = create<Store>()(
 
       upsertClienta: (c) => {
         let merged: Clienta
+        let previous: Clienta[] = []
         set(s => {
+          previous = s.data.clientas
           const clientas = s.data.clientas
           const idx = clientas.findIndex(x => x.id === c.id)
           merged = idx >= 0 ? { ...clientas[idx], ...c } : c as Clienta
@@ -178,7 +180,12 @@ export const useStore = create<Store>()(
             : [...clientas, merged]
           return { data: { ...s.data, clientas: newClientas } }
         })
-        db.upsertClienta(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        db.upsertClienta(merged!).catch((err: { code?: string }) => {
+          set(s => ({ data: { ...s.data, clientas: previous } }))
+          toast(err?.code === '23505'
+            ? 'Ya existe una clienta con ese teléfono. Revisa el listado antes de crear una nueva.'
+            : 'Error al guardar. Recarga si el problema persiste.')
+        })
       },
 
       deleteClienta: (id) => {
@@ -188,7 +195,9 @@ export const useStore = create<Store>()(
 
       upsertServicio: (srv) => {
         let merged: Servicio
+        let previous: Servicio[] = []
         set(s => {
+          previous = s.data.servicios
           const servicios = s.data.servicios
           const idx = servicios.findIndex(x => x.id === srv.id)
           merged = idx >= 0 ? { ...servicios[idx], ...srv } : srv as Servicio
@@ -197,7 +206,10 @@ export const useStore = create<Store>()(
             : [...servicios, merged]
           return { data: { ...s.data, servicios: newSrv } }
         })
-        db.upsertServicio(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        db.upsertServicio(merged!).catch(() => {
+          set(s => ({ data: { ...s.data, servicios: previous } }))
+          toast('No se pudo guardar el servicio. Es posible que no tengas permiso para editar precios.')
+        })
       },
 
       deleteServicio: (id) => {

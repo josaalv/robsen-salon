@@ -15,7 +15,7 @@ export function Avatar({ ini, color, size, src }: AvatarProps) {
 
 /* ---- Badge estado de cita ---- */
 const ESTADO_LABELS: Record<string, string> = {
-  pend: 'Pendiente', conf: 'Confirmada', pay: 'Anticipo pagado', done: 'Completada', canc: 'Cancelada'
+  pend: 'Pendiente', conf: 'Confirmada', pay: 'Anticipo pagado', done: 'Completada', canc: 'Cancelada', no_asistio: 'No asistió'
 }
 export function EstadoBadge({ k }: { k: string }) {
   const label = ESTADO_LABELS[k] || k

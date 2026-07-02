@@ -186,6 +186,7 @@ export const db = {
       domicilio: r.domicilio ?? false,
       comValor: r.com_valor ?? 0,
       comTipo: r.com_tipo ?? 'porcentaje',
+      activo: r.activo ?? true,
     }))
   },
   async upsertServicio(s: Servicio) {
@@ -199,8 +200,9 @@ export const db = {
       domicilio: s.domicilio ?? false,
       com_valor: s.comValor ?? 0,
       com_tipo: s.comTipo ?? 'porcentaje',
+      activo: s.activo ?? true,
     }, { onConflict: 'id' })
-    if (error) console.error('[db.upsertServicio]', error.message)
+    if (error) { console.error('[db.upsertServicio]', error.message); throw error }
   },
   async deleteServicio(id: string) {
     if (!supabase) return
@@ -217,7 +219,7 @@ export const db = {
   async upsertClienta(c: Clienta) {
     if (!supabase) return
     const { error } = await supabase.from('clientas').upsert(toClientaRow(c), { onConflict: 'id' })
-    if (error) console.error('[db.upsertClienta]', error.message)
+    if (error) { console.error('[db.upsertClienta]', error.message); throw error }
   },
   async deleteClienta(id: string) {
     if (!supabase) return

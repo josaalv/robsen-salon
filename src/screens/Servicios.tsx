@@ -85,15 +85,18 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
             <div
               key={s.id}
               className="card card-pad"
-              style={{ display: 'flex', flexDirection: 'column', gap: 14, cursor: 'pointer' }}
+              style={{ display: 'flex', flexDirection: 'column', gap: 14, cursor: 'pointer', opacity: s.activo === false ? 0.55 : 1 }}
               onClick={() => setEditor(s)}
             >
               <div className="between">
                 <span className="badge neutral">{s.cat}</span>
-                {s.online
-                  ? <span className="badge conf"><span className="d"></span>En línea</span>
-                  : <span className="badge neutral">Solo en salón</span>
-                }
+                <div className="vc gap6">
+                  {s.activo === false && <span className="badge canc">Inactivo</span>}
+                  {s.online
+                    ? <span className="badge conf"><span className="d"></span>En línea</span>
+                    : <span className="badge neutral">Solo en salón</span>
+                  }
+                </div>
               </div>
               <div>
                 <h3 className="serif" style={{ fontSize: 19, margin: 0, fontWeight: 600 }}>{s.nombre}</h3>
@@ -417,6 +420,7 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
   const [domicilio, setDomicilio] = useState(s.domicilio ?? false)
   const [comValor, setComValor] = useState(s.comValor ?? 0)
   const [comTipo, setComTipo] = useState<'porcentaje' | 'valor'>(s.comTipo ?? 'porcentaje')
+  const [activo, setActivo] = useState(s.activo ?? true)
 
   const toggleProf = (id: string) => {
     setProf(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -431,7 +435,7 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
       dur, precio, anticipo, online, prof,
       descripcion: descripcion.trim() || undefined,
       precioVisible, precioVariable, domicilio,
-      comValor, comTipo,
+      comValor, comTipo, activo,
     })
   }
 
@@ -572,6 +576,16 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
                 <div className="muted" style={{ fontSize: 12 }}>Disponible para atención fuera del salón</div>
               </div>
               <Switch on={domicilio} onClick={() => setDomicilio(v => !v)} />
+            </div>
+            <hr className="hr" />
+            <div className="between">
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>Servicio activo</div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {activo ? 'Disponible para nuevas citas y ventas' : 'Oculto para nuevas citas/ventas — sigue visible en el historial'}
+                </div>
+              </div>
+              <Switch on={activo} onClick={() => setActivo(v => !v)} />
             </div>
           </div>
         </div>

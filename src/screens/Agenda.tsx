@@ -183,8 +183,8 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
           <div className="field">
             <label>Servicio</label>
             <select className="select" value={srvId} onChange={e => setSrvId(e.target.value)}>
-              {data.servicios.map(s => (
-                <option key={s.id} value={s.id}>{s.nombre} — {mxn(s.precio)} · {s.dur} min</option>
+              {data.servicios.filter(s => s.activo !== false || s.id === srvId).map(s => (
+                <option key={s.id} value={s.id}>{s.nombre}{s.activo === false ? ' (inactivo)' : ''} — {mxn(s.precio)} · {s.dur} min</option>
               ))}
             </select>
           </div>
@@ -478,6 +478,12 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
           <button className="btn ghost" title="Editar" onClick={onEdit}><Ic n="pencil-simple" /></button>
           <button className="btn ghost" title="Eliminar" style={{ color: 'var(--st-canc)' }} onClick={onDelete}><Ic n="trash" /></button>
         </div>
+        {!['canc', 'done', 'no_asistio'].includes(a.estado) && (
+          <button className="btn ghost w100 mt8" style={{ justifyContent: 'center', color: 'var(--st-noshow)' }}
+            onClick={() => { saveCita({ estado: 'no_asistio' }); toast('Cita marcada como no asistió'); onClose() }}>
+            <Ic n="user-minus" />Marcar como no asistió
+          </button>
+        )}
       </div>
     </div>
   )
@@ -725,7 +731,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
         ))}
         <div className="spacer" />
         <div className="vc gap12" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
-          {['pend', 'conf', 'pay', 'done', 'canc'].map(k => <EstadoBadge key={k} k={k} />)}
+          {['pend', 'conf', 'pay', 'done', 'canc', 'no_asistio'].map(k => <EstadoBadge key={k} k={k} />)}
         </div>
       </div>
 
