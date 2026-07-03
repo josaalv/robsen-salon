@@ -30,14 +30,18 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
     ? data.clientas.find(c => c.id === v.clienteId)?.tel
     : data.clientas.find(c => c.nombre === v.cliente)?.tel) || ''
 
-  const cobrarSaldo = () => {
+  const cobrarSaldo = async () => {
     const montoCobrado = ventaCalc.saldo(v)
-    updateVenta(v.id, {
-      estado: 'pagada', anticipo: ventaCalc.total(v), pago: pagoSaldo,
-      saldoCobradoEn: new Date().toISOString(), saldoCobradoMonto: montoCobrado,
-    })
-    toast('Saldo cobrado · venta marcada como pagada')
-    onClose()
+    try {
+      await updateVenta(v.id, {
+        estado: 'pagada', anticipo: ventaCalc.total(v), pago: pagoSaldo,
+        saldoCobradoEn: new Date().toISOString(), saldoCobradoMonto: montoCobrado,
+      })
+      toast('Saldo cobrado · venta marcada como pagada')
+      onClose()
+    } catch {
+      toast('No se pudo cobrar el saldo. Intenta de nuevo.')
+    }
   }
 
   const imprimirTicket = () => {
@@ -394,10 +398,15 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return true
   })
 
-  const registrarVenta = (venta: Venta) => {
-    addVenta(venta)
-    setPos(false)
-    toast('Venta registrada correctamente')
+  const registrarVenta = async (venta: Venta) => {
+    try {
+      await addVenta(venta)
+      setPos(false)
+      toast('Venta registrada correctamente')
+    } catch {
+      toast('No se pudo registrar la venta. Verifica tu conexión e intenta de nuevo.')
+      throw new Error('addVenta failed')
+    }
   }
 
   const resumenItems = (v: Venta) => {

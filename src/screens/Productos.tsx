@@ -331,15 +331,23 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
           p={editor}
           marcas={marcas}
           cats={rawCats}
-          onSave={prod => {
-            upsertProducto(prod)
-            toast('Producto guardado')
-            setEditor(null)
+          onSave={async prod => {
+            try {
+              await upsertProducto(prod)
+              toast('Producto guardado')
+              setEditor(null)
+            } catch {
+              toast('No se pudo guardar el producto. Intenta de nuevo.')
+            }
           }}
-          onDelete={id => {
-            deleteProducto(id)
-            toast('Producto eliminado')
-            setEditor(null)
+          onDelete={async id => {
+            try {
+              await deleteProducto(id)
+              toast('Producto eliminado')
+              setEditor(null)
+            } catch {
+              toast('No se pudo eliminar el producto. Intenta de nuevo.')
+            }
           }}
           onClose={() => setEditor(null)}
         />
@@ -349,10 +357,14 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
         <AjusteStockModal
           productos={productos}
           sel={ajuste}
-          onConfirm={(prodId, cant, motivo) => {
-            ajustarStock(prodId, cant, motivo)
-            toast(`Stock actualizado · ${cant > 0 ? '+' : ''}${cant} unidades`)
-            setAjuste(null)
+          onConfirm={async (prodId, cant, motivo) => {
+            try {
+              await ajustarStock(prodId, cant, motivo)
+              toast(`Stock actualizado · ${cant > 0 ? '+' : ''}${cant} unidades`)
+              setAjuste(null)
+            } catch {
+              toast('No se pudo actualizar el stock. Intenta de nuevo.')
+            }
           }}
           onClose={() => setAjuste(null)}
         />
@@ -362,10 +374,14 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
         <OrdenCompraModal
           productos={productos}
           sel={ordenCompra}
-          onRecibido={(prod, cant) => {
-            ajustarStock(prod.id, cant, 'Compra a proveedor')
-            toast(`Stock actualizado · +${cant} unidades de ${prod.nombre}`)
-            setOrdenCompra(null)
+          onRecibido={async (prod, cant) => {
+            try {
+              await ajustarStock(prod.id, cant, 'Compra a proveedor')
+              toast(`Stock actualizado · +${cant} unidades de ${prod.nombre}`)
+              setOrdenCompra(null)
+            } catch {
+              toast('No se pudo registrar la recepción. Intenta de nuevo.')
+            }
           }}
           onClose={() => setOrdenCompra(null)}
         />
@@ -377,10 +393,14 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
           sel={vender}
           estilistas={estilistas}
           clientas={clientas.map(c => c.nombre)}
-          onConfirm={(prod, cant, cliente, pago, est) => {
-            venderProducto(prod.id, cant, cliente || 'Mostrador', pago, est || null)
-            toast(`Venta registrada · ${mxn(prod.precio * cant)}`)
-            setVender(null)
+          onConfirm={async (prod, cant, cliente, pago, est) => {
+            try {
+              await venderProducto(prod.id, cant, cliente || 'Mostrador', pago, est || null)
+              toast(`Venta registrada · ${mxn(prod.precio * cant)}`)
+              setVender(null)
+            } catch {
+              toast('No se pudo registrar la venta. Intenta de nuevo.')
+            }
           }}
           onClose={() => setVender(null)}
         />
@@ -389,9 +409,19 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
       {importando && (
         <ImportarProductosModal
           productosExistentes={productos}
-          onImport={prods => {
-            prods.forEach(p => upsertProducto(p))
-            toast(`${prods.length} productos importados correctamente`)
+          onImport={async prods => {
+            let ok = 0
+            for (const p of prods) {
+              try {
+                await upsertProducto(p)
+                ok++
+              } catch {
+                // continúa con el resto; se reporta el conteo real abajo
+              }
+            }
+            if (ok === prods.length) toast(`${ok} productos importados correctamente`)
+            else if (ok === 0) toast('No se pudo importar ningún producto. Intenta de nuevo.')
+            else toast(`${ok} de ${prods.length} productos importados. Revisa los que fallaron.`)
             setImportando(false)
           }}
           onClose={() => setImportando(false)}

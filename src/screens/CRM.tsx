@@ -38,6 +38,7 @@ function ClientaModal({ c, onClose, onSaved }: {
   const [cumple, setCumple] = useState(c.cumple || '')
   const [ciclo, setCiclo] = useState(c.ciclo || 8)
   const [forzarDuplicado, setForzarDuplicado] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const estadosCl: EstadoClienta[] = ['VIP', 'Frecuente', 'Activa', 'Nueva', 'Inactiva']
 
@@ -48,30 +49,39 @@ function ClientaModal({ c, onClose, onSaved }: {
 
   const telInvalido = !!tel.trim() && !telefonoValido(tel)
 
-  const guardar = () => {
-    if (!nombre.trim()) return
+  const guardar = async () => {
+    if (!nombre.trim() || saving) return
     if (telInvalido) return
     if (duplicado && !forzarDuplicado) return
     const id = c.id || ('c' + Date.now())
     const ini = nombre.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
-    upsertClienta({
-      ...(c.id ? c as Clienta : {}),
-      id,
-      nombre: nombre.trim(),
-      tel,
-      estado,
-      est,
-      fav,
-      cumple: cumple || '01 Ene',
-      ciclo: +ciclo || 8,
-      ini,
-      ultima: c.ultima || fechaHoy(),
-      ticket: c.ticket || 0,
-      visitas: c.visitas || 0,
-      gasto: c.gasto || 0,
-    })
-    toast(nuevo ? 'Clienta registrada correctamente' : 'Clienta actualizada')
-    onSaved()
+    setSaving(true)
+    try {
+      await upsertClienta({
+        ...(c.id ? c as Clienta : {}),
+        id,
+        nombre: nombre.trim(),
+        tel,
+        estado,
+        est,
+        fav,
+        cumple: cumple || '01 Ene',
+        ciclo: +ciclo || 8,
+        ini,
+        ultima: c.ultima || fechaHoy(),
+        ticket: c.ticket || 0,
+        visitas: c.visitas || 0,
+        gasto: c.gasto || 0,
+      })
+      toast(nuevo ? 'Clienta registrada correctamente' : 'Clienta actualizada')
+      onSaved()
+    } catch (err) {
+      const code = (err as { code?: string })?.code
+      toast(code === '23505'
+        ? 'Ya existe una clienta con ese teléfono. Revisa el listado antes de crear una nueva.'
+        : 'No se pudo guardar la clienta. Intenta de nuevo.')
+      setSaving(false)
+    }
   }
 
   return (
@@ -146,11 +156,11 @@ function ClientaModal({ c, onClose, onSaved }: {
             className="btn gold"
             onClick={guardar}
             style={(() => {
-              const ok = !!nombre.trim() && !telInvalido && (!duplicado || forzarDuplicado)
+              const ok = !!nombre.trim() && !telInvalido && (!duplicado || forzarDuplicado) && !saving
               return { opacity: ok ? 1 : .4, pointerEvents: ok ? 'auto' : 'none' }
             })()}
           >
-            <Ic n="check" />{nuevo ? 'Registrar clienta' : 'Guardar cambios'}
+            <Ic n="check" />{saving ? 'Guardando…' : (nuevo ? 'Registrar clienta' : 'Guardar cambios')}
           </button>
         </div>
       </div>
@@ -163,11 +173,15 @@ function PreferenciasTab({ c }: { c: Clienta }) {
   const [notas, setNotas] = useState(c.notas || '')
   const [saved, setSaved] = useState(false)
 
-  const guardar = () => {
-    upsertClienta({ ...c, notas })
-    setSaved(true)
-    toast('Preferencias guardadas')
-    setTimeout(() => setSaved(false), 2000)
+  const guardar = async () => {
+    try {
+      await upsertClienta({ ...c, notas })
+      setSaved(true)
+      toast('Preferencias guardadas')
+      setTimeout(() => setSaved(false), 2000)
+    } catch {
+      toast('No se pudieron guardar las preferencias. Intenta de nuevo.')
+    }
   }
 
   return (
@@ -188,7 +202,7 @@ function PreferenciasTab({ c }: { c: Clienta }) {
         <button className="btn gold sm" onClick={guardar}>
           <Ic n={saved ? 'check' : 'floppy-disk'} />{saved ? 'Guardado' : 'Guardar notas'}
         </button>
-        {notas && <button className="btn ghost sm" onClick={() => { setNotas(''); upsertClienta({ ...c, notas: '' }) }}>Limpiar</button>}
+        {notas && <button className="btn ghost sm" onClick={() => { setNotas(''); upsertClienta({ ...c, notas: '' }).catch(() => toast('No se pudo limpiar las notas. Intenta de nuevo.')) }}>Limpiar</button>}
       </div>
     </div>
   )
@@ -201,7 +215,7 @@ function FormulaColorTab({ c }: { c: Clienta }) {
   const [srv, setSrv] = useState('')
   const [formula, setFormula] = useState('')
 
-  const agregar = () => {
+  const agregar = async () => {
     if (!formula.trim()) return
     const newEntry = {
       id: 'f' + Date.now(),
@@ -209,13 +223,18 @@ function FormulaColorTab({ c }: { c: Clienta }) {
       srv: srv || 'Color',
       formula: formula.trim(),
     }
-    upsertClienta({ ...c, formulas: [newEntry, ...formulas] })
-    setFormula(''); setSrv(''); setAdding(false)
-    toast('Fórmula guardada')
+    try {
+      await upsertClienta({ ...c, formulas: [newEntry, ...formulas] })
+      setFormula(''); setSrv(''); setAdding(false)
+      toast('Fórmula guardada')
+    } catch {
+      toast('No se pudo guardar la fórmula. Intenta de nuevo.')
+    }
   }
 
   const eliminar = (id: string) => {
     upsertClienta({ ...c, formulas: formulas.filter(f => f.id !== id) })
+      .catch(() => toast('No se pudo eliminar la fórmula. Intenta de nuevo.'))
   }
 
   return (
@@ -355,25 +374,33 @@ function AntesDesTab({ c }: { c: Clienta }) {
         nota,
       }
       const next = [entry, ...fotos]
-      setFotos(next)
-      upsertClienta({ id: c.id, fotos: next })
-      toast('Comparativa guardada')
-      setAdding(false)
-      resetForm()
+      try {
+        await upsertClienta({ id: c.id, fotos: next })
+        setFotos(next)
+        toast('Comparativa guardada')
+        setAdding(false)
+        resetForm()
+      } catch {
+        toast('No se pudo guardar la comparativa. Intenta de nuevo.')
+      }
     } finally {
       setUploading(false)
     }
   }
 
-  const eliminar = (id: string) => {
+  const eliminar = async (id: string) => {
     const f = fotos.find(x => x.id === id)
-    if (f) {
-      const paths = [f.antes, f.despues].filter(Boolean)
-      if (paths.length) db.deleteMediaPrivado(paths)
-    }
     const next = fotos.filter(f => f.id !== id)
-    setFotos(next)
-    upsertClienta({ id: c.id, fotos: next })
+    try {
+      await upsertClienta({ id: c.id, fotos: next })
+      if (f) {
+        const paths = [f.antes, f.despues].filter(Boolean)
+        if (paths.length) db.deleteMediaPrivado(paths)
+      }
+      setFotos(next)
+    } catch {
+      toast('No se pudo eliminar la comparativa. Intenta de nuevo.')
+    }
   }
 
   const PhotoSlot = ({ src, label, onClick }: { src: string; label: string; onClick: () => void }) => (
@@ -789,12 +816,13 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const text = ev.target?.result as string
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
       if (lines.length < 2) { toast('El archivo CSV está vacío'); return }
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
       let imported = 0
+      let failed = 0
       for (let i = 1; i < lines.length; i++) {
         const vals = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g, ''))
         const get = (keys: string[]) => vals[headers.findIndex(h => keys.includes(h))] || ''
@@ -802,21 +830,26 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
         if (!nombre) continue
         const existing = data.clientas.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())
         if (existing) continue
-        upsertClienta({
-          id: 'cl' + Date.now() + i,
-          nombre,
-          tel: get(['tel', 'telefono', 'phone', 'celular']),
-          estado: 'Nueva' as const,
-          ultima: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' + new Date().getFullYear(),
-          ticket: 0, fav: '', est: '', visitas: 0, gasto: 0,
-          ini: nombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
-          cumple: get(['cumple', 'cumpleaños', 'birthday']),
-          ciclo: 0,
-          notas: get(['notas', 'notes', 'comentarios']),
-        })
-        imported++
+        try {
+          await upsertClienta({
+            id: 'cl' + Date.now() + i,
+            nombre,
+            tel: get(['tel', 'telefono', 'phone', 'celular']),
+            estado: 'Nueva' as const,
+            ultima: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' + new Date().getFullYear(),
+            ticket: 0, fav: '', est: '', visitas: 0, gasto: 0,
+            ini: nombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
+            cumple: get(['cumple', 'cumpleaños', 'birthday']),
+            ciclo: 0,
+            notas: get(['notas', 'notes', 'comentarios']),
+          })
+          imported++
+        } catch {
+          failed++
+        }
       }
-      toast(imported > 0 ? `${imported} clienta${imported > 1 ? 's' : ''} importada${imported > 1 ? 's' : ''}` : 'No se encontraron clientas nuevas')
+      if (failed === 0) toast(imported > 0 ? `${imported} clienta${imported > 1 ? 's' : ''} importada${imported > 1 ? 's' : ''}` : 'No se encontraron clientas nuevas')
+      else toast(`${imported} importadas, ${failed} fallaron. Revisa e intenta de nuevo con las que fallaron.`)
       e.target.value = ''
     }
     reader.readAsText(file)
@@ -856,7 +889,14 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
     <ConfirmModal
       title="¿Eliminar clienta?"
       desc={`${confirmDelete.nombre} será eliminada permanentemente del CRM.`}
-      onConfirm={() => { deleteClienta(confirmDelete.id); setConfirmDelete(null); setPerfil(null); toast('Clienta eliminada') }}
+      onConfirm={async () => {
+        try {
+          await deleteClienta(confirmDelete.id)
+          setConfirmDelete(null); setPerfil(null); toast('Clienta eliminada')
+        } catch {
+          toast('No se pudo eliminar la clienta. Intenta de nuevo.')
+        }
+      }}
       onCancel={() => setConfirmDelete(null)}
     />
   )

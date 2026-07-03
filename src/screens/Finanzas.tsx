@@ -134,9 +134,8 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
     })
     const rows = Object.entries(acc).map(([srv, d]) => ({ srv, ...d }))
     rows.sort((a, b) => b.ingreso - a.ingreso)
-    // Fallback to mock data if no ventas yet
-    return rows.length > 0 ? rows.slice(0, 5) : data.servMasVendidos.slice(0, 5)
-  }, [ventasFiltradas, data.servMasVendidos])
+    return rows.slice(0, 5)
+  }, [ventasFiltradas])
 
   // Category breakdown from real ventas × servicios catalog
   const categorias = useMemo(() => {
@@ -151,9 +150,8 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
     const rows = Object.entries(acc)
       .map(([cat, v]) => ({ cat, v, c: CAT_COLORS[cat] || '#B08AC7' }))
       .sort((a, b) => b.v - a.v)
-    // Fallback to mock data if no ventas yet
-    return rows.length > 0 ? rows : data.ingresosPorCategoria
-  }, [ventasFiltradas, data.servicios, data.ingresosPorCategoria])
+    return rows
+  }, [ventasFiltradas, data.servicios])
 
   // Bar chart — grouped by day (semana), week (mes), month (año)
   const barData = useMemo(() => {
@@ -333,17 +331,20 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
       <div className="grid" style={{ gridTemplateColumns: '1fr 1.25fr', marginBottom: 18 }}>
         <div className="card">
           <CardHead title="Ingresos por categoría" sub="Distribución de servicios" />
-          <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 16 }}>
-            <Donut data={categorias} />
-            <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {categorias.map(d => (
-                <div key={d.cat} className="vc gap6">
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.c }} />
-                  <span style={{ fontSize: 11.5 }}>{d.cat}</span>
+          {categorias.length > 0
+            ? <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 16 }}>
+                <Donut data={categorias} />
+                <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {categorias.map(d => (
+                    <div key={d.cat} className="vc gap6">
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.c }} />
+                      <span style={{ fontSize: 11.5 }}>{d.cat}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            : <div className="card-pad dim" style={{ fontSize: 12.5 }}>Sin datos suficientes para este periodo.</div>
+          }
         </div>
         <div className="card">
           <CardHead title="Servicios más vendidos" sub="Ingresos generados · periodo seleccionado" />
@@ -366,7 +367,7 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
                   ))}
                 </tbody>
               </table>
-            : <div className="card-pad dim" style={{ fontSize: 12.5 }}>Sin servicios vendidos en el periodo</div>
+            : <div className="card-pad dim" style={{ fontSize: 12.5 }}>Sin datos suficientes para este periodo.</div>
           }
         </div>
       </div>
@@ -400,7 +401,10 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
                     <td className="muted" style={{ fontSize: 12.5 }}>{g.fecha}</td>
                     <td className="num" style={{ fontWeight: 600, color: 'var(--st-canc)' }}>{mxn(g.monto)}</td>
                     <td>
-                      <button className="icon-btn" style={{ color: 'var(--st-canc)' }} onClick={() => { deleteGasto(g.id); toast('Gasto eliminado') }}>
+                      <button className="icon-btn" style={{ color: 'var(--st-canc)' }} onClick={async () => {
+                        try { await deleteGasto(g.id); toast('Gasto eliminado') }
+                        catch { toast('No se pudo eliminar el gasto. Intenta de nuevo.') }
+                      }}>
                         <Ic n="trash" size={15} />
                       </button>
                     </td>
@@ -420,7 +424,10 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
       {showGastoModal && (
         <GastoModal
           onClose={() => setShowGastoModal(false)}
-          onSave={g => { addGasto(g); setShowGastoModal(false); toast('Gasto registrado') }}
+          onSave={async g => {
+            try { await addGasto(g); setShowGastoModal(false); toast('Gasto registrado') }
+            catch { toast('No se pudo registrar el gasto. Intenta de nuevo.') }
+          }}
         />
       )}
 

@@ -193,12 +193,12 @@ export const db = {
     return data ? mapConfig(data) : null
   },
   async saveConfig(cfg: SalonConfig) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('config').upsert(
       { id: 'main', ...toConfigRow(cfg) },
       { onConflict: 'id' }
     )
-    if (error) console.error('[db.saveConfig]', error.message)
+    if (error) { console.error('[db.saveConfig]', error.message); throw new Error(error.message) }
   },
 
   // — Estilistas —
@@ -208,13 +208,14 @@ export const db = {
     return (data ?? []) as Estilista[]
   },
   async upsertEstilista(e: Estilista) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('estilistas').upsert(e, { onConflict: 'id' })
-    if (error) console.error('[db.upsertEstilista]', error.message)
+    if (error) { console.error('[db.upsertEstilista]', error.message); throw new Error(error.message) }
   },
   async deleteEstilista(id: string) {
-    if (!supabase) return
-    await supabase.from('estilistas').delete().eq('id', id)
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('estilistas').delete().eq('id', id)
+    if (error) { console.error('[db.deleteEstilista]', error.message); throw new Error(error.message) }
   },
 
   // — Servicios —
@@ -249,8 +250,9 @@ export const db = {
     if (error) { console.error('[db.upsertServicio]', error.message); throw error }
   },
   async deleteServicio(id: string) {
-    if (!supabase) return
-    await supabase.from('servicios').delete().eq('id', id)
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('servicios').delete().eq('id', id)
+    if (error) { console.error('[db.deleteServicio]', error.message); throw new Error(error.message) }
   },
 
   // — Clientas —
@@ -266,8 +268,9 @@ export const db = {
     if (error) { console.error('[db.upsertClienta]', error.message); throw error }
   },
   async deleteClienta(id: string) {
-    if (!supabase) return
-    await supabase.from('clientas').delete().eq('id', id)
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('clientas').delete().eq('id', id)
+    if (error) { console.error('[db.deleteClienta]', error.message); throw new Error(error.message) }
   },
 
   // — Citas —
@@ -282,13 +285,14 @@ export const db = {
     }
   },
   async upsertCita(c: Partial<Cita> & { id: string }) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('citas').upsert(toCitaRow(c), { onConflict: 'id' })
-    if (error) console.error('[db.upsertCita]', error.message)
+    if (error) { console.error('[db.upsertCita]', error.message); throw new Error(error.message) }
   },
   async deleteCita(id: string) {
-    if (!supabase) return
-    await supabase.from('citas').delete().eq('id', id)
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('citas').delete().eq('id', id)
+    if (error) { console.error('[db.deleteCita]', error.message); throw new Error(error.message) }
   },
 
   // — Ventas —
@@ -300,21 +304,30 @@ export const db = {
     ])
     return (ventas ?? []).map(v => mapVenta(v, lineas ?? []))
   },
+  // Nota: son dos escrituras separadas (no hay RPC transaccional todavía,
+  // ver docs/pendiente en el plan de integridad de datos). Si falla el
+  // segundo insert, se revierte el primero manualmente para no dejar una
+  // venta huérfana sin líneas.
   async addVenta(v: Venta) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('ventas').insert({
       id: v.id, ticket: v.ticket, fecha: v.fecha, cliente: v.cliente,
       cliente_id: v.clienteId || null, pago: v.pago, estado: v.estado,
       descuento: v.desc, anticipo: v.anticipo, cita_id: v.citaId ?? null,
     })
-    if (error) { console.error('[db.addVenta]', error.message); return }
+    if (error) { console.error('[db.addVenta]', error.message); throw new Error(error.message) }
     if (v.lineas.length > 0) {
-      await supabase.from('lineas_venta').insert(
+      const { error: errLineas } = await supabase.from('lineas_venta').insert(
         v.lineas.map(l => ({
           venta_id: v.id, tipo: l.tipo, nombre: l.nombre,
           est: l.est ?? null, cant: l.cant, precio: l.precio, com: l.com,
         }))
       )
+      if (errLineas) {
+        console.error('[db.addVenta:lineas]', errLineas.message)
+        await supabase.from('ventas').delete().eq('id', v.id)
+        throw new Error(errLineas.message)
+      }
     }
   },
   async updateVenta(id: string, patch: Partial<Venta>) {
@@ -346,13 +359,14 @@ export const db = {
     return (data ?? []) as Producto[]
   },
   async upsertProducto(p: Producto) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('productos').upsert(p, { onConflict: 'id' })
-    if (error) console.error('[db.upsertProducto]', error.message)
+    if (error) { console.error('[db.upsertProducto]', error.message); throw new Error(error.message) }
   },
   async deleteProducto(id: string) {
-    if (!supabase) return
-    await supabase.from('productos').delete().eq('id', id)
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('productos').delete().eq('id', id)
+    if (error) { console.error('[db.deleteProducto]', error.message); throw new Error(error.message) }
   },
 
   // — Movimientos —
@@ -362,9 +376,9 @@ export const db = {
     return (data ?? []) as Movimiento[]
   },
   async addMovimiento(m: Movimiento) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('movimientos').insert(m)
-    if (error) console.error('[db.addMovimiento]', error.message)
+    if (error) { console.error('[db.addMovimiento]', error.message); throw new Error(error.message) }
   },
 
   // — Gastos —
@@ -374,13 +388,14 @@ export const db = {
     return (data ?? []) as Gasto[]
   },
   async upsertGasto(g: Gasto) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('gastos').upsert(g, { onConflict: 'id' })
-    if (error) console.error('[db.upsertGasto]', error.message)
+    if (error) { console.error('[db.upsertGasto]', error.message); throw new Error(error.message) }
   },
   async deleteGasto(id: string) {
-    if (!supabase) return
-    await supabase.from('gastos').delete().eq('id', id)
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('gastos').delete().eq('id', id)
+    if (error) { console.error('[db.deleteGasto]', error.message); throw new Error(error.message) }
   },
 
   // — Bloqueos —
@@ -390,13 +405,14 @@ export const db = {
     return (data ?? []) as Bloqueo[]
   },
   async upsertBloqueo(b: Bloqueo) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('bloqueos').upsert(b, { onConflict: 'id' })
-    if (error) console.error('[db.upsertBloqueo]', error.message)
+    if (error) { console.error('[db.upsertBloqueo]', error.message); throw new Error(error.message) }
   },
   async deleteBloqueo(id: string) {
-    if (!supabase) return
-    await supabase.from('bloqueos').delete().eq('id', id)
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('bloqueos').delete().eq('id', id)
+    if (error) { console.error('[db.deleteBloqueo]', error.message); throw new Error(error.message) }
   },
 
   // — Plantillas —
@@ -406,9 +422,9 @@ export const db = {
     return (data ?? []) as Plantilla[]
   },
   async upsertPlantilla(p: Plantilla) {
-    if (!supabase) return
+    if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('plantillas').upsert(p, { onConflict: 'id' })
-    if (error) console.error('[db.upsertPlantilla]', error.message)
+    if (error) { console.error('[db.upsertPlantilla]', error.message); throw new Error(error.message) }
   },
 
   // — Usuarios —

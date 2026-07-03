@@ -11,30 +11,30 @@ interface Store {
   data: RBData
   syncing: boolean
   loadFromSupabase: () => Promise<boolean>
-  updateConfig: (patch: Partial<SalonConfig>) => void
-  upsertCita: (cita: Partial<Cita> & { id: string }) => void
-  deleteCita: (id: string) => void
-  upsertCitaFutura: (cita: Partial<Cita> & { id: string }) => void
-  deleteCitaFutura: (id: string) => void
-  upsertClienta: (c: Partial<Clienta> & { id: string }) => void
-  deleteClienta: (id: string) => void
-  upsertServicio: (s: Partial<Servicio> & { id: string }) => void
-  deleteServicio: (id: string) => void
-  upsertProducto: (p: Partial<Producto> & { id: string }) => void
-  deleteProducto: (id: string) => void
-  upsertEstilista: (e: Partial<Estilista> & { id: string }) => void
-  deleteEstilista: (id: string) => void
-  addVenta: (v: Venta) => void
-  updateVenta: (id: string, patch: Partial<Venta>) => void
-  venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => void
-  upsertUsuario: (u: Partial<Usuario> & { id: string }) => void
+  updateConfig: (patch: Partial<SalonConfig>) => Promise<void>
+  upsertCita: (cita: Partial<Cita> & { id: string }) => Promise<void>
+  deleteCita: (id: string) => Promise<void>
+  upsertCitaFutura: (cita: Partial<Cita> & { id: string }) => Promise<void>
+  deleteCitaFutura: (id: string) => Promise<void>
+  upsertClienta: (c: Partial<Clienta> & { id: string }) => Promise<void>
+  deleteClienta: (id: string) => Promise<void>
+  upsertServicio: (s: Partial<Servicio> & { id: string }) => Promise<void>
+  deleteServicio: (id: string) => Promise<void>
+  upsertProducto: (p: Partial<Producto> & { id: string }) => Promise<void>
+  deleteProducto: (id: string) => Promise<void>
+  upsertEstilista: (e: Partial<Estilista> & { id: string }) => Promise<void>
+  deleteEstilista: (id: string) => Promise<void>
+  addVenta: (v: Venta) => Promise<void>
+  updateVenta: (id: string, patch: Partial<Venta>) => Promise<void>
+  venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => Promise<void>
+  upsertUsuario: (u: Partial<Usuario> & { id: string }) => Promise<void>
   deleteUsuario: (id: string) => void
-  upsertPlantilla: (p: Partial<Plantilla> & { id: string }) => void
-  ajustarStock: (productoId: string, cant: number, motivo: string) => void
-  upsertBloqueo: (b: Bloqueo) => void
-  deleteBloqueo: (id: string) => void
-  addGasto: (g: Gasto) => void
-  deleteGasto: (id: string) => void
+  upsertPlantilla: (p: Partial<Plantilla> & { id: string }) => Promise<void>
+  ajustarStock: (productoId: string, cant: number, motivo: string) => Promise<void>
+  upsertBloqueo: (b: Bloqueo) => Promise<void>
+  deleteBloqueo: (id: string) => Promise<void>
+  addGasto: (g: Gasto) => Promise<void>
+  deleteGasto: (id: string) => Promise<void>
 }
 
 export const useStore = create<Store>()(
@@ -107,13 +107,19 @@ export const useStore = create<Store>()(
         }
       },
 
-      updateConfig: (patch) => {
+      updateConfig: async (patch) => {
+        const previous = get().data.config
         set(s => ({ data: { ...s.data, config: { ...s.data.config, ...patch } } }))
-        const cfg = get().data.config
-        db.saveConfig(cfg).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.saveConfig(get().data.config)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, config: previous } }))
+          throw err
+        }
       },
 
-      upsertCita: (cita) => {
+      upsertCita: async (cita) => {
+        const previous = get().data.hoy
         let merged: Cita
         set(s => {
           const hoy = s.data.hoy
@@ -124,15 +130,27 @@ export const useStore = create<Store>()(
             : [...hoy, merged].sort((a, b) => a.h.localeCompare(b.h))
           return { data: { ...s.data, hoy: newHoy } }
         })
-        db.upsertCita(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertCita(merged!)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, hoy: previous } }))
+          throw err
+        }
       },
 
-      deleteCita: (id) => {
+      deleteCita: async (id) => {
+        const previous = get().data.hoy
         set(s => ({ data: { ...s.data, hoy: s.data.hoy.filter(c => c.id !== id) } }))
-        db.deleteCita(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteCita(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, hoy: previous } }))
+          throw err
+        }
       },
 
-      upsertCitaFutura: (cita) => {
+      upsertCitaFutura: async (cita) => {
+        const previous = get().data.citasFuturas
         let merged: Cita
         set(s => {
           const futuras = s.data.citasFuturas || []
@@ -146,19 +164,29 @@ export const useStore = create<Store>()(
               })
           return { data: { ...s.data, citasFuturas: newFuturas } }
         })
-        db.upsertCita(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertCita(merged!)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, citasFuturas: previous } }))
+          throw err
+        }
       },
 
-      deleteCitaFutura: (id) => {
+      deleteCitaFutura: async (id) => {
+        const previous = get().data.citasFuturas
         set(s => ({ data: { ...s.data, citasFuturas: (s.data.citasFuturas || []).filter(c => c.id !== id) } }))
-        db.deleteCita(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteCita(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, citasFuturas: previous } }))
+          throw err
+        }
       },
 
-      upsertClienta: (c) => {
+      upsertClienta: async (c) => {
+        const previous = get().data.clientas
         let merged: Clienta
-        let previous: Clienta[] = []
         set(s => {
-          previous = s.data.clientas
           const clientas = s.data.clientas
           const idx = clientas.findIndex(x => x.id === c.id)
           merged = idx >= 0 ? { ...clientas[idx], ...c } : c as Clienta
@@ -167,24 +195,29 @@ export const useStore = create<Store>()(
             : [...clientas, merged]
           return { data: { ...s.data, clientas: newClientas } }
         })
-        db.upsertClienta(merged!).catch((err: { code?: string }) => {
+        try {
+          await db.upsertClienta(merged!)
+        } catch (err) {
           set(s => ({ data: { ...s.data, clientas: previous } }))
-          toast(err?.code === '23505'
-            ? 'Ya existe una clienta con ese teléfono. Revisa el listado antes de crear una nueva.'
-            : 'Error al guardar. Recarga si el problema persiste.')
-        })
+          throw err
+        }
       },
 
-      deleteClienta: (id) => {
+      deleteClienta: async (id) => {
+        const previous = get().data.clientas
         set(s => ({ data: { ...s.data, clientas: s.data.clientas.filter(c => c.id !== id) } }))
-        db.deleteClienta(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteClienta(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, clientas: previous } }))
+          throw err
+        }
       },
 
-      upsertServicio: (srv) => {
+      upsertServicio: async (srv) => {
+        const previous = get().data.servicios
         let merged: Servicio
-        let previous: Servicio[] = []
         set(s => {
-          previous = s.data.servicios
           const servicios = s.data.servicios
           const idx = servicios.findIndex(x => x.id === srv.id)
           merged = idx >= 0 ? { ...servicios[idx], ...srv } : srv as Servicio
@@ -193,18 +226,27 @@ export const useStore = create<Store>()(
             : [...servicios, merged]
           return { data: { ...s.data, servicios: newSrv } }
         })
-        db.upsertServicio(merged!).catch(() => {
+        try {
+          await db.upsertServicio(merged!)
+        } catch (err) {
           set(s => ({ data: { ...s.data, servicios: previous } }))
-          toast('No se pudo guardar el servicio. Es posible que no tengas permiso para editar precios.')
-        })
+          throw err
+        }
       },
 
-      deleteServicio: (id) => {
+      deleteServicio: async (id) => {
+        const previous = get().data.servicios
         set(s => ({ data: { ...s.data, servicios: s.data.servicios.filter(x => x.id !== id) } }))
-        db.deleteServicio(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteServicio(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, servicios: previous } }))
+          throw err
+        }
       },
 
-      upsertProducto: (p) => {
+      upsertProducto: async (p) => {
+        const previous = get().data.productos
         let merged: Producto
         set(s => {
           const productos = s.data.productos
@@ -215,15 +257,27 @@ export const useStore = create<Store>()(
             : [...productos, merged]
           return { data: { ...s.data, productos: newP } }
         })
-        db.upsertProducto(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertProducto(merged!)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, productos: previous } }))
+          throw err
+        }
       },
 
-      deleteProducto: (id) => {
+      deleteProducto: async (id) => {
+        const previous = get().data.productos
         set(s => ({ data: { ...s.data, productos: s.data.productos.filter(x => x.id !== id) } }))
-        db.deleteProducto(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteProducto(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, productos: previous } }))
+          throw err
+        }
       },
 
-      upsertEstilista: (e) => {
+      upsertEstilista: async (e) => {
+        const previous = get().data.estilistas
         let merged: Estilista
         set(s => {
           const estilistas = s.data.estilistas
@@ -234,19 +288,37 @@ export const useStore = create<Store>()(
             : [...estilistas, merged]
           return { data: { ...s.data, estilistas: newE } }
         })
-        db.upsertEstilista(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertEstilista(merged!)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, estilistas: previous } }))
+          throw err
+        }
       },
 
-      deleteEstilista: (id) => {
+      deleteEstilista: async (id) => {
+        const previous = get().data.estilistas
         set(s => ({ data: { ...s.data, estilistas: s.data.estilistas.filter(x => x.id !== id) } }))
-        db.deleteEstilista(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteEstilista(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, estilistas: previous } }))
+          throw err
+        }
       },
 
-      addVenta: (v) => {
+      addVenta: async (v) => {
         let syncProductos: Producto[] = []
         let syncClienta: Clienta | null = null
         const syncMovs: Movimiento[] = []
         const syncTxs: Transaccion[] = []
+        const previous = {
+          ventas: get().data.ventas,
+          productos: get().data.productos,
+          clientas: get().data.clientas,
+          movimientos: get().data.movimientos,
+          transacciones: get().data.transacciones,
+        }
 
         set(s => {
           let productos = [...s.data.productos]
@@ -313,19 +385,33 @@ export const useStore = create<Store>()(
           }
         })
 
-        // Supabase sync (fire-and-forget)
-        db.addVenta(v).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
-        syncProductos.forEach(p => db.upsertProducto(p).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') }))
-        if (syncClienta) db.upsertClienta(syncClienta).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
-        syncMovs.forEach(m => db.addMovimiento(m).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') }))
+        // Supabase sync — secuencial y con rollback completo si algo falla,
+        // para que el estado local optimista nunca quede desincronizado de
+        // lo que realmente se guardó (stock, estadísticas de clienta, etc).
+        try {
+          await db.addVenta(v)
+          for (const p of syncProductos) await db.upsertProducto(p)
+          if (syncClienta) await db.upsertClienta(syncClienta)
+          for (const m of syncMovs) await db.addMovimiento(m)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, ...previous } }))
+          throw err
+        }
       },
 
-      updateVenta: (id, patch) => {
+      updateVenta: async (id, patch) => {
+        const previous = get().data.ventas
         set(s => ({ data: { ...s.data, ventas: s.data.ventas.map(v => v.id === id ? { ...v, ...patch } : v) } }))
-        db.updateVenta(id, patch).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.updateVenta(id, patch)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, ventas: previous } }))
+          throw err
+        }
       },
 
-      upsertUsuario: (u) => {
+      upsertUsuario: async (u) => {
+        const previous = get().data.usuarios
         let merged: Usuario
         set(s => {
           const usuarios = s.data.usuarios
@@ -336,7 +422,12 @@ export const useStore = create<Store>()(
             : [...usuarios, merged]
           return { data: { ...s.data, usuarios: newU } }
         })
-        db.upsertUsuario(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertUsuario(merged!)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, usuarios: previous } }))
+          throw err
+        }
       },
 
       // La eliminación real (perfil + cuenta de Auth) ya ocurrió vía
@@ -346,7 +437,8 @@ export const useStore = create<Store>()(
         set(s => ({ data: { ...s.data, usuarios: s.data.usuarios.filter(u => u.id !== id) } }))
       },
 
-      upsertPlantilla: (p) => {
+      upsertPlantilla: async (p) => {
+        const previous = get().data.plantillas
         let merged: Plantilla
         set(s => {
           const plantillas = s.data.plantillas
@@ -357,10 +449,16 @@ export const useStore = create<Store>()(
             : [...plantillas, merged]
           return { data: { ...s.data, plantillas: newP } }
         })
-        db.upsertPlantilla(merged!).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertPlantilla(merged!)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, plantillas: previous } }))
+          throw err
+        }
       },
 
-      upsertBloqueo: (b) => {
+      upsertBloqueo: async (b) => {
+        const previous = get().data.bloqueos
         set(s => {
           const bloqueos = s.data.bloqueos || []
           const idx = bloqueos.findIndex(x => x.id === b.id)
@@ -369,27 +467,54 @@ export const useStore = create<Store>()(
             : [...bloqueos, b]
           return { data: { ...s.data, bloqueos: newBloqueos } }
         })
-        db.upsertBloqueo(b).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertBloqueo(b)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, bloqueos: previous } }))
+          throw err
+        }
       },
 
-      deleteBloqueo: (id) => {
+      deleteBloqueo: async (id) => {
+        const previous = get().data.bloqueos
         set(s => ({ data: { ...s.data, bloqueos: (s.data.bloqueos || []).filter(b => b.id !== id) } }))
-        db.deleteBloqueo(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteBloqueo(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, bloqueos: previous } }))
+          throw err
+        }
       },
 
-      addGasto: (g) => {
+      addGasto: async (g) => {
+        const previous = get().data.gastos
         set(s => ({ data: { ...s.data, gastos: [...(s.data.gastos || []), g] } }))
-        db.upsertGasto(g).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.upsertGasto(g)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, gastos: previous } }))
+          throw err
+        }
       },
 
-      deleteGasto: (id) => {
+      deleteGasto: async (id) => {
+        const previous = get().data.gastos
         set(s => ({ data: { ...s.data, gastos: (s.data.gastos || []).filter(g => g.id !== id) } }))
-        db.deleteGasto(id).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
+        try {
+          await db.deleteGasto(id)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, gastos: previous } }))
+          throw err
+        }
       },
 
-      ajustarStock: (productoId, cant, motivo) => {
+      ajustarStock: async (productoId, cant, motivo) => {
         let syncProd: Producto | null = null
         const syncMov: Movimiento[] = []
+        const previous = {
+          productos: get().data.productos,
+          movimientos: get().data.movimientos,
+        }
 
         set(s => {
           const prod = s.data.productos.find(p => p.id === productoId)
@@ -412,11 +537,17 @@ export const useStore = create<Store>()(
           }
         })
 
-        if (syncProd) db.upsertProducto(syncProd).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') })
-        syncMov.forEach(m => db.addMovimiento(m).catch(() => { toast('Error al guardar. Recarga si el problema persiste.') }))
+        if (!syncProd) return
+        try {
+          await db.upsertProducto(syncProd)
+          for (const m of syncMov) await db.addMovimiento(m)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, ...previous } }))
+          throw err
+        }
       },
 
-      venderProducto: (productoId, cant, clienta, pago, estId) => {
+      venderProducto: async (productoId, cant, clienta, pago, estId) => {
         const { data, addVenta } = get()
         const prod = data.productos.find(p => p.id === productoId)
         if (!prod || prod.stock < cant) { toast('Stock insuficiente'); return }
@@ -429,7 +560,7 @@ export const useStore = create<Store>()(
           cliente: clienta || 'Mostrador', clienteId: clienteEncontrado?.id || '', pago, estado: 'pagada', desc: 0, anticipo: 0,
           lineas: [{ tipo: 'producto', nombre: prod.nombre, est: estId, cant, precio: prod.precio, com }],
         }
-        addVenta(venta)
+        await addVenta(venta)
       },
     }),
     {

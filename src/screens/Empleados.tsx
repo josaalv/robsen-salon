@@ -36,23 +36,38 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
     }
   }
 
-  const save = () => {
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (saving) return
+    setSaving(true)
     const id = est.id || 'e' + Date.now()
-    upsertEstilista({
-      ...est as Estilista,
-      id, nombre, rol, color, com: comPct, foto: foto || undefined, bio: bio || undefined,
-      ini: nombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
-    })
-    toast(est.id ? 'Perfil actualizado' : 'Estilista agregada')
-    onClose()
+    try {
+      await upsertEstilista({
+        ...est as Estilista,
+        id, nombre, rol, color, com: comPct, foto: foto || undefined, bio: bio || undefined,
+        ini: nombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
+      })
+      toast(est.id ? 'Perfil actualizado' : 'Estilista agregada')
+      onClose()
+    } catch {
+      toast('No se pudo guardar la estilista. Intenta de nuevo.')
+      setSaving(false)
+    }
   }
 
-  const del = () => {
-    if (!est.id) return
+  const del = async () => {
+    if (!est.id || saving) return
     if (!confirm('¿Eliminar estilista?')) return
-    deleteEstilista(est.id)
-    toast('Estilista eliminada')
-    onClose()
+    setSaving(true)
+    try {
+      await deleteEstilista(est.id)
+      toast('Estilista eliminada')
+      onClose()
+    } catch {
+      toast('No se pudo eliminar la estilista. Intenta de nuevo.')
+      setSaving(false)
+    }
   }
 
   return (
@@ -112,8 +127,8 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
           </div>
         </div>
         <div className="vc gap8 mt6">
-          <button className="btn gold f1" style={{ justifyContent: 'center' }} onClick={save}><Ic n="check" />Guardar</button>
-          {est.id && <button className="btn ghost" onClick={del} style={{ color: 'var(--st-canc)', borderColor: 'var(--st-canc)' }}><Ic n="trash" />Eliminar</button>}
+          <button className="btn gold f1" style={{ justifyContent: 'center', opacity: saving ? .6 : 1, pointerEvents: saving ? 'none' : 'auto' }} onClick={save}><Ic n="check" />{saving ? 'Guardando…' : 'Guardar'}</button>
+          {est.id && <button className="btn ghost" onClick={del} style={{ color: 'var(--st-canc)', borderColor: 'var(--st-canc)', opacity: saving ? .6 : 1, pointerEvents: saving ? 'none' : 'auto' }}><Ic n="trash" />Eliminar</button>}
         </div>
       </div>
     </Modal>
@@ -129,16 +144,25 @@ function HorariosModal({ onClose }: { onClose: () => void }) {
     Object.fromEntries(data.estilistas.map(e => [e.id, e.horarios || [...DEFAULT_HORARIO]]))
   )
 
+  const [saving, setSaving] = useState(false)
+
   const toggle = (estId: string, day: number) => {
     setHorarios(h => ({ ...h, [estId]: h[estId].map((v, i) => i === day ? !v : v) }))
   }
 
-  const guardar = () => {
-    data.estilistas.forEach(e => {
-      upsertEstilista({ ...e, horarios: horarios[e.id] || [...DEFAULT_HORARIO] })
-    })
-    toast('Horarios guardados')
-    onClose()
+  const guardar = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      for (const e of data.estilistas) {
+        await upsertEstilista({ ...e, horarios: horarios[e.id] || [...DEFAULT_HORARIO] })
+      }
+      toast('Horarios guardados')
+      onClose()
+    } catch {
+      toast('No se pudieron guardar todos los horarios. Revisa e intenta de nuevo.')
+      setSaving(false)
+    }
   }
 
   return (
@@ -181,7 +205,7 @@ function HorariosModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className="card-pad" style={{ paddingTop: 14 }}>
         <div className="vc gap8">
-          <button className="btn gold" onClick={guardar}><Ic n="check" />Guardar horarios</button>
+          <button className="btn gold" onClick={guardar} style={{ opacity: saving ? .6 : 1, pointerEvents: saving ? 'none' : 'auto' }}><Ic n="check" />{saving ? 'Guardando…' : 'Guardar horarios'}</button>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
         </div>
       </div>

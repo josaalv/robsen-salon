@@ -47,7 +47,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
       const patch = { ...user, avatar: url }
       const saved = await db.upsertUsuario(patch)
       setAvatar(url)
-      upsertUsuario(saved)
+      upsertUsuario(saved).catch(() => {})
       await refreshUser()
       toast('Foto actualizada')
     } catch (err) {
@@ -65,7 +65,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
     try {
       const saved = await db.clearUsuarioAvatar(user.id)
       setAvatar('')
-      upsertUsuario(saved)
+      upsertUsuario(saved).catch(() => {})
       await refreshUser()
     } catch (err) {
       toast('Error al quitar la foto — intenta de nuevo')
@@ -85,7 +85,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
       const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
       const patch = { ...user, nombre: nombre.trim(), tel, ini }
       const saved = await db.upsertUsuario(patch)
-      upsertUsuario(saved)
+      upsertUsuario(saved).catch(() => {})
       await refreshUser()
       toast('Perfil actualizado')
     } catch (err) {
@@ -186,26 +186,45 @@ function AjustesSalon() {
     const url = await db.uploadMedia('logos/logo', file)
     URL.revokeObjectURL(preview)
     if (url) {
-      setLogo(url)
-      updateConfig({ logo: url })
+      try {
+        await updateConfig({ logo: url })
+        setLogo(url)
+      } catch {
+        toast('No se pudo guardar el logo. Intenta de nuevo.')
+        setLogo(cfg.logo || '')
+      }
     } else {
       toast('Error al subir el logo — intenta de nuevo')
       setLogo(cfg.logo || '')
     }
   }
 
-  const removeLogo = () => {
+  const removeLogo = async () => {
+    const previous = cfg.logo
     setLogo('')
-    updateConfig({ logo: undefined })
+    try {
+      await updateConfig({ logo: undefined })
+    } catch {
+      toast('No se pudo quitar el logo. Intenta de nuevo.')
+      setLogo(previous || '')
+    }
   }
 
   const telInvalido = !!tel.trim() && !telefonoValido(tel)
   const whatsappInvalido = !!whatsapp.trim() && !telefonoValido(whatsapp)
 
-  const guardar = () => {
+  const [saving, setSaving] = useState(false)
+  const guardar = async () => {
     if (telInvalido || whatsappInvalido) { toast('Revisa los teléfonos — deben tener 10 dígitos con lada'); return }
-    updateConfig({ nombre, direccion, tel, whatsapp })
-    toast('Datos del salón guardados')
+    setSaving(true)
+    try {
+      await updateConfig({ nombre, direccion, tel, whatsapp })
+      toast('Datos del salón guardados')
+    } catch {
+      toast('No se pudo guardar. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -248,7 +267,7 @@ function AjustesSalon() {
         </div>
       </div>
       <div className="vc gap8">
-        <button className="btn gold" disabled={telInvalido || whatsappInvalido} onClick={guardar}><Ic n="check" />Guardar</button>
+        <button className="btn gold" disabled={telInvalido || whatsappInvalido || saving} onClick={guardar}><Ic n="check" />{saving ? 'Guardando…' : 'Guardar'}</button>
         <button className="btn ghost" onClick={() => { setNombre(cfg.nombre); setDireccion(cfg.direccion); setTel(cfg.tel); setWhatsapp(cfg.whatsapp) }}>Cancelar</button>
       </div>
     </div>
@@ -270,16 +289,24 @@ function AjustesAgenda() {
 
   const slotsCount = end > start ? Math.round((end - start) * 60 / slotMin) : 0
 
-  const guardar = () => {
+  const [saving, setSaving] = useState(false)
+  const guardar = async () => {
     if (end <= start) { toast('La hora de cierre debe ser posterior a la apertura'); return }
     if (!dias.some(Boolean)) { toast('Al menos un día debe estar abierto'); return }
-    updateConfig({
-      agendaStart: start,
-      agendaEnd: end,
-      slotMin,
-      diasAbiertos: dias as [boolean, boolean, boolean, boolean, boolean, boolean, boolean],
-    })
-    toast('Configuración de agenda guardada — cambios activos al instante')
+    setSaving(true)
+    try {
+      await updateConfig({
+        agendaStart: start,
+        agendaEnd: end,
+        slotMin,
+        diasAbiertos: dias as [boolean, boolean, boolean, boolean, boolean, boolean, boolean],
+      })
+      toast('Configuración de agenda guardada — cambios activos al instante')
+    } catch {
+      toast('No se pudo guardar. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -331,7 +358,7 @@ function AjustesAgenda() {
         </div>
       </div>
       <div className="vc gap8">
-        <button className="btn gold" onClick={guardar}><Ic n="check" />Guardar configuración</button>
+        <button className="btn gold" disabled={saving} onClick={guardar}><Ic n="check" />{saving ? 'Guardando…' : 'Guardar configuración'}</button>
         <button className="btn ghost" onClick={() => { setStart(cfg.agendaStart); setEnd(cfg.agendaEnd); setSlotMin(cfg.slotMin); setDias([...cfg.diasAbiertos]) }}>Cancelar</button>
       </div>
     </div>
@@ -371,9 +398,17 @@ function AjustesComisiones() {
       return n
     })
 
-  const guardar = () => {
-    updateConfig({ comisiones: coms, escalaComisiones: escala })
-    toast('Comisiones actualizadas')
+  const [saving, setSaving] = useState(false)
+  const guardar = async () => {
+    setSaving(true)
+    try {
+      await updateConfig({ comisiones: coms, escalaComisiones: escala })
+      toast('Comisiones actualizadas')
+    } catch {
+      toast('No se pudo guardar. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const addTramo = () => setEscala(prev => [...prev, { limite: null, pct: 30 }])
@@ -531,8 +566,8 @@ function AjustesComisiones() {
         }
       </div>
 
-      <button className="btn gold" style={{ alignSelf: 'flex-start' }} onClick={guardar}>
-        <Ic n="check" />Guardar comisiones
+      <button className="btn gold" style={{ alignSelf: 'flex-start' }} disabled={saving} onClick={guardar}>
+        <Ic n="check" />{saving ? 'Guardando…' : 'Guardar comisiones'}
       </button>
     </div>
   )
@@ -594,7 +629,7 @@ function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario>
       const saved = await db.upsertUsuario({
         id, nombre: nombre.trim(), email: email.trim(), tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—',
       } as Usuario)
-      upsertUsuario(saved)
+      upsertUsuario(saved).catch(() => {})
 
       if (necesitaAcceso) {
         try {
@@ -800,10 +835,16 @@ function AjustesNotif() {
   const { data, updateConfig } = useStore()
   const [notifs, setNotifs] = useState({ ...data.config.notifs })
 
-  const toggle = (k: keyof typeof notifs) => {
+  const toggle = async (k: keyof typeof notifs) => {
+    const previous = notifs
     const next = { ...notifs, [k]: !notifs[k] }
     setNotifs(next)
-    updateConfig({ notifs: next })
+    try {
+      await updateConfig({ notifs: next })
+    } catch {
+      setNotifs(previous)
+      toast('No se pudo guardar el cambio. Intenta de nuevo.')
+    }
   }
 
   const rows: [keyof typeof notifs, string, string][] = [
@@ -839,9 +880,17 @@ function AjustesPagos() {
   const togglePago = (k: keyof typeof metodospago) =>
     setMetodospago(m => ({ ...m, [k]: !m[k] }))
 
-  const guardar = () => {
-    updateConfig({ anticipoPct, requerirAnticipo, iva, metodospago })
-    toast('Configuración de pagos guardada')
+  const [saving, setSaving] = useState(false)
+  const guardar = async () => {
+    setSaving(true)
+    try {
+      await updateConfig({ anticipoPct, requerirAnticipo, iva, metodospago })
+      toast('Configuración de pagos guardada')
+    } catch {
+      toast('No se pudo guardar. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -882,8 +931,8 @@ function AjustesPagos() {
           </select>
         </SettingRow>
       </div>
-      <button className="btn gold" style={{ alignSelf: 'flex-start' }} onClick={guardar}>
-        <Ic n="check" />Guardar
+      <button className="btn gold" style={{ alignSelf: 'flex-start' }} disabled={saving} onClick={guardar}>
+        <Ic n="check" />{saving ? 'Guardando…' : 'Guardar'}
       </button>
     </div>
   )
@@ -926,10 +975,17 @@ function AjustesApariencia() {
       : 'Idioma configurado: Español (México)')
   }
 
-  const handleAccento = (c: string) => {
+  const handleAccento = async (c: string) => {
+    const previous = acento
     setAcento(c)
     document.documentElement.style.setProperty('--gold', c)
-    updateConfig({ acento: c })
+    try {
+      await updateConfig({ acento: c })
+    } catch {
+      setAcento(previous)
+      document.documentElement.style.setProperty('--gold', previous)
+      toast('No se pudo guardar el color de acento. Intenta de nuevo.')
+    }
   }
 
 

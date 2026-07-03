@@ -77,8 +77,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
         acc[l.nombre].ingreso += l.precio * l.cant
       })
     })
-    const rows = Object.entries(acc).map(([srv, d]) => ({ srv, ...d })).sort((a, b) => b.ingreso - a.ingreso).slice(0, 5)
-    return rows.length ? rows : data.servMasVendidos
+    return Object.entries(acc).map(([srv, d]) => ({ srv, ...d })).sort((a, b) => b.ingreso - a.ingreso).slice(0, 5)
   }, [data.ventas])
 
   const chartData = periodo === 'Semana' ? semanaData : mesData
@@ -249,7 +248,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
         <div className="card">
           <CardHead title="Servicios más vendidos" sub="Este mes" />
           <div className="card-pad" style={{ paddingTop: 12 }}>
-            {servMasVendidos.map((s, i) => {
+            {servMasVendidos.length > 0 ? servMasVendidos.map((s, i) => {
               const max = servMasVendidos[0]?.ingreso || 1
               return (
                 <div key={i} style={{ padding:'11px 0', borderBottom: i < servMasVendidos.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
@@ -266,7 +265,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
                   <div className="bar"><span style={{ width: (s.ingreso / max * 100) + '%' }} /></div>
                 </div>
               )
-            })}
+            }) : <div className="dim" style={{ fontSize: 12.5 }}>Sin datos suficientes para este periodo.</div>}
           </div>
         </div>
 
