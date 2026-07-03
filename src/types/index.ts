@@ -86,6 +86,7 @@ export interface Cita {
 export interface LineaVenta {
   tipo: TipoLinea
   nombre: string
+  productoId?: string
   est: string | null
   cant: number
   precio: number

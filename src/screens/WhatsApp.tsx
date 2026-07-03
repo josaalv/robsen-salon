@@ -74,10 +74,17 @@ function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
   const varsInvalidas = varsEnTexto.filter(v => !VARS_VALIDAS.includes(v))
   const canSave = nombre.trim() && txt.trim() && varsInvalidas.length === 0
 
-  const save = () => {
-    if (!canSave) { toast(varsInvalidas.length > 0 ? `Variable inválida: ${varsInvalidas[0]}` : 'Completa nombre y mensaje'); return }
-    upsertPlantilla({ id:'pl'+Date.now(), nombre:nombre.trim(), icon, txt:txt.trim() })
-    toast('Plantilla guardada'); onClose()
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    if (!canSave || saving) { if (!canSave) toast(varsInvalidas.length > 0 ? `Variable inválida: ${varsInvalidas[0]}` : 'Completa nombre y mensaje'); return }
+    setSaving(true)
+    try {
+      await upsertPlantilla({ id:'pl'+Date.now(), nombre:nombre.trim(), icon, txt:txt.trim() })
+      toast('Plantilla guardada'); onClose()
+    } catch {
+      toast('No se pudo guardar la plantilla. Intenta de nuevo.')
+      setSaving(false)
+    }
   }
 
   const insertVar = (v: string) => setTxt(prev => prev + v)
@@ -121,7 +128,7 @@ function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="between card-pad" style={{ borderTop:'1px solid var(--line-soft)', paddingTop:16 }}>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn gold" disabled={!canSave} style={{ opacity: canSave ? 1 : .5 }} onClick={save}><Ic n="check"/>Guardar</button>
+          <button className="btn gold" disabled={!canSave || saving} style={{ opacity: canSave && !saving ? 1 : .5 }} onClick={save}><Ic n="check"/>{saving ? 'Guardando…' : 'Guardar'}</button>
         </div>
       </div>
     </Modal>

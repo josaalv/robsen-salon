@@ -20,7 +20,7 @@ interface CartItem {
 
 export function POSBuilder({ onClose, onConfirm, nextTicket }: {
   onClose: () => void
-  onConfirm: (v: Venta) => void
+  onConfirm: (v: Venta) => Promise<void>
   nextTicket?: string
 }) {
   const { data } = useStore()
@@ -112,8 +112,9 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
   const saldo = Math.max(0, total - anticipo)
   const comision = cart.reduce((s, l) => s + Math.round(l.precio * l.cant * (l.com || 0) / 100), 0)
 
-  const confirmar = () => {
-    if (!cart.length) return
+  const [confirming, setConfirming] = useState(false)
+  const confirmar = async () => {
+    if (!cart.length || confirming) return
     const venta: Venta = {
       id: 'v' + Date.now(),
       ticket,
@@ -127,14 +128,25 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       lineas: cart.map(l => ({
         tipo: l.tipo,
         nombre: l.nombre,
+        productoId: l.tipo === 'producto' ? l.key : undefined,
         est: l.est,
         cant: l.cant,
         precio: l.precio,
         com: l.com,
       })),
     }
-    clearDraft()
-    onConfirm(venta)
+    setConfirming(true)
+    try {
+      // clearDraft() se difiere hasta que Supabase confirme el guardado —
+      // si falla, el carrito del cajero no debe perderse.
+      await onConfirm(venta)
+      clearDraft()
+    } catch {
+      // El error visible ya lo muestra el llamador (registrarVenta); aquí
+      // solo evitamos perder el carrito y dejamos el modal abierto.
+    } finally {
+      setConfirming(false)
+    }
   }
 
   const tipoIcon: Record<string, string> = { servicio: 'scissors', producto: 'package', adicional: 'plus' }
@@ -287,11 +299,11 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
                 </div>
                 <button
                   className="btn gold"
-                  disabled={!cart.length}
-                  style={{ opacity: cart.length ? 1 : .4, pointerEvents: cart.length ? 'auto' : 'none', padding: '12px 22px' }}
+                  disabled={!cart.length || confirming}
+                  style={{ opacity: cart.length && !confirming ? 1 : .4, pointerEvents: cart.length && !confirming ? 'auto' : 'none', padding: '12px 22px' }}
                   onClick={confirmar}
                 >
-                  <Ic n="check-circle" />Cobrar venta
+                  <Ic n="check-circle" />{confirming ? 'Guardando…' : 'Cobrar venta'}
                 </button>
               </div>
             </div>

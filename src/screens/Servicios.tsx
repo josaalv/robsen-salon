@@ -156,9 +156,19 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
       {importando && (
         <ImportarServiciosModal
           serviciosExistentes={servicios}
-          onImport={srvs => {
-            srvs.forEach(srv => upsertServicio(srv))
-            toast(`${srvs.length} servicio${srvs.length !== 1 ? 's' : ''} importado${srvs.length !== 1 ? 's' : ''}`)
+          onImport={async srvs => {
+            let ok = 0
+            for (const srv of srvs) {
+              try {
+                await upsertServicio(srv)
+                ok++
+              } catch {
+                // continúa con el resto; se reporta el conteo real abajo
+              }
+            }
+            if (ok === srvs.length) toast(`${ok} servicio${ok !== 1 ? 's' : ''} importado${ok !== 1 ? 's' : ''}`)
+            else if (ok === 0) toast('No se pudo importar ningún servicio. Intenta de nuevo.')
+            else toast(`${ok} de ${srvs.length} servicios importados. Revisa los que fallaron.`)
             setImportando(false)
           }}
           onClose={() => setImportando(false)}
@@ -171,15 +181,23 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
           estilistas={estilistas}
           cats={rawCats}
           anticipoPct={anticipoPct}
-          onSave={srv => {
-            upsertServicio(srv)
-            toast('Servicio guardado')
-            setEditor(null)
+          onSave={async srv => {
+            try {
+              await upsertServicio(srv)
+              toast('Servicio guardado')
+              setEditor(null)
+            } catch {
+              toast('No se pudo guardar el servicio. Es posible que no tengas permiso para editar precios.')
+            }
           }}
-          onDelete={id => {
-            deleteServicio(id)
-            toast('Servicio eliminado')
-            setEditor(null)
+          onDelete={async id => {
+            try {
+              await deleteServicio(id)
+              toast('Servicio eliminado')
+              setEditor(null)
+            } catch {
+              toast('No se pudo eliminar el servicio. Intenta de nuevo.')
+            }
           }}
           onClose={() => setEditor(null)}
         />

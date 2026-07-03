@@ -31,6 +31,8 @@ export function ScreenBooking() {
   const [clienteTel, setClienteTel] = useState('')
   const [clienteEmail, setClienteEmail] = useState('')
   const [clienteNotas, setClienteNotas] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   // Next 6 open days starting from tomorrow
   const nextDays = useMemo(() => {
@@ -100,8 +102,8 @@ export function ScreenBooking() {
   const emailValido = !clienteEmail.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clienteEmail.trim())
   const step4Ok = clienteNombre.trim() && telValido && emailValido
 
-  const submitCita = () => {
-    if (!srv || !prof || !hora || !selectedDay) return
+  const submitCita = async () => {
+    if (!srv || !prof || !hora || !selectedDay || submitting) return
     if (!clienteNombre.trim() || !telValido || !emailValido) return
     const y = selectedDay.date.getFullYear()
     const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
@@ -109,38 +111,46 @@ export function ScreenBooking() {
     const telLimpio = clienteTel.trim() || undefined
     const emailLimpio = clienteEmail.trim() || undefined
     const estId = prof === 'any' ? (srv.prof[0] || 'e1') : prof
-    upsertCitaFutura({
-      id: 'cf' + Date.now(),
-      h: hora,
-      dur: srv.dur,
-      cl: clienteNombre.trim(),
-      tel: telLimpio,
-      email: emailLimpio,
-      srv: srv.nombre,
-      servicioId: srv.id,
-      est: estId,
-      estado: 'pend',
-      total: srv.precio,
-      ant: anticipo,
-      notas: clienteNotas.trim() || undefined,
-      fecha: `${y}-${mo}-${dy}`,
-    })
-    // Registrar o actualizar clienta en CRM
-    const nombreLimpio = clienteNombre.trim()
-    const existe = data.clientas.find(c =>
-      c.nombre.toLowerCase() === nombreLimpio.toLowerCase() ||
-      (telLimpio && c.tel.replace(/\D/g,'') === telLimpio.replace(/\D/g,''))
-    )
-    if (!existe && nombreLimpio) {
-      const ini = nombreLimpio.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-      upsertClienta({
-        id: 'cl' + Date.now(), nombre: nombreLimpio,
-        tel: telLimpio || '', email: emailLimpio, estado: 'Nueva', ultima: '',
-        ticket: 0, fav: srv.nombre, est: estId,
-        visitas: 0, gasto: 0, ini, cumple: '', ciclo: 4,
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      await upsertCitaFutura({
+        id: 'cf' + Date.now(),
+        h: hora,
+        dur: srv.dur,
+        cl: clienteNombre.trim(),
+        tel: telLimpio,
+        email: emailLimpio,
+        srv: srv.nombre,
+        servicioId: srv.id,
+        est: estId,
+        estado: 'pend',
+        total: srv.precio,
+        ant: anticipo,
+        notas: clienteNotas.trim() || undefined,
+        fecha: `${y}-${mo}-${dy}`,
       })
+      // Registrar o actualizar clienta en CRM
+      const nombreLimpio = clienteNombre.trim()
+      const existe = data.clientas.find(c =>
+        c.nombre.toLowerCase() === nombreLimpio.toLowerCase() ||
+        (telLimpio && c.tel.replace(/\D/g,'') === telLimpio.replace(/\D/g,''))
+      )
+      if (!existe && nombreLimpio) {
+        const ini = nombreLimpio.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+        upsertClienta({
+          id: 'cl' + Date.now(), nombre: nombreLimpio,
+          tel: telLimpio || '', email: emailLimpio, estado: 'Nueva', ultima: '',
+          ticket: 0, fav: srv.nombre, est: estId,
+          visitas: 0, gasto: 0, ini, cumple: '', ciclo: 4,
+        }).catch(() => {})
+      }
+      next()
+    } catch {
+      setSubmitError('No se pudo agendar la cita. Verifica tu conexión e intenta de nuevo.')
+    } finally {
+      setSubmitting(false)
     }
-    next()
   }
 
   const reset = () => {
@@ -316,6 +326,11 @@ export function ScreenBooking() {
                   </p>
                 </div>
               )}
+              {submitError && (
+                <div className="mt14" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', color: 'var(--st-canc)', fontSize: 12.5 }}>
+                  {submitError}
+                </div>
+              )}
             </div>
           )}
 
@@ -372,11 +387,11 @@ export function ScreenBooking() {
             {step === 4 && (
               <button
                 className="btn gold"
-                disabled={!step4Ok}
-                style={{ opacity: step4Ok ? 1 : .4, pointerEvents: step4Ok ? 'auto' : 'none' }}
+                disabled={!step4Ok || submitting}
+                style={{ opacity: step4Ok && !submitting ? 1 : .4, pointerEvents: step4Ok && !submitting ? 'auto' : 'none' }}
                 onClick={submitCita}
               >
-                <Ic n="check" />{anticipo > 0 ? `Solicitar cita · anticipo ${mxn(anticipo)}` : 'Solicitar cita'}
+                <Ic n="check" />{submitting ? 'Enviando…' : (anticipo > 0 ? `Solicitar cita · anticipo ${mxn(anticipo)}` : 'Solicitar cita')}
               </button>
             )}
             {step === 5 && (

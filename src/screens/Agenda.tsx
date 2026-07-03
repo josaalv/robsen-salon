@@ -82,6 +82,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const [est, setEst] = useState(cita.est || data.estilistas[0].id)
   const [estado, setEstado] = useState<EstadoCita>(cita.estado || 'pend')
   const [ant, setAnt] = useState(cita.ant || 0)
+  const [saving, setSaving] = useState(false)
 
   const srv = data.servicios.find(s => s.id === srvId) || data.servicios[0]
   const isToday = selectedDate === todayIso
@@ -128,7 +129,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const saldoPreview = Math.max(0, srv.precio - (+ant || 0))
 
   const guardar = async () => {
-    if (!cl.trim() || availableSlots.length === 0) return
+    if (!cl.trim() || availableSlots.length === 0 || saving) return
     const id = cita.id || ('a' + Date.now())
     const antFinal = Math.min(srv.precio, Math.max(0, +ant || 0))
     const newCita: Cita = {
@@ -136,30 +137,40 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
       estado, total: srv.precio, ant: antFinal,
       ...(isToday ? {} : { fecha: selectedDate }),
     }
-    if (isToday) upsertCita(newCita)
-    else upsertCitaFutura(newCita)
+    setSaving(true)
+    try {
+      if (isToday) await upsertCita(newCita)
+      else await upsertCitaFutura(newCita)
 
-    // Sincronizar venta de apartado cuando hay anticipo
-    if (antFinal > 0) {
-      const existing = await db.getVentaByCitaId(id)
-      const hoy = new Date().toISOString().slice(0, 10)
-      const ticket = `APT-${id.slice(-6).toUpperCase()}`
-      if (existing) {
-        await db.updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= srv.precio ? 'pagada' : 'apartado' })
-      } else {
-        const ventaApartado: Venta = {
-          id: 'v' + Date.now(), ticket, fecha: hoy,
-          cliente: cl.trim(), clienteId: '', pago: 'efectivo',
-          estado: antFinal >= srv.precio ? 'pagada' : 'apartado',
-          desc: 0, anticipo: antFinal, citaId: id,
-          lineas: [{ tipo: 'servicio', nombre: srv.nombre, est, cant: 1, precio: srv.precio, com: 0 }],
+      // Sincronizar venta de apartado cuando hay anticipo
+      if (antFinal > 0) {
+        const existing = await db.getVentaByCitaId(id)
+        const hoy = new Date().toISOString().slice(0, 10)
+        const ticket = `APT-${id.slice(-6).toUpperCase()}`
+        if (existing) {
+          await db.updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= srv.precio ? 'pagada' : 'apartado' })
+        } else {
+          const ventaApartado: Venta = {
+            id: 'v' + Date.now(), ticket, fecha: hoy,
+            cliente: cl.trim(), clienteId: '', pago: 'efectivo',
+            estado: antFinal >= srv.precio ? 'pagada' : 'apartado',
+            desc: 0, anticipo: antFinal, citaId: id,
+            lineas: [{ tipo: 'servicio', nombre: srv.nombre, est, cant: 1, precio: srv.precio, com: 0 }],
+          }
+          await db.addVenta(ventaApartado)
         }
-        await db.addVenta(ventaApartado)
       }
-    }
 
-    toast(nuevo ? 'Cita agendada correctamente' : 'Cita actualizada')
-    onSaved(newCita)
+      toast(nuevo ? 'Cita agendada correctamente' : 'Cita actualizada')
+      onSaved(newCita)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      toast(/existe una cita/i.test(msg)
+        ? 'No se pudo guardar la cita porque se empalma con otra cita o bloqueo.'
+        : 'No se pudo guardar la cita. Intenta de nuevo.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -255,9 +266,9 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
           <button
             className="btn gold"
             onClick={guardar}
-            style={{ opacity: cl.trim() && availableSlots.length > 0 ? 1 : .4, pointerEvents: cl.trim() && availableSlots.length > 0 ? 'auto' : 'none' }}
+            style={{ opacity: cl.trim() && availableSlots.length > 0 && !saving ? 1 : .4, pointerEvents: cl.trim() && availableSlots.length > 0 && !saving ? 'auto' : 'none' }}
           >
-            <Ic n="check" />{nuevo ? 'Agendar cita' : 'Guardar cambios'}
+            <Ic n="check" />{saving ? 'Guardando…' : (nuevo ? 'Agendar cita' : 'Guardar cambios')}
           </button>
         </div>
       </div>
@@ -266,7 +277,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
 }
 
 // ─── Modal bloquear horario ─────────────────────────────────────────────────
-function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: Bloqueo) => void }) {
+function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: Bloqueo) => Promise<void> }) {
   const { data } = useStore()
   const { agendaStart: S, agendaEnd: E, slotMin, diasAbiertos } = data.config
   const SLOTS = makeSlots(S, E, slotMin)
@@ -305,10 +316,18 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
     if (SLOTS.indexOf(fin) <= idx) setFin(SLOTS[Math.min(idx + 4, SLOTS.length - 1)])
   }
 
-  const guardar = () => {
-    onSaved({ id: 'b' + Date.now(), est, h: inicio, fin, nota: nota.trim() || 'Bloqueado', fecha: selectedDate })
-    toast('Horario bloqueado')
-    onClose()
+  const [saving, setSaving] = useState(false)
+  const guardar = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      await onSaved({ id: 'b' + Date.now(), est, h: inicio, fin, nota: nota.trim() || 'Bloqueado', fecha: selectedDate })
+      toast('Horario bloqueado')
+      onClose()
+    } catch {
+      toast('No se pudo guardar el bloqueo. Intenta de nuevo.')
+      setSaving(false)
+    }
   }
 
   const durMin = toMin(fin) - toMin(inicio)
@@ -365,7 +384,9 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
         <hr className="hr" />
         <div className="card-pad vc gap12" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn gold" onClick={guardar}><Ic n="lock-simple" />Bloquear horario</button>
+          <button className="btn gold" onClick={guardar} style={{ opacity: saving ? .6 : 1, pointerEvents: saving ? 'none' : 'auto' }}>
+            <Ic n="lock-simple" />{saving ? 'Guardando…' : 'Bloquear horario'}
+          </button>
         </div>
       </div>
     </div>
@@ -387,6 +408,15 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
   const esFutura = a.fecha && a.fecha !== todayIso
   const saveCita = (patch: Partial<Cita>) =>
     esFutura ? upsertCitaFutura({ ...a, ...patch }) : upsertCita({ ...a, ...patch })
+  const saveCitaConFeedback = async (patch: Partial<Cita>, okMsg: string) => {
+    try {
+      await saveCita(patch)
+      toast(okMsg)
+      onClose()
+    } catch {
+      toast('No se pudo actualizar la cita. Intenta de nuevo.')
+    }
+  }
   const e = data.estilistas.find(est => est.id === a.est) || data.estilistas[0]
   const saldo = Math.max(0, a.total - (a.ant || 0))
   const clientaTel = a.tel
@@ -464,7 +494,7 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
         <div className="vc gap8 mt14">
           {saldo > 0 && a.estado !== 'canc' ? (
             <button className="btn gold f1" style={{ justifyContent: 'center' }}
-              onClick={() => { saveCita({ estado: 'done' }); toast('Saldo cobrado'); onClose() }}>
+              onClick={() => saveCitaConFeedback({ estado: 'done' }, 'Saldo cobrado')}>
               <Ic n="check" />Cobrar saldo {mxn(saldo)}
             </button>
           ) : (
@@ -480,7 +510,7 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
         </div>
         {!['canc', 'done', 'no_asistio'].includes(a.estado) && (
           <button className="btn ghost w100 mt8" style={{ justifyContent: 'center', color: 'var(--st-noshow)' }}
-            onClick={() => { saveCita({ estado: 'no_asistio' }); toast('Cita marcada como no asistió'); onClose() }}>
+            onClick={() => saveCitaConFeedback({ estado: 'no_asistio' }, 'Cita marcada como no asistió')}>
             <Ic n="user-minus" />Marcar como no asistió
           </button>
         )}
@@ -559,7 +589,7 @@ function WeekView({ onSel, weekOffset, onWeekChange }: {
                   <div
                     key={b.id}
                     title={`Bloqueo: ${b.nota} · ${b.h}–${b.fin} (clic para quitar)`}
-                    onClick={() => deleteBloqueo(b.id)}
+                    onClick={() => deleteBloqueo(b.id).catch(() => toast('No se pudo quitar el bloqueo. Intenta de nuevo.'))}
                     style={{
                       padding: '4px 8px', borderRadius: 6, fontSize: 10.5,
                       background: 'repeating-linear-gradient(45deg,rgba(200,80,60,0.10),rgba(200,80,60,0.10) 4px,transparent 4px,transparent 10px)',
@@ -682,16 +712,20 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   for (let h = S; h <= E; h++) horas.push(h)
 
   const addBloqueo = (b: Bloqueo) => upsertBloqueo(b)
-  const removeBloqueo = (id: string) => deleteBloqueo(id)
+  const removeBloqueo = (id: string) => deleteBloqueo(id).catch(() => toast('No se pudo quitar el bloqueo. Intenta de nuevo.'))
 
   const handleDelete = (cita: Cita) => setConfirmDelete(cita)
-  const confirmDeleteFn = () => {
+  const confirmDeleteFn = async () => {
     if (!confirmDelete) return
-    if (confirmDelete.fecha && confirmDelete.fecha !== todayIso) deleteCitaFutura(confirmDelete.id)
-    else deleteCita(confirmDelete.id)
-    setSel(null)
-    setConfirmDelete(null)
-    toast('Cita eliminada')
+    try {
+      if (confirmDelete.fecha && confirmDelete.fecha !== todayIso) await deleteCitaFutura(confirmDelete.id)
+      else await deleteCita(confirmDelete.id)
+      setSel(null)
+      setConfirmDelete(null)
+      toast('Cita eliminada')
+    } catch {
+      toast('No se pudo eliminar la cita. Intenta de nuevo.')
+    }
   }
 
   return (
