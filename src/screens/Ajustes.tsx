@@ -583,7 +583,7 @@ const ROLES_LIST: { val: RolUsuario; label: string }[] = [
 ]
 
 function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario> | null; selfId: string; esAdmin: boolean; onClose: () => void }) {
-  const { upsertUsuario, deleteUsuario } = useStore()
+  const { data, upsertUsuario, upsertEstilista, deleteUsuario } = useStore()
   const isNew = !usr?.id
   const necesitaAcceso = isNew || !usr?.authUserId
   const [nombre, setNombre] = useState(usr?.nombre || '')
@@ -592,11 +592,33 @@ function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario>
   const [rol, setRol] = useState<RolUsuario>(usr?.rol || 'recepcion')
   const [color, setColor] = useState(usr?.color || COLORES_USR[0])
   const [activo, setActivo] = useState(usr?.activo !== false)
+  const [estilistaId, setEstilistaId] = useState(usr?.estilistaId || '')
+  const [creandoEstilista, setCreandoEstilista] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [eliminando, setEliminando] = useState(false)
   const [confirmarBorrar, setConfirmarBorrar] = useState(false)
   const [tieneHistorial, setTieneHistorial] = useState(false)
   const telInvalido = !!tel.trim() && !telefonoValido(tel)
+  const faltaVincular = rol === 'estilista' && !estilistaId
+  const estilistaDuplicado = estilistaId
+    ? data.usuarios.find(u => u.estilistaId === estilistaId && u.id !== usr?.id)
+    : undefined
+
+  const crearEstilista = async () => {
+    if (!nombre.trim() || creandoEstilista) return
+    setCreandoEstilista(true)
+    try {
+      const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+      const id = 'e' + Date.now()
+      await upsertEstilista({ id, nombre: nombre.trim(), rol: 'Estilista', color, ini, com: 30 })
+      setEstilistaId(id)
+      toast('Registro de estilista creado y vinculado')
+    } catch {
+      toast('No se pudo crear el registro de estilista. Intenta de nuevo.')
+    } finally {
+      setCreandoEstilista(false)
+    }
+  }
 
   useEffect(() => {
     if (usr?.id) db.tieneHistorial(usr.id).then(setTieneHistorial)
@@ -622,12 +644,14 @@ function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario>
     if (!nombre.trim()) { toast('El nombre es requerido'); return }
     if (!email.trim() || !email.includes('@')) { toast('Ingresa un correo válido'); return }
     if (telInvalido) { toast('Ingresa un teléfono válido a 10 dígitos con lada'); return }
+    if (faltaVincular) { toast('Vincula esta estilista con un registro de Estilistas antes de guardar'); return }
     setGuardando(true)
     try {
       const id = usr?.id || 'u' + Date.now()
       const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
       const saved = await db.upsertUsuario({
         id, nombre: nombre.trim(), email: email.trim(), tel, rol, color, ini, activo, ultimo: usr?.ultimo || '—',
+        estilistaId: rol === 'estilista' ? (estilistaId || undefined) : undefined,
       } as Usuario)
       upsertUsuario(saved).catch(() => {})
 
@@ -677,6 +701,33 @@ function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario>
             {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
           </div>
         </div>
+        {rol === 'estilista' && (
+          <div className="field">
+            <label>Vincular con estilista existente</label>
+            <select className="select" value={estilistaId} onChange={e => setEstilistaId(e.target.value)}>
+              <option value="">— Selecciona —</option>
+              {data.estilistas.map(es => <option key={es.id} value={es.id}>{es.nombre}</option>)}
+            </select>
+            {estilistaDuplicado && (
+              <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 4 }}>
+                Ojo: esta estilista ya está vinculada al usuario "{estilistaDuplicado.nombre}".
+              </div>
+            )}
+            {faltaVincular && (
+              <div style={{ background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--st-canc)', lineHeight: 1.5, marginTop: 8 }}>
+                Sin este vínculo, esta persona no podrá ver su propia agenda ni sus comisiones correctamente al iniciar sesión.
+                <button
+                  className="btn ghost sm"
+                  style={{ marginTop: 8, opacity: nombre.trim() ? 1 : .4, pointerEvents: nombre.trim() ? 'auto' : 'none' }}
+                  disabled={creandoEstilista}
+                  onClick={crearEstilista}
+                >
+                  <Ic n="user-plus" />{creandoEstilista ? 'Creando…' : `Crear registro de estilista para "${nombre.trim() || '—'}"`}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         {necesitaAcceso ? (
           <div style={{ background: 'rgba(200,161,74,0.06)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
             {isNew
@@ -715,7 +766,7 @@ function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario>
           </SettingRow>
         )}
         <div className="vc gap8 mt6">
-          <button className="btn gold f1" style={{ justifyContent: 'center' }} disabled={guardando || telInvalido} onClick={save}>
+          <button className="btn gold f1" style={{ justifyContent: 'center' }} disabled={guardando || telInvalido || faltaVincular} onClick={save}>
             <Ic n={guardando ? 'spinner' : 'check'} />
             {guardando ? 'Guardando…' : isNew ? 'Crear usuario' : 'Guardar cambios'}
           </button>

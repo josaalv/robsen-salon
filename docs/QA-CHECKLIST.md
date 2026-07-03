@@ -105,6 +105,75 @@ Network del navegador mientras usas el formulario público de reservas).
 23. [ ] Probar la app desde un celular real o el modo responsive del
         navegador a 390px de ancho — que nada se corte ni se vea roto.
 
+## 5. Venta transaccional, citas, vínculo estilista y RLS (fase 2 de integridad de datos)
+
+Esta sección prueba específicamente lo que se corrigió en esta ronda:
+venta atómica vía RPC, mensaje de error de citas empalmadas, y el vínculo
+nuevo `usuarios.estilista_id`.
+
+**Venta transaccional**
+
+1. [ ] Crear una venta válida con al menos un producto de inventario (POS o
+       Ventas → Nueva venta) → confirma que aparece de inmediato en el
+       listado de **Ventas**.
+2. [ ] Confirma que esa misma venta aparece en el resumen de **Caja** del
+       día (Ventas → pestaña Caja/Cierre).
+3. [ ] Confirma que el ingreso de esa venta se refleja en el **Dashboard**
+       (ventas de hoy / ingresos del día).
+4. [ ] Si la venta tenía una clienta asociada, entra a su perfil en **CRM**
+       y confirma que aparece en su historial de compras/visitas.
+5. [ ] Confirma que el **stock del producto** vendido bajó exactamente la
+       cantidad vendida (Productos → el producto usado).
+6. [ ] Forzar un error: por ejemplo, intenta vender más unidades de un
+       producto de las que existen en stock, o desconecta tu internet a
+       mitad de confirmar una venta y vuelve a conectar. Debe aparecer un
+       mensaje de error visible (no un éxito falso) y **no debe quedar
+       ninguna venta a medias** — revisa en Ventas que no aparezca un
+       ticket nuevo sin líneas o con datos incompletos.
+
+**Citas**
+
+7. [ ] Crear una cita válida (Agenda → Nueva cita).
+8. [ ] Intentar crear una segunda cita para la **misma estilista** en un
+       horario que se encima con la anterior → debe rechazarse mostrando
+       exactamente: *"No se pudo guardar la cita porque se empalma con
+       otra cita o bloqueo."* — no un error genérico ni silencio.
+9. [ ] Editar una cita existente (cambiar hora, servicio o estado) y
+       confirmar que el cambio se guarda y se refleja al recargar la página.
+10. [ ] Borrar una cita y confirmar que desaparece de la agenda y no
+        reaparece al recargar.
+
+**Vínculo usuario ↔ estilista**
+
+11. [ ] Ajustes → Usuarios y roles → crear un usuario nuevo con rol
+        **Estilista**, y en el campo "Vincular con estilista existente"
+        selecciona un registro ya existente de la lista de Empleados (o usa
+        el botón "Crear registro de estilista" si es alguien nuevo que
+        todavía no está en Empleados). Confirma que el botón Guardar está
+        bloqueado si no seleccionas ninguna estilista.
+12. [ ] Cierra sesión e inicia sesión con las credenciales de ese estilista
+        (usa "Olvidé mi contraseña" o la invitación por correo si es
+        cuenta nueva).
+13. [ ] Confirma que al entrar ve **su propia agenda** con sus citas.
+14. [ ] Confirma que **no ve** citas, ventas ni comisiones de otras
+        estilistas — ni en Agenda, ni en Ventas, ni en el reporte de
+        Empleados (esto es lo que protege `current_estilista_id()` vía RLS,
+        que ya existía; esta prueba confirma que con el vínculo puesto
+        realmente funciona para una cuenta real).
+
+**Configuración y sesión**
+
+15. [ ] Guardar un cambio en Ajustes → Datos del salón (o cualquier otra
+        subsección de Configuración) y confirmar que persiste al recargar.
+16. [ ] Cerrar sesión y volver a entrar con la misma cuenta — confirma que
+        los datos que ves son los reales de Supabase, no una versión vieja
+        en caché.
+17. [ ] Abre las herramientas de desarrollador del navegador (F12 →
+        Application/Almacenamiento → Local Storage) y revisa la clave
+        `rb_data_v3` — después de cerrar sesión y entrar con OTRA cuenta,
+        confirma que no quedan datos de la sesión anterior visibles ahí
+        que no correspondan a lo que esa nueva cuenta debería ver.
+
 ## Qué hacer si algo de esto falla
 
 Anota exactamente: qué paso, con qué rol, qué esperabas que pasara y qué

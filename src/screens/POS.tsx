@@ -128,6 +128,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       lineas: cart.map(l => ({
         tipo: l.tipo,
         nombre: l.nombre,
+        productoId: l.tipo === 'producto' ? l.key : undefined,
         est: l.est,
         cant: l.cant,
         precio: l.precio,

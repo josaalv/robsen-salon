@@ -308,9 +308,7 @@ export const useStore = create<Store>()(
       },
 
       addVenta: async (v) => {
-        let syncProductos: Producto[] = []
         let syncClienta: Clienta | null = null
-        const syncMovs: Movimiento[] = []
         const syncTxs: Transaccion[] = []
         const previous = {
           ventas: get().data.ventas,
@@ -327,7 +325,9 @@ export const useStore = create<Store>()(
 
           v.lineas.forEach((l: LineaVenta) => {
             if (l.tipo === 'producto') {
-              const idx = productos.findIndex(p => p.nombre === l.nombre)
+              const idx = l.productoId
+                ? productos.findIndex(p => p.id === l.productoId)
+                : productos.findIndex(p => p.nombre === l.nombre)
               if (idx >= 0) {
                 productos = productos.map((p, i) => i === idx
                   ? { ...p, stock: p.stock - l.cant, vendidos: p.vendidos + l.cant } : p)
@@ -369,9 +369,6 @@ export const useStore = create<Store>()(
             }
           }
 
-          // Productos que cambiaron
-          syncProductos = productos.filter((p, i) => s.data.productos[i]?.stock !== p.stock)
-          syncMovs.push(...movs)
           syncTxs.push(...txs)
 
           return {
@@ -385,14 +382,13 @@ export const useStore = create<Store>()(
           }
         })
 
-        // Supabase sync — secuencial y con rollback completo si algo falla,
-        // para que el estado local optimista nunca quede desincronizado de
-        // lo que realmente se guardó (stock, estadísticas de clienta, etc).
+        // db.addVenta ahora es una sola transacción (venta + líneas + stock
+        // + movimiento de kardex, ver crear_venta_con_lineas) — ya no hace
+        // falta sincronizar productos/movimientos por separado. Las
+        // estadísticas de clienta sí quedan fuera de esa transacción.
         try {
           await db.addVenta(v)
-          for (const p of syncProductos) await db.upsertProducto(p)
           if (syncClienta) await db.upsertClienta(syncClienta)
-          for (const m of syncMovs) await db.addMovimiento(m)
         } catch (err) {
           set(s => ({ data: { ...s.data, ...previous } }))
           throw err
@@ -558,7 +554,7 @@ export const useStore = create<Store>()(
           id: 'v' + Date.now(), ticket,
           fecha: new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
           cliente: clienta || 'Mostrador', clienteId: clienteEncontrado?.id || '', pago, estado: 'pagada', desc: 0, anticipo: 0,
-          lineas: [{ tipo: 'producto', nombre: prod.nombre, est: estId, cant, precio: prod.precio, com }],
+          lineas: [{ tipo: 'producto', nombre: prod.nombre, productoId: prod.id, est: estId, cant, precio: prod.precio, com }],
         }
         await addVenta(venta)
       },

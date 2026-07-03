@@ -43,7 +43,7 @@ const mapVenta = (r: any, lineas: any[]): Venta => ({
   saldoCobradoEn: r.saldo_cobrado_en ?? undefined,
   saldoCobradoMonto: r.saldo_cobrado_monto ?? undefined,
   lineas: lineas.filter(l => l.venta_id === r.id).map(l => ({
-    tipo: l.tipo, nombre: l.nombre, est: l.est ?? null,
+    tipo: l.tipo, nombre: l.nombre, productoId: l.producto_id ?? undefined, est: l.est ?? null,
     cant: l.cant, precio: l.precio, com: l.com,
   })),
 })
@@ -133,6 +133,16 @@ const mapUsuarioPublico = (r: any): Usuario => ({
   id: r.id, nombre: r.nombre, rol: r.rol, ini: r.ini, color: r.color,
   email: r.email, tel: '', activo: r.activo, ultimo: '',
   avatar: r.avatar ?? undefined,
+})
+
+// Mapper explícito para usuarios — la tabla usa snake_case (estilista_id) y
+// nunca incluye auth_user_id: esa columna la gestiona solo la Edge Function
+// crear-acceso-usuario, escribirla aquí podría desvincular una cuenta ya creada.
+const toUsuarioRow = (u: Usuario) => ({
+  id: u.id, nombre: u.nombre, rol: u.rol, ini: u.ini, color: u.color,
+  email: u.email, tel: u.tel, activo: u.activo, ultimo: u.ultimo,
+  avatar: u.avatar ?? null,
+  estilista_id: u.estilistaId ?? null,
 })
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
@@ -304,31 +314,25 @@ export const db = {
     ])
     return (ventas ?? []).map(v => mapVenta(v, lineas ?? []))
   },
-  // Nota: son dos escrituras separadas (no hay RPC transaccional todavía,
-  // ver docs/pendiente en el plan de integridad de datos). Si falla el
-  // segundo insert, se revierte el primero manualmente para no dejar una
-  // venta huérfana sin líneas.
-  async addVenta(v: Venta) {
+  // Venta + líneas (+ descuento de stock si aplica) en una sola transacción
+  // de Postgres — ver crear_venta_con_lineas en
+  // supabase/migrations/028_crear_venta_con_lineas.sql. Si cualquier parte
+  // falla, la función entera revierte sola; no hace falta compensación manual.
+  async addVenta(v: Venta): Promise<Venta> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
-    const { error } = await supabase.from('ventas').insert({
-      id: v.id, ticket: v.ticket, fecha: v.fecha, cliente: v.cliente,
-      cliente_id: v.clienteId || null, pago: v.pago, estado: v.estado,
-      descuento: v.desc, anticipo: v.anticipo, cita_id: v.citaId ?? null,
+    const { data, error } = await supabase.rpc('crear_venta_con_lineas', {
+      p_venta: {
+        id: v.id, ticket: v.ticket, fecha: v.fecha, cliente: v.cliente,
+        cliente_id: v.clienteId || null, pago: v.pago, estado: v.estado,
+        descuento: v.desc, anticipo: v.anticipo, cita_id: v.citaId ?? null,
+      },
+      p_lineas: v.lineas.map(l => ({
+        tipo: l.tipo, nombre: l.nombre, producto_id: l.productoId ?? null,
+        est: l.est ?? null, cant: l.cant, precio: l.precio, com: l.com,
+      })),
     })
     if (error) { console.error('[db.addVenta]', error.message); throw new Error(error.message) }
-    if (v.lineas.length > 0) {
-      const { error: errLineas } = await supabase.from('lineas_venta').insert(
-        v.lineas.map(l => ({
-          venta_id: v.id, tipo: l.tipo, nombre: l.nombre,
-          est: l.est ?? null, cant: l.cant, precio: l.precio, com: l.com,
-        }))
-      )
-      if (errLineas) {
-        console.error('[db.addVenta:lineas]', errLineas.message)
-        await supabase.from('ventas').delete().eq('id', v.id)
-        throw new Error(errLineas.message)
-      }
-    }
+    return mapVenta(data.venta, data.lineas)
   },
   async updateVenta(id: string, patch: Partial<Venta>) {
     if (!supabase) return
@@ -458,7 +462,7 @@ export const db = {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { data, error } = await supabase
       .from('usuarios')
-      .upsert(u, { onConflict: 'id' })
+      .upsert(toUsuarioRow(u), { onConflict: 'id' })
       .select()
       .single()
     if (error) throw new Error(error.message)
