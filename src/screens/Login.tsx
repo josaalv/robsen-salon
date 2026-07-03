@@ -33,6 +33,7 @@ export function ScreenLogin() {
   const [resetPass, setResetPass]   = useState('')
   const [resetConf, setResetConf]   = useState('')
   const [resetOk, setResetOk]       = useState(false)
+  const [verReset, setVerReset]     = useState(false)
 
   // Supabase dispara el evento PASSWORD_RECOVERY cuando la persona abre el
   // enlace de "olvidé mi contraseña" desde su correo.
@@ -137,8 +138,18 @@ export function ScreenLogin() {
       // siga en true, LoginGate mantiene esta pantalla visible para que
       // la persona vea la confirmación. Se limpia al pulsar "Volver al
       // inicio", que es cuando de verdad debe continuar a la app.
-    } catch {
-      setError('El enlace expiró o ya fue usado. Solicita uno nuevo.')
+    } catch (err) {
+      // Supabase rechaza poner la misma contraseña que ya tenías con un
+      // error propio — no significa que el enlace haya expirado, así que
+      // no hay que mostrar ese mensaje en ese caso.
+      const msg = err instanceof Error ? err.message : ''
+      if (/different from the old password|same.?password/i.test(msg)) {
+        setError('La nueva contraseña debe ser diferente de la que ya tenías.')
+      } else if (/expired|expired_token|token.*invalid|invalid.*token/i.test(msg)) {
+        setError('El enlace expiró o ya fue usado. Solicita uno nuevo.')
+      } else {
+        setError('No se pudo actualizar la contraseña. Solicita un enlace nuevo e intenta de nuevo.')
+      }
     } finally {
       setLoading(false)
     }
@@ -196,14 +207,20 @@ export function ScreenLogin() {
                     <label>Nueva contraseña</label>
                     <div className="search" style={{ width:'100%', borderRadius:'var(--r-sm)', padding:'11px 14px' }}>
                       <Ic n="lock-simple" />
-                      <input type="password" value={resetPass} onChange={e => { setResetPass(e.target.value); setError('') }} placeholder="Mínimo 8 caracteres" disabled={loading} autoFocus />
+                      <input type={verReset ? 'text' : 'password'} value={resetPass} onChange={e => { setResetPass(e.target.value); setError('') }} placeholder="Mínimo 8 caracteres" disabled={loading} autoFocus />
+                      <span style={{ cursor:'pointer', color:'var(--text-3)' }} onClick={() => setVerReset(v => !v)}>
+                        <Ic n={verReset ? 'eye-slash' : 'eye'} />
+                      </span>
                     </div>
                   </div>
                   <div className="field" style={{ marginBottom:14 }}>
                     <label>Confirmar contraseña</label>
                     <div className="search" style={{ width:'100%', borderRadius:'var(--r-sm)', padding:'11px 14px' }}>
                       <Ic n="lock-simple" />
-                      <input type="password" value={resetConf} onChange={e => { setResetConf(e.target.value); setError('') }} placeholder="Repite la contraseña" disabled={loading} onKeyDown={e => e.key === 'Enter' && resetearPass()} />
+                      <input type={verReset ? 'text' : 'password'} value={resetConf} onChange={e => { setResetConf(e.target.value); setError('') }} placeholder="Repite la contraseña" disabled={loading} onKeyDown={e => e.key === 'Enter' && resetearPass()} />
+                      <span style={{ cursor:'pointer', color:'var(--text-3)' }} onClick={() => setVerReset(v => !v)}>
+                        <Ic n={verReset ? 'eye-slash' : 'eye'} />
+                      </span>
                     </div>
                   </div>
                   {error && <ErrorBox msg={error} />}
