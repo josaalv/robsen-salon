@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Avatar, Seg } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn } from '../lib/helpers'
+import { mxn, comisionServicioEstilista } from '../lib/helpers'
 import type { Venta } from '../types'
 
 interface CartItem {
@@ -65,7 +65,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       precio: s.precio,
       sub: s.cat + ' · ' + s.dur + ' min',
       prof: s.prof,
-      com: comisiones[s.id] ?? comisiones[s.cat] ?? 30,
+      com: 0, // se resuelve en addItem/setLineEst según la estilista asignada
       cant: 1,
       est: null,
     })),
@@ -99,13 +99,18 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       const ex = c.find(l => l.key === it.key)
       if (ex) return c.map(l => l.key === it.key ? { ...l, cant: l.cant + 1 } : l)
       const defEst = it.tipo === 'adicional' ? null : (it.prof && it.prof[0]) || data.estilistas[0].id
-      return [...c, { ...it, cant: 1, est: defEst }]
+      const com = it.tipo === 'servicio' ? comisionServicioEstilista(it.key, defEst, data.estilistas) : it.com
+      return [...c, { ...it, cant: 1, est: defEst, com }]
     })
   }
 
   const setCant = (key: string, d: number) => setCart(c => c.map(l => l.key === key ? { ...l, cant: Math.max(1, l.cant + d) } : l))
   const del = (key: string) => setCart(c => c.filter(l => l.key !== key))
-  const setLineEst = (key: string, est: string | null) => setCart(c => c.map(l => l.key === key ? { ...l, est } : l))
+  const setLineEst = (key: string, est: string | null) => setCart(c => c.map(l => {
+    if (l.key !== key) return l
+    const com = l.tipo === 'servicio' ? comisionServicioEstilista(l.key, est, data.estilistas) : l.com
+    return { ...l, est, com }
+  }))
 
   const subtotal = cart.reduce((s, l) => s + l.precio * l.cant, 0)
   const total = Math.max(0, subtotal - desc)

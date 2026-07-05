@@ -5,7 +5,7 @@ import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
 import { supabase } from '../lib/supabase'
-import { mxn, telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
+import { telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
 import type { Usuario, SlotMinutos, RolUsuario } from '../types'
 
 function SettingRow({ title, desc, children, last }: { title: string; desc?: string; children: React.ReactNode; last?: boolean }) {
@@ -369,34 +369,11 @@ function AjustesAgenda() {
 function AjustesComisiones() {
   const { data, updateConfig } = useStore()
 
-  const bycat = data.servicios.reduce<Record<string, typeof data.servicios>>((acc, s) => {
-    if (!acc[s.cat]) acc[s.cat] = []
-    acc[s.cat].push(s)
-    return acc
-  }, {})
-  const cats = Object.keys(bycat).sort()
-
   const [coms, setComs] = useState<Record<string, number>>({ ...data.config.comisiones })
   const [escala, setEscala] = useState<{ limite: number | null; pct: number }[]>(data.config.escalaComisiones || [])
 
-  const effectiveVal = (s: { id: string; cat: string }) =>
-    coms[s.id] !== undefined ? coms[s.id] : (coms[s.cat] ?? 25)
-
-  const hasOverride = (s: { id: string; cat: string }) =>
-    coms[s.id] !== undefined && coms[s.id] !== (coms[s.cat] ?? 25)
-
   const setVal = (key: string, val: number) =>
     setComs(prev => ({ ...prev, [key]: Math.min(100, Math.max(0, val)) }))
-
-  const resetSrv = (s: { id: string }) =>
-    setComs(prev => { const n = { ...prev }; delete n[s.id]; return n })
-
-  const setAllInCat = (cat: string, val: number) =>
-    setComs(prev => {
-      const n = { ...prev }
-      bycat[cat].forEach(s => { n[s.id] = val })
-      return n
-    })
 
   const [saving, setSaving] = useState(false)
   const guardar = async () => {
@@ -418,82 +395,6 @@ function AjustesComisiones() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div className="card card-pad">
-        <div className="eyebrow" style={{ marginBottom: 4 }}>Comisión por servicio</div>
-        <div className="dim" style={{ fontSize: 12, marginBottom: 20 }}>
-          Configura la comisión de cada servicio individualmente. Los grupos son solo organización visual.
-          Un input en dorado indica que el valor fue personalizado respecto al grupo.
-        </div>
-        {cats.map((cat, ci) => {
-          const servicios = bycat[cat]
-          const catDefault = coms[cat] ?? 25
-          return (
-            <div key={cat} style={{ marginBottom: ci < cats.length - 1 ? 20 : 0 }}>
-              {/* Category header */}
-              <div className="between" style={{ padding: '7px 0 10px', borderBottom: '2px solid var(--line)' }}>
-                <div className="vc gap10">
-                  <span className="eyebrow" style={{ fontSize: 10.5, letterSpacing: '.18em' }}>{cat}</span>
-                  <span className="dim" style={{ fontSize: 11, marginTop: 1 }}>{servicios.length} servicios</span>
-                </div>
-                <div className="vc gap6">
-                  <span className="dim" style={{ fontSize: 11 }}>Aplicar a todos:</span>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <input
-                      className="input num" type="number" min="0" max="100"
-                      style={{ width: 60, textAlign: 'right', padding: '5px 8px', fontSize: 12 }}
-                      value={catDefault}
-                      onChange={e => {
-                        const v = Math.min(100, Math.max(0, +e.target.value))
-                        setComs(prev => ({ ...prev, [cat]: v }))
-                      }}
-                    />
-                    <span className="dim" style={{ fontSize: 11 }}>%</span>
-                    <button
-                      className="btn ghost sm"
-                      style={{ padding: '5px 10px', fontSize: 11 }}
-                      onClick={() => setAllInCat(cat, catDefault)}
-                    >
-                      Aplicar
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {/* Service rows */}
-              {servicios.map(s => {
-                const val = effectiveVal(s)
-                const override = hasOverride(s)
-                return (
-                  <div key={s.id} className="between" style={{ padding: '11px 0 11px 10px', borderBottom: '1px solid var(--line-soft)' }}>
-                    <div>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>{s.nombre}</span>
-                      <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
-                        {s.dur} min · {mxn(s.precio)}
-                        {override && <span style={{ color: 'var(--gold)', marginLeft: 6 }}>personalizada</span>}
-                      </div>
-                    </div>
-                    <div className="vc gap6">
-                      <span className="num dim" style={{ fontSize: 11.5 }}>≈ {mxn(Math.round(s.precio * val / 100))}</span>
-                      {override && (
-                        <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => resetSrv(s)} title="Restaurar al valor del grupo">
-                          <Ic n="arrow-counter-clockwise" size={13} />
-                        </button>
-                      )}
-                      <input
-                        className="input num" type="number" min="0" max="100"
-                        style={{ width: 68, textAlign: 'right', padding: '7px 10px', borderColor: override ? 'var(--gold)' : undefined }}
-                        value={val}
-                        onChange={e => setVal(s.id, +e.target.value)}
-                      />
-                      <span className="muted" style={{ minWidth: 14 }}>%</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )
-        })}
-      </div>
-
       <div className="card card-pad">
         <div className="eyebrow" style={{ marginBottom: 4 }}>Productos (retail)</div>
         <SettingRow title="Comisión por venta de producto" desc="Aplica a todas las líneas de tipo 'producto' en ventas." last>

@@ -26,6 +26,19 @@ export const telefonoValido = (t: string): boolean => {
 export const telefonoError = (t: string): string =>
   !t.trim() || telefonoValido(t) ? '' : 'Ingresa un teléfono a 10 dígitos con lada, ej. 33 1234 5678'
 
+// Resuelve el % de comisión de un servicio para un estilista específico.
+// La comisión base es siempre del empleado (estilista.com); estilista.comisiones
+// permite una excepción puntual por servicio sobre esa base.
+export const comisionServicioEstilista = (
+  servicioId: string,
+  estId: string | null | undefined,
+  estilistas: { id: string; com?: number; comisiones?: Record<string, number> }[]
+): number => {
+  const est = estilistas.find(e => e.id === estId)
+  if (!est) return 30
+  return est.comisiones?.[servicioId] ?? est.com ?? 30
+}
+
 export type EscalaTramo = { limite: number | null; pct: number }
 
 // Calcula comisión progresiva por tramos (tipo brackets fiscales).

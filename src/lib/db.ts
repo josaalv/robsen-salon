@@ -239,8 +239,6 @@ export const db = {
       precioVisible: r.precio_visible ?? true,
       precioVariable: r.precio_variable ?? false,
       domicilio: r.domicilio ?? false,
-      comValor: r.com_valor ?? 0,
-      comTipo: r.com_tipo ?? 'porcentaje',
       activo: r.activo ?? true,
     }))
   },
@@ -253,8 +251,6 @@ export const db = {
       precio_visible: s.precioVisible ?? true,
       precio_variable: s.precioVariable ?? false,
       domicilio: s.domicilio ?? false,
-      com_valor: s.comValor ?? 0,
-      com_tipo: s.comTipo ?? 'porcentaje',
       activo: s.activo ?? true,
     }, { onConflict: 'id' })
     if (error) { console.error('[db.upsertServicio]', error.message); throw error }

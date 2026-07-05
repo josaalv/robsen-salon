@@ -15,7 +15,6 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
 
   const servicios = data.servicios
   const estilistas = data.estilistas
-  const comisiones = data.config?.comisiones || {}
   const anticipoPct = data.config?.anticipoPct ?? 35
 
   const rawCats = Array.from(new Set(servicios.map(s => s.cat)))
@@ -80,7 +79,6 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
             .map(id => estilistas.find(e => e.id === id))
             .filter((e): e is Estilista => Boolean(e))
           const stats = srvStats[s.nombre] || { veces: 0, ingresos: 0 }
-          const comPct = comisiones[s.id] ?? comisiones[s.cat] ?? 30
           return (
             <div
               key={s.id}
@@ -108,12 +106,6 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
                 )}
                 <div className="vc gap12 mt10" style={{ fontSize: 12, color: 'var(--text-3)', flexWrap: 'wrap' }}>
                   <span className="vc" style={{ gap: 5 }}><Ic n="clock" />{s.dur} min</span>
-                  <span className="vc" style={{ gap: 5, color: '#B08AC7' }}>
-                    <Ic n="users-three" />
-                    {s.comValor && s.comValor > 0
-                      ? s.comTipo === 'valor' ? `Com. ${mxn(s.comValor)}` : `Com. ${s.comValor}%`
-                      : `Com. ${comPct}%`}
-                  </span>
                   {s.anticipo && <span className="vc" style={{ gap: 5, color: 'var(--gold)' }}><Ic n="hand-coins" />Anticipo {anticipoPct}%</span>}
                   {s.domicilio && <span className="vc" style={{ gap: 5, color: 'var(--st-conf)' }}><Ic n="house" />Domicilio</span>}
                   {s.precioVariable && <span className="vc" style={{ gap: 5, color: 'var(--text-4)' }}><Ic n="arrows-out" />Precio variable</span>}
@@ -227,8 +219,6 @@ function normalizeSrvHeader(h: string): string {
     .replace(/precio.*visible|mostrar.*precio/i, 'precioVisible')
     .replace(/precio.*variable|variable/i, 'precioVariable')
     .replace(/domicilio|a.*domicilio/i, 'domicilio')
-    .replace(/comisión.*valor|com.*valor|commission.*value/i, 'comValor')
-    .replace(/tipo.*comisión|tipo.*com|com.*tipo/i, 'comTipo')
 }
 
 interface ImportarServiciosModalProps {
@@ -295,8 +285,6 @@ function ImportarServiciosModal({ serviciosExistentes, onImport, onClose }: Impo
         precioVisible: r.precioVisible ? parseBool(r.precioVisible) : (existente?.precioVisible ?? true),
         precioVariable: r.precioVariable ? parseBool(r.precioVariable) : (existente?.precioVariable ?? false),
         domicilio: r.domicilio ? parseBool(r.domicilio) : (existente?.domicilio ?? false),
-        comValor: parseFloat(r.comValor) || existente?.comValor || 0,
-        comTipo: (r.comTipo?.toLowerCase().includes('valor') || r.comTipo?.toLowerCase().includes('fijo')) ? 'valor' : (existente?.comTipo ?? 'porcentaje'),
       })
     })
     onImport(srvs)
@@ -346,7 +334,7 @@ function ImportarServiciosModal({ serviciosExistentes, onImport, onClose }: Impo
             <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '14px 16px' }}>
               <div className="eyebrow" style={{ marginBottom: 10 }}>Columnas que se reconocen</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {['nombre *', 'cat / categoría', 'precio', 'dur / duración', 'descripcion', 'online', 'precioVisible', 'precioVariable', 'domicilio', 'comValor', 'comTipo'].map(c => (
+                {['nombre *', 'cat / categoría', 'precio', 'dur / duración', 'descripcion', 'online', 'precioVisible', 'precioVariable', 'domicilio'].map(c => (
                   <span key={c} className="chip" style={{ fontSize: 11.5 }}>{c}</span>
                 ))}
               </div>
@@ -436,8 +424,6 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
   const [precioVisible, setPrecioVisible] = useState(s.precioVisible ?? true)
   const [precioVariable, setPrecioVariable] = useState(s.precioVariable ?? false)
   const [domicilio, setDomicilio] = useState(s.domicilio ?? false)
-  const [comValor, setComValor] = useState(s.comValor ?? 0)
-  const [comTipo, setComTipo] = useState<'porcentaje' | 'valor'>(s.comTipo ?? 'porcentaje')
   const [activo, setActivo] = useState(s.activo ?? true)
 
   const toggleProf = (id: string) => {
@@ -453,7 +439,7 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
       dur, precio, anticipo, online, prof,
       descripcion: descripcion.trim() || undefined,
       precioVisible, precioVariable, domicilio,
-      comValor, comTipo, activo,
+      activo,
     })
   }
 
@@ -504,29 +490,6 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
             <div>
               <label className="label">Precio base (MXN)</label>
               <input className="input" type="number" min={0} value={precio} onChange={e => setPrecio(Number(e.target.value))} />
-            </div>
-          </div>
-
-          {/* Comisión por servicio */}
-          <div>
-            <label className="label">Comisión por servicio</label>
-            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <select className="input" value={comTipo} onChange={e => setComTipo(e.target.value as 'porcentaje' | 'valor')}>
-                <option value="porcentaje">Porcentaje (%)</option>
-                <option value="valor">Valor fijo (MXN)</option>
-              </select>
-              <div style={{ position: 'relative' }}>
-                <input className="input" type="number" min={0} value={comValor} onChange={e => setComValor(Number(e.target.value))}
-                  placeholder={comTipo === 'porcentaje' ? '30' : '150'} />
-                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-4)' }}>
-                  {comTipo === 'porcentaje' ? '%' : '$'}
-                </span>
-              </div>
-            </div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-              {comTipo === 'valor'
-                ? `La estilista recibe ${mxn(comValor)} fijo por este servicio`
-                : `La estilista recibe ${comValor}% del precio cobrado`}
             </div>
           </div>
 
