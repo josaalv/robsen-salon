@@ -73,7 +73,10 @@ export function ScreenBooking() {
     const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
     const dy = String(selectedDay.date.getDate()).padStart(2, '0')
     const fechaStr = `${y}-${mo}-${dy}`
-    const ocupadas = data.citasFuturas.filter(c => c.fecha === fechaStr && (prof === 'any' || !prof || c.est === prof))
+    // "any" siempre termina asignando srv.prof[0] (ver submitCita) — el bloqueo debe
+    // reflejar la agenda de esa estilista específica, no la de todo el equipo.
+    const estParaChecar = prof === 'any' ? (srv?.prof[0] || null) : prof
+    const ocupadas = data.citasFuturas.filter(c => c.fecha === fechaStr && (!estParaChecar || c.est === estParaChecar))
     const bloqueados = new Set<string>()
     ocupadas.forEach(c => {
       const [hh, mm] = c.h.split(':').map(Number)
@@ -84,8 +87,16 @@ export function ScreenBooking() {
         if (sMin >= startMin && sMin < startMin + c.dur) bloqueados.add(s)
       })
     })
+    // Bloquea también los horarios donde el servicio terminaría después del cierre
+    if (srv) {
+      const cierreMin = cfg.agendaEnd * 60
+      slots.forEach(s => {
+        const [sh, sm] = s.split(':').map(Number)
+        if (sh * 60 + sm + srv.dur > cierreMin) bloqueados.add(s)
+      })
+    }
     return Array.from(bloqueados)
-  }, [selectedDay, data.citasFuturas, prof, slots])
+  }, [selectedDay, data.citasFuturas, prof, slots, srv, cfg.agendaEnd])
 
   const steps: [string, string][] = [
     ['Servicio', 'scissors'],
