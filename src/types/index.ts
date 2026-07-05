@@ -14,6 +14,7 @@ export interface Estilista {
   color: string
   ini: string
   com?: number
+  comisiones?: Record<string, number>  // excepción puntual por servicio: { [servicioId]: pct } — si falta, se usa `com`
   horarios?: boolean[]  // [Lun,Mar,Mié,Jue,Vie,Sáb,Dom]
   foto?: string
   bio?: string
@@ -32,8 +33,6 @@ export interface Servicio {
   precioVisible?: boolean   // mostrar precio en sitio de agendamiento
   precioVariable?: boolean  // precio/duración variable, consultar
   domicilio?: boolean       // servicio a domicilio disponible
-  comValor?: number         // comisión fija en MXN por servicio
-  comTipo?: 'porcentaje' | 'valor'  // tipo de comisión
   activo?: boolean          // false = no aparece para nuevas citas/ventas, sigue en historial
 }
 

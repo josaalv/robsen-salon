@@ -11,15 +11,23 @@ const COLORES = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8CE8A
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
 function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: string }; onClose: () => void }) {
-  const { upsertEstilista, deleteEstilista } = useStore()
+  const { data, upsertEstilista, deleteEstilista } = useStore()
+  const [tab, setTab] = useState('Perfil')
   const [nombre, setNombre] = useState(est.nombre || '')
   const [rol, setRol] = useState(est.rol || '')
   const [color, setColor] = useState(est.color || COLORES[0])
   const [comPct, setComPct] = useState(est.com ?? 30)
+  const [comisiones, setComisiones] = useState<Record<string, number>>({ ...(est.comisiones || {}) })
   const [foto, setFoto] = useState(est.foto || '')
   const [bio, setBio] = useState(est.bio || '')
   const [uploading, setUploading] = useState(false)
   const fotoRef = useRef<HTMLInputElement>(null)
+
+  const servReal = est.id ? data.servicios.filter(s => s.prof.includes(est.id!)) : []
+  const setComOverride = (servicioId: string, val: number) =>
+    setComisiones(prev => ({ ...prev, [servicioId]: Math.min(100, Math.max(0, val)) }))
+  const resetComOverride = (servicioId: string) =>
+    setComisiones(prev => { const n = { ...prev }; delete n[servicioId]; return n })
 
   const onFotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -45,7 +53,7 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
     try {
       await upsertEstilista({
         ...est as Estilista,
-        id, nombre, rol, color, com: comPct, foto: foto || undefined, bio: bio || undefined,
+        id, nombre, rol, color, com: comPct, comisiones, foto: foto || undefined, bio: bio || undefined,
         ini: nombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
       })
       toast(est.id ? 'Perfil actualizado' : 'Estilista agregada')
@@ -76,6 +84,12 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
         <div><div className="eyebrow">{est.id ? 'Editar' : 'Nueva'} estilista</div><h3 style={{ marginTop: 4 }}>Perfil público y comisión</h3></div>
         <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
       </div>
+      <div className="tabs" style={{ padding: '0 20px' }}>
+        {['Perfil', 'Comisiones'].map(t => (
+          <div key={t} className={'tab' + (tab === t ? ' active' : '')} onClick={() => setTab(t)}>{t}</div>
+        ))}
+      </div>
+      {tab === 'Perfil' && (
       <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         {/* Foto */}
@@ -126,6 +140,52 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
             ))}
           </div>
         </div>
+      </div>
+      )}
+
+      {tab === 'Comisiones' && (
+      <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {!est.id ? (
+          <div className="dim" style={{ fontSize: 12.5, textAlign: 'center', padding: '20px 0' }}>Guarda el perfil primero para poder configurar comisiones por servicio.</div>
+        ) : (
+          <>
+            <div className="muted" style={{ fontSize: 12 }}>
+              Por defecto cada servicio usa la comisión base ({comPct}%). Puedes definir una excepción puntual por servicio.
+            </div>
+            {servReal.length === 0 && <div className="dim" style={{ fontSize: 12.5 }}>Esta estilista no tiene servicios asignados aún.</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {servReal.map(s => {
+                const override = comisiones[s.id]
+                const val = override ?? comPct
+                return (
+                  <div key={s.id} className="between" style={{ padding: '8px 10px', border: '1px solid var(--line-soft)', borderRadius: 8, gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{s.nombre}</div>
+                      <div className="muted" style={{ fontSize: 11 }}>
+                        {mxn(s.precio)} · {override != null ? <span style={{ color: 'var(--gold)' }}>personalizada</span> : 'heredado'}
+                      </div>
+                    </div>
+                    <div className="vc gap8" style={{ flexShrink: 0 }}>
+                      <input
+                        className="input" type="number" min="0" max="100" value={val}
+                        style={{ width: 64, textAlign: 'right' }}
+                        onChange={e => setComOverride(s.id, Number(e.target.value))}
+                      />
+                      <span className="dim" style={{ fontSize: 12 }}>%</span>
+                      {override != null && (
+                        <button className="icon-btn" title="Restaurar comisión base" onClick={() => resetComOverride(s.id)}><Ic n="arrow-counter-clockwise" /></button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+      )}
+
+      <div className="card-pad" style={{ paddingTop: 0 }}>
         <div className="vc gap8 mt6">
           <button className="btn gold f1" style={{ justifyContent: 'center', opacity: saving ? .6 : 1, pointerEvents: saving ? 'none' : 'auto' }} onClick={save}><Ic n="check" />{saving ? 'Guardando…' : 'Guardar'}</button>
           {est.id && <button className="btn ghost" onClick={del} style={{ color: 'var(--st-canc)', borderColor: 'var(--st-canc)', opacity: saving ? .6 : 1, pointerEvents: saving ? 'none' : 'auto' }}><Ic n="trash" />Eliminar</button>}

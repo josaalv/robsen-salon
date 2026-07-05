@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Avatar, EstadoBadge, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn } from '../lib/helpers'
+import { mxn, comisionServicioEstilista } from '../lib/helpers'
 import type { Cita, EstadoCita, Bloqueo, Venta } from '../types'
 import { db } from '../lib/db'
 
@@ -155,7 +155,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             cliente: cl.trim(), clienteId: '', pago: 'efectivo',
             estado: antFinal >= srv.precio ? 'pagada' : 'apartado',
             desc: 0, anticipo: antFinal, citaId: id,
-            lineas: [{ tipo: 'servicio', nombre: srv.nombre, est, cant: 1, precio: srv.precio, com: 0 }],
+            lineas: [{ tipo: 'servicio', nombre: srv.nombre, est, cant: 1, precio: srv.precio, com: comisionServicioEstilista(srv.id, est, data.estilistas) }],
           }
           await db.addVenta(ventaApartado)
         }
