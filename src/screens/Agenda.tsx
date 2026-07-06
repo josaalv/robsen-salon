@@ -401,11 +401,10 @@ function waLink(tel: string, msg: string): string {
   return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
 }
 
-function ApptDetail({ a, onClose, onEdit, onDelete }: {
-  a: Cita; onClose: () => void; onEdit: () => void; onDelete: () => void
+function ApptDetail({ a, onClose, onEdit, onDelete, onCobrar }: {
+  a: Cita; onClose: () => void; onEdit: () => void; onDelete: () => void; onCobrar: () => void
 }) {
-  const { data, upsertCita, upsertCitaFutura, addVenta } = useStore()
-  const [posOpen, setPosOpen] = useState(false)
+  const { data, upsertCita, upsertCitaFutura } = useStore()
   const todayIso = dateToIso(new Date())
   const esFutura = a.fecha && a.fecha !== todayIso
   const saveCita = (patch: Partial<Cita>) =>
@@ -418,16 +417,6 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
     } catch {
       toast('No se pudo actualizar la cita. Intenta de nuevo.')
     }
-  }
-  const confirmarVenta = async (venta: Venta) => {
-    try {
-      await addVenta(venta)
-    } catch {
-      toast('No se pudo registrar la venta. Verifica tu conexión e intenta de nuevo.')
-      throw new Error('addVenta failed')
-    }
-    setPosOpen(false)
-    await saveCitaConFeedback({ estado: 'done' }, 'Venta registrada y cita completada')
   }
   const e = data.estilistas.find(est => est.id === a.est) || data.estilistas[0]
   const saldo = Math.max(0, a.total - (a.ant || 0))
@@ -505,7 +494,7 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
         )}
         <div className="mt14">
           {a.estado !== 'canc' ? (
-            <button className="btn gold w100" style={{ justifyContent: 'center' }} onClick={() => setPosOpen(true)}>
+            <button className="btn gold w100" style={{ justifyContent: 'center' }} onClick={onCobrar}>
               <Ic n="check" />{saldo > 0 ? `Cobrar saldo ${mxn(saldo)}` : 'Registrar venta'}
             </button>
           ) : (
@@ -528,7 +517,6 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
           </button>
         )}
       </div>
-      {posOpen && <POSBuilder citaOrigen={a} onClose={() => setPosOpen(false)} onConfirm={confirmarVenta} />}
     </div>
   )
 }
@@ -704,7 +692,7 @@ function MonthView({ onDayClick }: { onDayClick?: (date: Date) => void }) {
 
 // ─── Pantalla principal ─────────────────────────────────────────────────────
 export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data, upsertCita, deleteCita, deleteCitaFutura, upsertBloqueo, deleteBloqueo } = useStore()
+  const { data, upsertCita, upsertCitaFutura, deleteCita, deleteCitaFutura, upsertBloqueo, deleteBloqueo, addVenta } = useStore()
   const { agendaStart: S, agendaEnd: E } = data.config
   const [vista, setVista] = useState('Día')
   const [filtro, setFiltro] = useState('todos')
@@ -712,6 +700,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const [confirmDelete, setConfirmDelete] = useState<Cita | null>(null)
   const [editCita, setEditCita] = useState<Partial<Cita> | null>(null)
   const [showBloqueo, setShowBloqueo] = useState(false)
+  const [posCita, setPosCita] = useState<Cita | null>(null)
   const bloqueos = data.bloqueos || []
   const [weekOffset, setWeekOffset] = useState(0)
 
@@ -739,6 +728,27 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
       toast('Cita eliminada')
     } catch {
       toast('No se pudo eliminar la cita. Intenta de nuevo.')
+    }
+  }
+
+  const confirmarVenta = async (venta: Venta) => {
+    if (!posCita) return
+    try {
+      await addVenta(venta)
+    } catch {
+      toast('No se pudo registrar la venta. Verifica tu conexión e intenta de nuevo.')
+      throw new Error('addVenta failed')
+    }
+    const cita = posCita
+    setPosCita(null)
+    try {
+      const esFutura = cita.fecha && cita.fecha !== todayIso
+      if (esFutura) await upsertCitaFutura({ ...cita, estado: 'done' })
+      else await upsertCita({ ...cita, estado: 'done' })
+      setSel(null)
+      toast('Venta registrada y cita completada')
+    } catch {
+      toast('La venta se registró, pero no se pudo actualizar el estado de la cita.')
     }
   }
 
@@ -888,9 +898,12 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
             onClose={() => setSel(null)}
             onEdit={() => setEditCita(sel)}
             onDelete={() => handleDelete(sel)}
+            onCobrar={() => setPosCita(sel)}
           />
         )}
       </div>
+
+      {posCita && <POSBuilder citaOrigen={posCita} onClose={() => setPosCita(null)} onConfirm={confirmarVenta} />}
 
       {editCita !== null && (
         <CitaModal
