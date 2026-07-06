@@ -3,7 +3,7 @@ import { Avatar, Seg } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, comisionServicioEstilista } from '../lib/helpers'
-import type { Venta } from '../types'
+import type { Venta, Cita } from '../types'
 
 interface CartItem {
   key: string
@@ -18,10 +18,11 @@ interface CartItem {
   est: string | null
 }
 
-export function POSBuilder({ onClose, onConfirm, nextTicket }: {
+export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   onClose: () => void
   onConfirm: (v: Venta) => Promise<void>
   nextTicket?: string
+  citaOrigen?: Cita
 }) {
   const { data } = useStore()
   const DRAFT_KEY = 'rb_pos_draft'
@@ -29,20 +30,36 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
   const [tab, setTab] = useState('Servicios')
   const [q, setQ] = useState('')
   const [cart, setCart] = useState<CartItem[]>(() => {
+    if (citaOrigen) {
+      return [{
+        key: citaOrigen.servicioId || ('cita-' + citaOrigen.id),
+        tipo: 'servicio',
+        nombre: citaOrigen.srv,
+        precio: citaOrigen.total,
+        sub: `${citaOrigen.h} · ${citaOrigen.dur} min`,
+        com: comisionServicioEstilista(citaOrigen.servicioId || '', citaOrigen.est, data.estilistas),
+        cant: 1,
+        est: citaOrigen.est,
+      }]
+    }
     try { return JSON.parse(localStorage.getItem(DRAFT_KEY + '_cart') || '[]') } catch { return [] }
   })
-  const [cliente, setCliente] = useState(() => localStorage.getItem(DRAFT_KEY + '_cliente') || '')
-  const [desc, setDesc] = useState(() => Number(localStorage.getItem(DRAFT_KEY + '_desc') || '0'))
-  const [anticipo, setAnticipo] = useState(() => Number(localStorage.getItem(DRAFT_KEY + '_anticipo') || '0'))
+  const [cliente, setCliente] = useState(() => citaOrigen ? citaOrigen.cl : (localStorage.getItem(DRAFT_KEY + '_cliente') || ''))
+  const [desc, setDesc] = useState(() => citaOrigen ? 0 : Number(localStorage.getItem(DRAFT_KEY + '_desc') || '0'))
+  const [anticipo, setAnticipo] = useState(() => citaOrigen ? (citaOrigen.ant || 0) : Number(localStorage.getItem(DRAFT_KEY + '_anticipo') || '0'))
 
   useEffect(() => {
+    // Una venta que parte de una cita no comparte el borrador genérico del POS,
+    // para no pisar una venta de mostrador que ya esté en curso en Ventas.
+    if (citaOrigen) return
     localStorage.setItem(DRAFT_KEY + '_cart', JSON.stringify(cart))
     localStorage.setItem(DRAFT_KEY + '_cliente', cliente)
     localStorage.setItem(DRAFT_KEY + '_desc', String(desc))
     localStorage.setItem(DRAFT_KEY + '_anticipo', String(anticipo))
-  }, [cart, cliente, desc, anticipo])
+  }, [cart, cliente, desc, anticipo, citaOrigen])
 
   const clearDraft = () => {
+    if (citaOrigen) return
     ;[DRAFT_KEY + '_cart', DRAFT_KEY + '_cliente', DRAFT_KEY + '_desc', DRAFT_KEY + '_anticipo'].forEach(k => localStorage.removeItem(k))
   }
 
@@ -102,6 +119,26 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
       const com = it.tipo === 'servicio' ? comisionServicioEstilista(it.key, defEst, data.estilistas) : it.com
       return [...c, { ...it, cant: 1, est: defEst, com }]
     })
+  }
+
+  const [customNombre, setCustomNombre] = useState('')
+  const [customPrecio, setCustomPrecio] = useState('')
+  const addCustomCharge = () => {
+    const nombre = customNombre.trim()
+    const precio = Number(customPrecio)
+    if (!nombre || !precio || precio <= 0) return
+    setCart(c => [...c, {
+      key: 'custom-' + Date.now(),
+      tipo: 'adicional',
+      nombre,
+      precio,
+      sub: 'Cobro personalizado',
+      com: 0,
+      cant: 1,
+      est: null,
+    }])
+    setCustomNombre('')
+    setCustomPrecio('')
   }
 
   const setCant = (key: string, d: number) => setCart(c => c.map(l => l.key === key ? { ...l, cant: Math.max(1, l.cant + d) } : l))
@@ -184,6 +221,29 @@ export function POSBuilder({ onClose, onConfirm, nextTicket }: {
               </div>
             </div>
             <div className="scroll-y" style={{ flex: 1, padding: '4px 22px 18px' }}>
+              {tab === 'Adicionales' && (
+                <div className="card" style={{ background: 'var(--surface)', padding: 12, marginBottom: 12 }}>
+                  <div className="eyebrow" style={{ marginBottom: 8 }}>Cobro personalizado</div>
+                  <div className="vc gap8">
+                    <input
+                      className="input f1" placeholder="Concepto, ej. Servicio a domicilio"
+                      value={customNombre} onChange={e => setCustomNombre(e.target.value)}
+                    />
+                    <input
+                      className="input" type="number" min="0" placeholder="$"
+                      style={{ width: 100 }}
+                      value={customPrecio} onChange={e => setCustomPrecio(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addCustomCharge()}
+                    />
+                    <button className="btn gold" disabled={!customNombre.trim() || !Number(customPrecio)} onClick={addCustomCharge}>
+                      <Ic n="plus" />Agregar
+                    </button>
+                  </div>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+                    Para cobros fuera de catálogo por la naturaleza del servicio (ej. traslado, material extra).
+                  </div>
+                </div>
+              )}
               <div className="grid" style={{ gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
                 {items.map(it => {
                   const agotado = it.tipo === 'producto' && (it.stock !== undefined && it.stock <= 0)
