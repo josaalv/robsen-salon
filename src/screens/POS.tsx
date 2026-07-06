@@ -314,12 +314,12 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                       className="select"
                       value={l.est || ''}
                       onChange={ev => setLineEst(l.key, ev.target.value || null)}
-                      style={{ padding: '6px 28px 6px 10px', fontSize: 12, width: 'auto', flex: 1 }}
+                      style={{ padding: '6px 28px 6px 10px', fontSize: 12, width: 'auto', flex: 1, minWidth: 0 }}
                     >
                       <option value="">{l.tipo === 'producto' ? 'Vendido por…' : 'Sin asignar'}</option>
                       {data.estilistas.map(es => <option key={es.id} value={es.id}>{es.nombre}</option>)}
                     </select>
-                    <div className="vc gap6">
+                    <div className="vc gap6" style={{ flex: '0 0 auto' }}>
                       <button className="btn icon ghost sm" onClick={() => setCant(l.key, -1)}><Ic n="minus" /></button>
                       <span className="num" style={{ minWidth: 18, textAlign: 'center', fontWeight: 600 }}>{l.cant}</span>
                       <button className="btn icon ghost sm" onClick={() => setCant(l.key, 1)}><Ic n="plus" /></button>
@@ -332,17 +332,17 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
             {/* Totales y cobro */}
             <div style={{ flex: '0 0 auto', padding: '14px 20px', borderTop: '1px solid var(--line)' }}>
               <div className="vc gap10" style={{ marginBottom: 10 }}>
-                <div className="field f1">
+                <div className="field f1" style={{ minWidth: 0 }}>
                   <label style={{ fontSize: 11 }}>Descuento</label>
                   <input className="input num" type="number" value={desc || ''} placeholder="0" onChange={e => setDesc(+e.target.value || 0)} style={{ padding: '8px 10px' }} />
                 </div>
-                <div className="field f1">
+                <div className="field f1" style={{ minWidth: 0 }}>
                   <label style={{ fontSize: 11 }}>Anticipo</label>
                   <input className="input num" type="number" value={anticipo || ''} placeholder="0" onChange={e => setAnticipo(+e.target.value || 0)} style={{ padding: '8px 10px' }} />
                 </div>
-                <div className="field f1">
+                <div className="field f1" style={{ minWidth: 0 }}>
                   <label style={{ fontSize: 11 }}>Pago</label>
-                  <select className="select" value={pago} onChange={e => setPago(e.target.value)} style={{ padding: '8px 28px 8px 10px' }}>
+                  <select className="select" value={pago} onChange={e => setPago(e.target.value)} style={{ padding: '8px 28px 8px 10px', minWidth: 0 }}>
                     {pagoOpts.map(m => <option key={m}>{m}</option>)}
                   </select>
                 </div>
