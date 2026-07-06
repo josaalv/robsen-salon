@@ -64,19 +64,29 @@ export interface Clienta {
   fotos?: FotoEntry[]
 }
 
+// Un servicio dentro de una cita. Una cita puede tener varios (ej. maquillaje +
+// peinado); la duración y el precio de la cita son la suma de todos.
+export interface CitaServicio {
+  servicioId: string
+  nombre: string
+  precio: number
+  dur: number
+}
+
 export interface Cita {
   id: string
   h: string
-  dur: number
+  dur: number          // suma de la duración de todos los servicios
   cl: string
   clienteId?: string
   tel?: string
   email?: string
-  srv: string
-  servicioId?: string
+  srv: string          // resumen: nombres de los servicios unidos con " + "
+  servicioId?: string  // primer servicio (retrocompat / comisión)
+  servicios?: CitaServicio[]  // detalle; si falta, la cita es de un solo servicio
   est: string
   estado: EstadoCita
-  total: number
+  total: number        // suma del precio de todos los servicios
   ant: number
   notas?: string
   fecha?: string  // 'YYYY-MM-DD' — undefined significa hoy

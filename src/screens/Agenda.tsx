@@ -3,7 +3,7 @@ import { Avatar, EstadoBadge, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, comisionServicioEstilista } from '../lib/helpers'
-import type { Cita, EstadoCita, Bloqueo, Venta } from '../types'
+import type { Cita, CitaServicio, EstadoCita, Bloqueo, Venta } from '../types'
 import { db } from '../lib/db'
 import { POSBuilder } from './POS'
 
@@ -76,17 +76,33 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const initDate = cita.fecha && fechasList.some(f => f.iso === cita.fecha) ? cita.fecha : todayIso
   const [selectedDate, setSelectedDate] = useState(initDate)
   const [cl, setCl] = useState(cita.cl || '')
-  const [srvId, setSrvId] = useState(() => {
+  // Lista de servicios de la cita. Una cita puede tener varios (ej. maquillaje +
+  // peinado): la duración y el precio se suman.
+  const [srvIds, setSrvIds] = useState<string[]>(() => {
+    if (cita.servicios && cita.servicios.length) return cita.servicios.map(s => s.servicioId)
     const s = data.servicios.find(s => s.nombre === cita.srv)
-    return s ? s.id : data.servicios[0].id
+    return [s ? s.id : data.servicios[0].id]
   })
+  const [addSrv, setAddSrv] = useState('')
   const [est, setEst] = useState(cita.est || data.estilistas[0].id)
   const [estado, setEstado] = useState<EstadoCita>(cita.estado || 'pend')
   const [ant, setAnt] = useState(cita.ant || 0)
   const [saving, setSaving] = useState(false)
 
-  const srv = data.servicios.find(s => s.id === srvId) || data.servicios[0]
+  const serviciosSel = srvIds
+    .map(id => data.servicios.find(s => s.id === id))
+    .filter((s): s is NonNullable<typeof s> => Boolean(s))
+  const durTotal = serviciosSel.reduce((sum, s) => sum + s.dur, 0)
+  const precioTotal = serviciosSel.reduce((sum, s) => sum + s.precio, 0)
+  const srvKey = srvIds.join(',')
   const isToday = selectedDate === todayIso
+
+  const quitarServicio = (id: string) =>
+    setSrvIds(ids => ids.length > 1 ? ids.filter(x => x !== id) : ids)
+  const agregarServicio = (id: string) => {
+    if (id) setSrvIds(ids => [...ids, id])
+    setAddSrv('')
+  }
 
   const dayIdx = (() => {
     const d = new Date(selectedDate + 'T12:00:00')
@@ -99,7 +115,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
     : (data.citasFuturas || []).filter(a => a.fecha === selectedDate && a.est === est && a.id !== cita.id)
 
   const availableSlots = SLOTS.filter(slot => {
-    const sS = toMin(slot), sE = sS + srv.dur
+    const sS = toMin(slot), sE = sS + durTotal
     if (sE > E * 60) return false
     if (citasDelDia.some(a => { const aS = toMin(a.h); return sS < aS + a.dur && sE > aS })) return false
     if (bloqueos.filter(b => b.est === est && (!b.fecha || b.fecha === selectedDate)).some(b => {
@@ -118,7 +134,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
     if (availableSlots.length > 0 && !availableSlots.includes(h)) {
       setH(availableSlots[0])
     }
-  }, [est, srvId, selectedDate])
+  }, [est, srvKey, selectedDate])
 
   useEffect(() => {
     if (estilistasDia.length > 0 && !estilistasDia.find(es => es.id === est)) {
@@ -127,15 +143,22 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   }, [selectedDate])
 
   const displayH = availableSlots.includes(h) ? h : (availableSlots[0] || h)
-  const saldoPreview = Math.max(0, srv.precio - (+ant || 0))
+  const saldoPreview = Math.max(0, precioTotal - (+ant || 0))
 
   const guardar = async () => {
-    if (!cl.trim() || availableSlots.length === 0 || saving) return
+    if (!cl.trim() || !serviciosSel.length || availableSlots.length === 0 || saving) return
     const id = cita.id || ('a' + Date.now())
-    const antFinal = Math.min(srv.precio, Math.max(0, +ant || 0))
+    const antFinal = Math.min(precioTotal, Math.max(0, +ant || 0))
+    const serviciosCita: CitaServicio[] = serviciosSel.map(s => ({
+      servicioId: s.id, nombre: s.nombre, precio: s.precio, dur: s.dur,
+    }))
     const newCita: Cita = {
-      id, cl: cl.trim(), srv: srv.nombre, est, h: displayH, dur: srv.dur,
-      estado, total: srv.precio, ant: antFinal,
+      id, cl: cl.trim(),
+      srv: serviciosSel.map(s => s.nombre).join(' + '),
+      servicioId: serviciosSel[0].id,
+      servicios: serviciosCita,
+      est, h: displayH, dur: durTotal,
+      estado, total: precioTotal, ant: antFinal,
       ...(isToday ? {} : { fecha: selectedDate }),
     }
     setSaving(true)
@@ -143,20 +166,23 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
       if (isToday) await upsertCita(newCita)
       else await upsertCitaFutura(newCita)
 
-      // Sincronizar venta de apartado cuando hay anticipo
+      // Sincronizar venta de apartado cuando hay anticipo: una línea por servicio
       if (antFinal > 0) {
         const existing = await db.getVentaByCitaId(id)
         const hoy = new Date().toISOString().slice(0, 10)
         const ticket = `APT-${id.slice(-6).toUpperCase()}`
         if (existing) {
-          await db.updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= srv.precio ? 'pagada' : 'apartado' })
+          await db.updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= precioTotal ? 'pagada' : 'apartado' })
         } else {
           const ventaApartado: Venta = {
             id: 'v' + Date.now(), ticket, fecha: hoy,
             cliente: cl.trim(), clienteId: '', pago: 'efectivo',
-            estado: antFinal >= srv.precio ? 'pagada' : 'apartado',
+            estado: antFinal >= precioTotal ? 'pagada' : 'apartado',
             desc: 0, anticipo: antFinal, citaId: id,
-            lineas: [{ tipo: 'servicio', nombre: srv.nombre, est, cant: 1, precio: srv.precio, com: comisionServicioEstilista(srv.id, est, data.estilistas) }],
+            lineas: serviciosSel.map(s => ({
+              tipo: 'servicio' as const, nombre: s.nombre, est, cant: 1, precio: s.precio,
+              com: comisionServicioEstilista(s.id, est, data.estilistas),
+            })),
           }
           await db.addVenta(ventaApartado)
         }
@@ -193,10 +219,26 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             </datalist>
           </div>
           <div className="field">
-            <label>Servicio</label>
-            <select className="select" value={srvId} onChange={e => setSrvId(e.target.value)}>
-              {data.servicios.filter(s => s.activo !== false || s.id === srvId).map(s => (
-                <option key={s.id} value={s.id}>{s.nombre}{s.activo === false ? ' (inactivo)' : ''} — {mxn(s.precio)} · {s.dur} min</option>
+            <label>Servicios <span className="muted" style={{ fontWeight: 400 }}>(puedes agregar varios, ej. maquillaje + peinado)</span></label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {serviciosSel.map((s, i) => (
+                <div key={s.id + '-' + i} className="between" style={{ padding: '9px 12px', border: '1px solid var(--line-soft)', borderRadius: 10, background: 'var(--surface)', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{s.nombre}{s.activo === false ? ' (inactivo)' : ''}</div>
+                    <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>{mxn(s.precio)} · {s.dur} min</div>
+                  </div>
+                  {serviciosSel.length > 1 && (
+                    <button className="icon-btn" style={{ width: 28, height: 28, color: 'var(--st-canc)', flexShrink: 0 }} onClick={() => quitarServicio(s.id)} title="Quitar servicio">
+                      <Ic n="x" size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <select className="select" value={addSrv} onChange={e => agregarServicio(e.target.value)} style={{ marginTop: 8 }}>
+              <option value="">+ Agregar otro servicio…</option>
+              {data.servicios.filter(s => s.activo !== false).map(s => (
+                <option key={s.id} value={s.id}>{s.nombre} — {mxn(s.precio)} · {s.dur} min</option>
               ))}
             </select>
           </div>
@@ -237,20 +279,24 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             </div>
             <div className="field">
               <label>Anticipo (MXN)</label>
-              <input className="input num" type="number" min="0" max={srv.precio} value={ant || ''} placeholder="0"
-                onChange={e => setAnt(Math.min(srv.precio, Math.max(0, +e.target.value)))} />
+              <input className="input num" type="number" min="0" max={precioTotal} value={ant || ''} placeholder="0"
+                onChange={e => setAnt(Math.min(precioTotal, Math.max(0, +e.target.value)))} />
             </div>
           </div>
           <div className="card" style={{ background: 'var(--surface)', padding: 14 }}>
             <div className="between">
-              <span className="muted">Total del servicio</span>
-              <span className="num gold-text" style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 600 }}>{mxn(srv.precio)}</span>
+              <span className="muted">Total{serviciosSel.length > 1 ? ` (${serviciosSel.length} servicios)` : ''}</span>
+              <span className="num gold-text" style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 600 }}>{mxn(precioTotal)}</span>
+            </div>
+            <div className="between mt10" style={{ fontSize: 12.5 }}>
+              <span className="muted">Duración total</span>
+              <span className="num">{durTotal} min</span>
             </div>
             {availableSlots.length > 0 && (
               <div className="between mt10" style={{ fontSize: 12.5 }}>
                 <span className="muted">Termina aprox.</span>
                 <span className="num">{(() => {
-                  const end = toMin(displayH) + srv.dur
+                  const end = toMin(displayH) + durTotal
                   return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
                 })()}</span>
               </div>
@@ -264,13 +310,18 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
         <hr className="hr" />
         <div className="card-pad vc gap12" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button
-            className="btn gold"
-            onClick={guardar}
-            style={{ opacity: cl.trim() && availableSlots.length > 0 && !saving ? 1 : .4, pointerEvents: cl.trim() && availableSlots.length > 0 && !saving ? 'auto' : 'none' }}
-          >
-            <Ic n="check" />{saving ? 'Guardando…' : (nuevo ? 'Agendar cita' : 'Guardar cambios')}
-          </button>
+          {(() => {
+            const puede = !!cl.trim() && serviciosSel.length > 0 && availableSlots.length > 0 && !saving
+            return (
+              <button
+                className="btn gold"
+                onClick={guardar}
+                style={{ opacity: puede ? 1 : .4, pointerEvents: puede ? 'auto' : 'none' }}
+              >
+                <Ic n="check" />{saving ? 'Guardando…' : (nuevo ? 'Agendar cita' : 'Guardar cambios')}
+              </button>
+            )
+          })()}
         </div>
       </div>
     </div>
@@ -436,7 +487,7 @@ function ApptDetail({ a, onClose, onEdit, onDelete, onCobrar }: {
       </div>
       <div className="card-pad" style={{ paddingTop: 14 }}>
         <div style={{ marginBottom: 14 }}><EstadoBadge k={a.estado} /></div>
-        {([['scissors', 'Servicio', a.srv], ['clock', 'Horario', `${a.h} · ${a.dur} min`], ['user', 'Estilista', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
+        {([['scissors', a.servicios && a.servicios.length > 1 ? 'Servicios' : 'Servicio', a.srv], ['clock', 'Horario', `${a.h} · ${a.dur} min`], ['user', 'Estilista', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
           <div key={l} className="list-item" style={{ padding: '11px 0' }}>
             <div className="ico" style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.08)', border: '1px solid var(--line)', color: 'var(--gold)' }}>
               <Ic n={ic} />
@@ -470,8 +521,19 @@ function ApptDetail({ a, onClose, onEdit, onDelete, onCobrar }: {
           </div>
         )}
         <div className="card" style={{ background: 'var(--surface)', padding: 14, marginTop: 12 }}>
+          {a.servicios && a.servicios.length > 1 && (
+            <>
+              {a.servicios.map((s, i) => (
+                <div key={s.servicioId + '-' + i} className="between" style={{ fontSize: 12.5, marginBottom: 6 }}>
+                  <span className="muted">{s.nombre} <span className="dim">· {s.dur} min</span></span>
+                  <span className="num">{mxn(s.precio)}</span>
+                </div>
+              ))}
+              <hr className="hr" style={{ margin: '8px 0' }} />
+            </>
+          )}
           <div className="between" style={{ fontSize: 13 }}>
-            <span className="muted">Total servicio</span>
+            <span className="muted">Total{a.servicios && a.servicios.length > 1 ? ` (${a.servicios.length} servicios)` : ' servicio'}</span>
             <span className="num" style={{ fontWeight: 600 }}>{mxn(a.total)}</span>
           </div>
           <div className="between mt10" style={{ fontSize: 13 }}>

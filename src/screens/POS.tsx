@@ -31,16 +31,21 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   const [q, setQ] = useState('')
   const [cart, setCart] = useState<CartItem[]>(() => {
     if (citaOrigen) {
-      return [{
-        key: citaOrigen.servicioId || ('cita-' + citaOrigen.id),
-        tipo: 'servicio',
-        nombre: citaOrigen.srv,
-        precio: citaOrigen.total,
-        sub: `${citaOrigen.h} · ${citaOrigen.dur} min`,
-        com: comisionServicioEstilista(citaOrigen.servicioId || '', citaOrigen.est, data.estilistas),
+      // Una cita puede tener varios servicios (maquillaje + peinado): se
+      // precarga una línea por servicio para que la venta quede desglosada.
+      const servicios = citaOrigen.servicios && citaOrigen.servicios.length
+        ? citaOrigen.servicios
+        : [{ servicioId: citaOrigen.servicioId || ('cita-' + citaOrigen.id), nombre: citaOrigen.srv, precio: citaOrigen.total, dur: citaOrigen.dur }]
+      return servicios.map((s, i) => ({
+        key: (s.servicioId || 'cita') + '-' + i,
+        tipo: 'servicio' as const,
+        nombre: s.nombre,
+        precio: s.precio,
+        sub: `${s.dur} min`,
+        com: comisionServicioEstilista(s.servicioId, citaOrigen.est, data.estilistas),
         cant: 1,
         est: citaOrigen.est,
-      }]
+      }))
     }
     try { return JSON.parse(localStorage.getItem(DRAFT_KEY + '_cart') || '[]') } catch { return [] }
   })
