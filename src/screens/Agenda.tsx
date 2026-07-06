@@ -5,6 +5,7 @@ import { useStore } from '../data/store'
 import { mxn, comisionServicioEstilista } from '../lib/helpers'
 import type { Cita, EstadoCita, Bloqueo, Venta } from '../types'
 import { db } from '../lib/db'
+import { POSBuilder } from './POS'
 
 const PXH = 60
 const DIAS_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -403,7 +404,8 @@ function waLink(tel: string, msg: string): string {
 function ApptDetail({ a, onClose, onEdit, onDelete }: {
   a: Cita; onClose: () => void; onEdit: () => void; onDelete: () => void
 }) {
-  const { data, upsertCita, upsertCitaFutura } = useStore()
+  const { data, upsertCita, upsertCitaFutura, addVenta } = useStore()
+  const [posOpen, setPosOpen] = useState(false)
   const todayIso = dateToIso(new Date())
   const esFutura = a.fecha && a.fecha !== todayIso
   const saveCita = (patch: Partial<Cita>) =>
@@ -416,6 +418,16 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
     } catch {
       toast('No se pudo actualizar la cita. Intenta de nuevo.')
     }
+  }
+  const confirmarVenta = async (venta: Venta) => {
+    try {
+      await addVenta(venta)
+    } catch {
+      toast('No se pudo registrar la venta. Verifica tu conexión e intenta de nuevo.')
+      throw new Error('addVenta failed')
+    }
+    setPosOpen(false)
+    await saveCitaConFeedback({ estado: 'done' }, 'Venta registrada y cita completada')
   }
   const e = data.estilistas.find(est => est.id === a.est) || data.estilistas[0]
   const saldo = Math.max(0, a.total - (a.ant || 0))
@@ -491,22 +503,23 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
             </div>
           </div>
         )}
-        <div className="vc gap8 mt14">
-          {saldo > 0 && a.estado !== 'canc' ? (
-            <button className="btn gold f1" style={{ justifyContent: 'center' }}
-              onClick={() => saveCitaConFeedback({ estado: 'done' }, 'Saldo cobrado')}>
-              <Ic n="check" />Cobrar saldo {mxn(saldo)}
+        <div className="mt14">
+          {a.estado !== 'canc' ? (
+            <button className="btn gold w100" style={{ justifyContent: 'center' }} onClick={() => setPosOpen(true)}>
+              <Ic n="check" />{saldo > 0 ? `Cobrar saldo ${mxn(saldo)}` : 'Registrar venta'}
             </button>
           ) : (
-            <div className="btn ghost f1" style={{ justifyContent: 'center', opacity: .5, pointerEvents: 'none' }}>
-              <Ic n="check-circle" />Sin saldo pendiente
+            <div className="btn ghost w100" style={{ justifyContent: 'center', opacity: .5, pointerEvents: 'none' }}>
+              <Ic n="check-circle" />Cita cancelada
             </div>
           )}
-          {clientaTel
-            ? <a className="btn ghost" title="WhatsApp" href={waLink(clientaTel, `Hola ${a.cl.split(' ')[0]} 💛 Tu cita de ${a.srv} es hoy a las ${a.h}. ¡Te esperamos!`)} target="_blank" rel="noreferrer"><Ic n="whatsapp-logo" /></a>
-            : <button className="btn ghost" title="Sin teléfono" style={{ opacity: .4 }} disabled><Ic n="whatsapp-logo" /></button>}
-          <button className="btn ghost" title="Editar" onClick={onEdit}><Ic n="pencil-simple" /></button>
-          <button className="btn ghost" title="Eliminar" style={{ color: 'var(--st-canc)' }} onClick={onDelete}><Ic n="trash" /></button>
+          <div className="vc gap8 mt8">
+            {clientaTel
+              ? <a className="btn ghost f1" style={{ justifyContent: 'center' }} title="WhatsApp" href={waLink(clientaTel, `Hola ${a.cl.split(' ')[0]} 💛 Tu cita de ${a.srv} es hoy a las ${a.h}. ¡Te esperamos!`)} target="_blank" rel="noreferrer"><Ic n="whatsapp-logo" /></a>
+              : <button className="btn ghost f1" style={{ justifyContent: 'center', opacity: .4 }} title="Sin teléfono" disabled><Ic n="whatsapp-logo" /></button>}
+            <button className="btn ghost f1" style={{ justifyContent: 'center' }} title="Editar" onClick={onEdit}><Ic n="pencil-simple" /></button>
+            <button className="btn ghost f1" style={{ justifyContent: 'center', color: 'var(--st-canc)' }} title="Eliminar" onClick={onDelete}><Ic n="trash" /></button>
+          </div>
         </div>
         {!['canc', 'done', 'no_asistio'].includes(a.estado) && (
           <button className="btn ghost w100 mt8" style={{ justifyContent: 'center', color: 'var(--st-noshow)' }}
@@ -515,6 +528,7 @@ function ApptDetail({ a, onClose, onEdit, onDelete }: {
           </button>
         )}
       </div>
+      {posOpen && <POSBuilder citaOrigen={a} onClose={() => setPosOpen(false)} onConfirm={confirmarVenta} />}
     </div>
   )
 }
