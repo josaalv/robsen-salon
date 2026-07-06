@@ -208,24 +208,41 @@ function PreferenciasTab({ c }: { c: Clienta }) {
   )
 }
 
+const isoHoy = () => new Date().toLocaleDateString('en-CA') // YYYY-MM-DD para <input type="date">
+
+// Parsea "06 jul 2026" (formato con el que se guarda cada fórmula) para poder
+// ordenar el historial por fecha real y no por orden de captura — necesario
+// porque ahora se pueden registrar fórmulas con fecha pasada.
+const parseFechaCorta = (s: string): number => {
+  const m = s.match(/^(\d{1,2})\s+([a-záéíóú]{3})\s+(\d{4})$/i)
+  if (!m) return -Infinity
+  const mes = MESES_CORTOS.findIndex(x => x.toLowerCase() === m[2].toLowerCase())
+  if (mes < 0) return -Infinity
+  return new Date(+m[3], mes, +m[1]).getTime()
+}
+
 function FormulaColorTab({ c }: { c: Clienta }) {
   const { upsertClienta } = useStore()
-  const formulas = c.formulas || []
+  const formulas = [...(c.formulas || [])].sort((a, b) => parseFechaCorta(b.fecha) - parseFechaCorta(a.fecha))
   const [adding, setAdding] = useState(false)
   const [srv, setSrv] = useState('')
   const [formula, setFormula] = useState('')
+  const [fecha, setFecha] = useState(isoHoy())
 
   const agregar = async () => {
     if (!formula.trim()) return
+    // new Date('YYYY-MM-DD') se interpreta en UTC — se arma con año/mes/día
+    // locales para no correr un día al formatear.
+    const [y, m, d] = fecha.split('-').map(Number)
     const newEntry = {
       id: 'f' + Date.now(),
-      fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
+      fecha: new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
       srv: srv || 'Color',
       formula: formula.trim(),
     }
     try {
       await upsertClienta({ ...c, formulas: [newEntry, ...formulas] })
-      setFormula(''); setSrv(''); setAdding(false)
+      setFormula(''); setSrv(''); setFecha(isoHoy()); setAdding(false)
       toast('Fórmula guardada')
     } catch {
       toast('No se pudo guardar la fórmula. Intenta de nuevo.')
@@ -255,7 +272,7 @@ function FormulaColorTab({ c }: { c: Clienta }) {
             </div>
             <div className="field">
               <label>Fecha</label>
-              <input className="input" value={new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })} disabled style={{ opacity: 0.6 }} />
+              <input className="input" type="date" value={fecha} max={isoHoy()} onChange={e => setFecha(e.target.value)} />
             </div>
           </div>
           <div className="field">
