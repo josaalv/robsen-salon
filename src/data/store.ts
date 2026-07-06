@@ -26,6 +26,7 @@ interface Store {
   deleteEstilista: (id: string) => Promise<void>
   addVenta: (v: Venta) => Promise<void>
   updateVenta: (id: string, patch: Partial<Venta>) => Promise<void>
+  deleteVenta: (id: string) => Promise<void>
   venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => Promise<void>
   upsertUsuario: (u: Partial<Usuario> & { id: string }) => Promise<void>
   deleteUsuario: (id: string) => void
@@ -400,6 +401,17 @@ export const useStore = create<Store>()(
         set(s => ({ data: { ...s.data, ventas: s.data.ventas.map(v => v.id === id ? { ...v, ...patch } : v) } }))
         try {
           await db.updateVenta(id, patch)
+        } catch (err) {
+          set(s => ({ data: { ...s.data, ventas: previous } }))
+          throw err
+        }
+      },
+
+      deleteVenta: async (id) => {
+        const previous = get().data.ventas
+        set(s => ({ data: { ...s.data, ventas: s.data.ventas.filter(v => v.id !== id) } }))
+        try {
+          await db.deleteVenta(id)
         } catch (err) {
           set(s => ({ data: { ...s.data, ventas: previous } }))
           throw err

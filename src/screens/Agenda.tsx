@@ -754,7 +754,7 @@ function MonthView({ onDayClick }: { onDayClick?: (date: Date) => void }) {
 
 // ─── Pantalla principal ─────────────────────────────────────────────────────
 export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data, upsertCita, upsertCitaFutura, deleteCita, deleteCitaFutura, upsertBloqueo, deleteBloqueo, addVenta } = useStore()
+  const { data, upsertCita, upsertCitaFutura, deleteCita, deleteCitaFutura, upsertBloqueo, deleteBloqueo, addVenta, deleteVenta } = useStore()
   const { agendaStart: S, agendaEnd: E } = data.config
   const [vista, setVista] = useState('Día')
   const [filtro, setFiltro] = useState('todos')
@@ -795,13 +795,24 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
 
   const confirmarVenta = async (venta: Venta) => {
     if (!posCita) return
+    const cita = posCita
+    // Si la cita tenía anticipo, ya existe una venta de apartado; el anticipo se
+    // precarga en el POS (venta.anticipo), así que esta venta ya representa el
+    // total con el anticipo aplicado. Se elimina la de apartado para no duplicar
+    // la venta ni dejar el apartado colgado como pendiente.
+    let apartadoPrevio: Venta | null = null
+    try {
+      apartadoPrevio = await db.getVentaByCitaId(cita.id)
+    } catch { /* no bloquea el cobro */ }
     try {
       await addVenta(venta)
     } catch {
       toast('No se pudo registrar la venta. Verifica tu conexión e intenta de nuevo.')
       throw new Error('addVenta failed')
     }
-    const cita = posCita
+    if (apartadoPrevio) {
+      try { await deleteVenta(apartadoPrevio.id) } catch { /* la venta nueva ya quedó; el apartado se puede limpiar luego */ }
+    }
     setPosCita(null)
     try {
       const esFutura = cita.fecha && cita.fecha !== todayIso

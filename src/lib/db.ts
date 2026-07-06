@@ -353,6 +353,12 @@ export const db = {
     const { data: lineas } = await supabase.from('lineas_venta').select('*').eq('venta_id', vRow.id)
     return mapVenta(vRow, lineas ?? [])
   },
+  async deleteVenta(id: string) {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    // lineas_venta tiene ON DELETE CASCADE, así que se borran solas.
+    const { error } = await supabase.from('ventas').delete().eq('id', id)
+    if (error) { console.error('[db.deleteVenta]', error.message); throw new Error(error.message) }
+  },
 
   // — Productos —
   async getProductos(): Promise<Producto[]> {
