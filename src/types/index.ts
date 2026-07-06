@@ -60,7 +60,7 @@ export interface Clienta {
   cumple: string
   ciclo: number
   notas?: string
-  formulas?: { id: string; fecha: string; srv: string; formula: string }[]
+  formulas?: { id: string; fecha: string; srv: string; formula: string; editadoEl?: string }[]
   fotos?: FotoEntry[]
 }
 
