@@ -221,6 +221,15 @@ const parseFechaCorta = (s: string): number => {
   return new Date(+m[3], mes, +m[1]).getTime()
 }
 
+// "YYYY-MM-DD" a partir de fecha/mes/año locales, sin pasar por UTC (evita
+// que new Date('YYYY-MM-DD') corra un día al formatear).
+const isoDesdeYMD = (fecha: string) => {
+  const [y, m, d] = fecha.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+const fechaCortaDesdeIso = (fecha: string) =>
+  isoDesdeYMD(fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
+
 function FormulaColorTab({ c }: { c: Clienta }) {
   const { upsertClienta } = useStore()
   const formulas = [...(c.formulas || [])].sort((a, b) => parseFechaCorta(b.fecha) - parseFechaCorta(a.fecha))
@@ -229,14 +238,16 @@ function FormulaColorTab({ c }: { c: Clienta }) {
   const [formula, setFormula] = useState('')
   const [fecha, setFecha] = useState(isoHoy())
 
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editSrv, setEditSrv] = useState('')
+  const [editFecha, setEditFecha] = useState(isoHoy())
+  const [editFormula, setEditFormula] = useState('')
+
   const agregar = async () => {
     if (!formula.trim()) return
-    // new Date('YYYY-MM-DD') se interpreta en UTC — se arma con año/mes/día
-    // locales para no correr un día al formatear.
-    const [y, m, d] = fecha.split('-').map(Number)
     const newEntry = {
       id: 'f' + Date.now(),
-      fecha: new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
+      fecha: fechaCortaDesdeIso(fecha),
       srv: srv || 'Color',
       formula: formula.trim(),
     }
@@ -252,6 +263,29 @@ function FormulaColorTab({ c }: { c: Clienta }) {
   const eliminar = (id: string) => {
     upsertClienta({ ...c, formulas: formulas.filter(f => f.id !== id) })
       .catch(() => toast('No se pudo eliminar la fórmula. Intenta de nuevo.'))
+  }
+
+  const comenzarEdicion = (f: typeof formulas[number]) => {
+    const ts = parseFechaCorta(f.fecha)
+    setEditId(f.id)
+    setEditSrv(f.srv)
+    setEditFecha(Number.isFinite(ts) ? new Date(ts).toLocaleDateString('en-CA') : isoHoy())
+    setEditFormula(f.formula)
+  }
+
+  const guardarEdicion = async () => {
+    if (!editId || !editFormula.trim()) return
+    const ahora = new Date().toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const actualizadas = formulas.map(f => f.id === editId
+      ? { ...f, srv: editSrv || 'Color', fecha: fechaCortaDesdeIso(editFecha), formula: editFormula.trim(), editadoEl: ahora }
+      : f)
+    try {
+      await upsertClienta({ ...c, formulas: actualizadas })
+      setEditId(null)
+      toast('Fórmula actualizada')
+    } catch {
+      toast('No se pudo actualizar la fórmula. Intenta de nuevo.')
+    }
   }
 
   return (
@@ -292,16 +326,52 @@ function FormulaColorTab({ c }: { c: Clienta }) {
         </div>
       )}
 
-      {formulas.length > 0 ? formulas.map(f => (
+      {formulas.length > 0 ? formulas.map(f => f.id === editId ? (
+        <div key={f.id} className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field">
+              <label>Servicio</label>
+              <input className="input" value={editSrv} onChange={e => setEditSrv(e.target.value)} placeholder="Ej. Balayage, Color permanente…" />
+            </div>
+            <div className="field">
+              <label>Fecha</label>
+              <input className="input" type="date" value={editFecha} max={isoHoy()} onChange={e => setEditFecha(e.target.value)} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Fórmula y técnica</label>
+            <textarea
+              className="input"
+              rows={4}
+              value={editFormula}
+              onChange={e => setEditFormula(e.target.value)}
+              style={{ resize: 'vertical', lineHeight: 1.6 }}
+            />
+          </div>
+          <div className="vc gap8">
+            <button className="btn gold sm" onClick={guardarEdicion} disabled={!editFormula.trim()}>
+              <Ic n="check" />Guardar cambios
+            </button>
+            <button className="btn ghost sm" onClick={() => setEditId(null)}>Cancelar</button>
+          </div>
+        </div>
+      ) : (
         <div key={f.id} className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div className="between">
             <div>
               <div style={{ fontWeight: 600, fontSize: 13.5 }}>{f.srv}</div>
-              <div className="dim" style={{ fontSize: 11.5, marginTop: 2 }}>{f.fecha}</div>
+              <div className="dim" style={{ fontSize: 11.5, marginTop: 2 }}>
+                {f.fecha}{f.editadoEl && ` · editado el ${f.editadoEl}`}
+              </div>
             </div>
-            <button className="icon-btn" style={{ width: 30, height: 30, color: 'var(--st-canc)' }} onClick={() => eliminar(f.id)}>
-              <Ic n="trash" size={14} />
-            </button>
+            <div className="vc gap8">
+              <button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => comenzarEdicion(f)}>
+                <Ic n="pencil-simple" size={14} />
+              </button>
+              <button className="icon-btn" style={{ width: 30, height: 30, color: 'var(--st-canc)' }} onClick={() => eliminar(f.id)}>
+                <Ic n="trash" size={14} />
+              </button>
+            </div>
           </div>
           <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--text-2)', background: 'var(--surface-2)', padding: '10px 14px', borderRadius: 8, fontFamily: 'monospace' }}>
             {f.formula}
