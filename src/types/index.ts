@@ -65,12 +65,16 @@ export interface Clienta {
 }
 
 // Un servicio dentro de una cita. Una cita puede tener varios (ej. maquillaje +
-// peinado); la duración y el precio de la cita son la suma de todos.
+// peinado). Cada servicio puede ir con distinto empleado (est) y a distinta
+// hora (h) — así una clienta con 2 servicios en paralelo/otra hora no bloquea
+// las horas de un solo empleado. Si est/h faltan, se usan los de la cita.
 export interface CitaServicio {
   servicioId: string
   nombre: string
   precio: number
   dur: number
+  est?: string
+  h?: string
 }
 
 export interface Cita {
