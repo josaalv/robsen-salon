@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Stat, Avatar, toast, Modal } from '../components/ui'
+import { Stat, Avatar, toast, Modal, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
@@ -354,7 +354,7 @@ function CierreCajaModal({ onClose, ventas, pendientes, usuarioNombre, usuarioId
 }
 
 export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data, addVenta } = useStore()
+  const { data, addVenta, deleteVenta } = useStore()
   const { user } = useAuth()
   const ventas = data.ventas
   const [pos, setPos] = useState(false)
@@ -363,6 +363,25 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const [filtroTipo, setFiltroTipo] = useState('Todas')
   const [filtroPeriodo, setFiltroPeriodo] = useState('Todo')
   const [q, setQ] = useState('')
+  const [confirmDel, setConfirmDel] = useState<Venta | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  // Borrar una venta es destructivo (revierte inventario y reportes): solo
+  // administración.
+  const puedeBorrar = !!user && ['admin', 'gerente'].includes(user.rol)
+
+  const eliminarVenta = async () => {
+    if (!confirmDel || deleting) return
+    setDeleting(true)
+    try {
+      await deleteVenta(confirmDel.id)
+      toast('Venta eliminada · inventario repuesto')
+      setConfirmDel(null)
+    } catch {
+      toast('No se pudo eliminar la venta. Intenta de nuevo.')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const totalLinea = (l: { precio: number; cant: number }) => l.precio * l.cant
   const subtotalV = (v: Venta) => v.lineas.reduce((s, l) => s + totalLinea(l), 0)
@@ -556,7 +575,17 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                       ? <span className="badge gold"><span className="d" />Apartado</span>
                       : <span className="badge canc"><span className="d" />Pendiente</span>}
                   </td>
-                  <td><Ic n="caret-right" /></td>
+                  <td>
+                    <div className="vc gap6" style={{ justifyContent: 'flex-end' }}>
+                      {puedeBorrar && (
+                        <button className="icon-btn" title="Eliminar venta" style={{ width: 30, height: 30, color: 'var(--st-canc)' }}
+                          onClick={ev => { ev.stopPropagation(); setConfirmDel(v) }}>
+                          <Ic n="trash" size={14} />
+                        </button>
+                      )}
+                      <Ic n="caret-right" />
+                    </div>
+                  </td>
                 </tr>
               )
             })}
@@ -569,6 +598,14 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
 
       {pos && <POSBuilder onClose={() => setPos(false)} onConfirm={registrarVenta} nextTicket={nextTicket} />}
       {detalle && <VentaDetalle v={detalle} onClose={() => setDetalle(null)} />}
+      {confirmDel && (
+        <ConfirmModal
+          title="¿Eliminar venta?"
+          desc={`Se eliminará el ticket ${confirmDel.ticket} de ${confirmDel.cliente} por ${mxn(totalVenta(confirmDel))}. ${confirmDel.lineas.some(l => l.tipo === 'producto') ? 'El stock de los productos se repondrá automáticamente. ' : ''}Esta acción no se puede deshacer.`}
+          onConfirm={eliminarVenta}
+          onCancel={() => !deleting && setConfirmDel(null)}
+        />
+      )}
       {cierreCaja && (
         <CierreCajaModal
           onClose={() => setCierreCaja(false)}
