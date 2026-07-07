@@ -954,9 +954,13 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   }
 
   const rows = useMemo(() => {
+    // Búsqueda por teléfono tolerante al formato: compara solo dígitos, así
+    // "3312345678" encuentra a quien esté guardada como "33 1234 5678" o "+52…".
+    const qDigits = normalizarTel(q)
     let r = data.clientas.filter(c =>
       (filtro === 'Todas' || c.estado === filtro) &&
-      (c.nombre.toLowerCase().includes(q.toLowerCase()) || c.tel.includes(q))
+      (c.nombre.toLowerCase().includes(q.toLowerCase()) ||
+        (qDigits.length > 0 && normalizarTel(c.tel).includes(qDigits)))
     )
     const { k, dir } = sort
     r = [...r].sort((a, b) => {
