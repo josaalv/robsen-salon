@@ -101,9 +101,13 @@ function AppShell() {
   const searchResults = useMemo(() => {
     if (!searchQ.trim() || searchQ.length < 2) return []
     const q = searchQ.toLowerCase()
+    const qDigits = searchQ.replace(/\D/g, '')  // para buscar por teléfono sin importar el formato
     const out: { tipo: string; label: string; sub: string; ruta: string; icon: string }[] = []
 
-    data.clientas.filter(c => c.nombre.toLowerCase().includes(q)).slice(0, 3)
+    data.clientas.filter(c =>
+      c.nombre.toLowerCase().includes(q) ||
+      (qDigits.length > 0 && (c.tel || '').replace(/\D/g, '').includes(qDigits))
+    ).slice(0, 3)
       .forEach(c => out.push({ tipo: 'Clienta', label: c.nombre, sub: c.tel || 'CRM', ruta: 'crm', icon: 'user' }))
 
     data.hoy.filter(a => a.cl.toLowerCase().includes(q) || a.srv.toLowerCase().includes(q)).slice(0, 3)
