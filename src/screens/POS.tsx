@@ -35,17 +35,22 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
       // precarga una línea por servicio para que la venta quede desglosada.
       const servicios = citaOrigen.servicios && citaOrigen.servicios.length
         ? citaOrigen.servicios
-        : [{ servicioId: citaOrigen.servicioId || ('cita-' + citaOrigen.id), nombre: citaOrigen.srv, precio: citaOrigen.total, dur: citaOrigen.dur }]
-      return servicios.map((s, i) => ({
-        key: (s.servicioId || 'cita') + '-' + i,
-        tipo: 'servicio' as const,
-        nombre: s.nombre,
-        precio: s.precio,
-        sub: `${s.dur} min`,
-        com: comisionServicioEstilista(s.servicioId, citaOrigen.est, data.estilistas),
-        cant: 1,
-        est: citaOrigen.est,
-      }))
+        : [{ servicioId: citaOrigen.servicioId || ('cita-' + citaOrigen.id), nombre: citaOrigen.srv, precio: citaOrigen.total, dur: citaOrigen.dur, est: citaOrigen.est }]
+      return servicios.map((s, i) => {
+        // Cada servicio puede haber sido con distinto empleado — se respeta para
+        // la comisión y el desglose de la venta.
+        const est = s.est || citaOrigen.est
+        return {
+          key: (s.servicioId || 'cita') + '-' + i,
+          tipo: 'servicio' as const,
+          nombre: s.nombre,
+          precio: s.precio,
+          sub: `${s.dur} min`,
+          com: comisionServicioEstilista(s.servicioId, est, data.estilistas),
+          cant: 1,
+          est,
+        }
+      })
     }
     try { return JSON.parse(localStorage.getItem(DRAFT_KEY + '_cart') || '[]') } catch { return [] }
   })

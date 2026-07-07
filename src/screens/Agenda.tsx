@@ -42,6 +42,35 @@ function dateToIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Un bloque agendable: un tramo de tiempo de un empleado. Una cita con varios
+// servicios en distintos empleados/horas se "explota" en un bloque por servicio.
+export interface CitaBloque {
+  cita: Cita
+  key: string
+  est: string
+  h: string
+  dur: number
+  label: string   // nombre del servicio (o resumen de la cita)
+  idx: number     // índice del servicio dentro de la cita (para keys)
+}
+
+// ¿La cita tiene programación por servicio (algún servicio con su propio est/h)?
+function tienePorServicio(a: Cita): boolean {
+  return !!a.servicios && a.servicios.length > 0 && a.servicios.some(s => s.est || s.h)
+}
+
+// Explota una cita en sus bloques. Si no hay programación por servicio, es un
+// único bloque con el est/h/dur de la cita (comportamiento de siempre).
+function citaBloques(a: Cita): CitaBloque[] {
+  if (tienePorServicio(a)) {
+    return a.servicios!.map((s, i) => ({
+      cita: a, key: a.id + '-' + i, est: s.est || a.est, h: s.h || a.h,
+      dur: s.dur, label: s.nombre, idx: i,
+    }))
+  }
+  return [{ cita: a, key: a.id, est: a.est, h: a.h, dur: a.dur, label: a.srv, idx: 0 }]
+}
+
 // ─── Modal nueva/editar cita ────────────────────────────────────────────────
 function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   cita: Partial<Cita>
@@ -76,88 +105,112 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const initDate = cita.fecha && fechasList.some(f => f.iso === cita.fecha) ? cita.fecha : todayIso
   const [selectedDate, setSelectedDate] = useState(initDate)
   const [cl, setCl] = useState(cita.cl || '')
-  // Lista de servicios de la cita. Una cita puede tener varios (ej. maquillaje +
-  // peinado): la duración y el precio se suman.
-  const [srvIds, setSrvIds] = useState<string[]>(() => {
-    if (cita.servicios && cita.servicios.length) return cita.servicios.map(s => s.servicioId)
+
+  const defEst = cita.est || data.estilistas[0].id
+  const defH = snapSlot(cita.h || '10:00', S, E, slotMin)
+
+  // Cada servicio de la cita lleva su propio empleado (est) y hora (h): así una
+  // clienta con 2 servicios a distintas horas con distintos empleados no bloquea
+  // las horas de un solo empleado.
+  const [lineas, setLineas] = useState<{ servicioId: string; est: string; h: string }[]>(() => {
+    if (cita.servicios && cita.servicios.length) {
+      return cita.servicios.map(s => ({ servicioId: s.servicioId, est: s.est || defEst, h: s.h || cita.h || defH }))
+    }
     const s = data.servicios.find(s => s.nombre === cita.srv)
-    return [s ? s.id : data.servicios[0].id]
+    return [{ servicioId: s ? s.id : data.servicios[0].id, est: defEst, h: defH }]
   })
   const [addSrv, setAddSrv] = useState('')
-  const [est, setEst] = useState(cita.est || data.estilistas[0].id)
   const [estado, setEstado] = useState<EstadoCita>(cita.estado || 'pend')
   const [ant, setAnt] = useState(cita.ant || 0)
   const [saving, setSaving] = useState(false)
 
-  const serviciosSel = srvIds
-    .map(id => data.servicios.find(s => s.id === id))
-    .filter((s): s is NonNullable<typeof s> => Boolean(s))
-  const durTotal = serviciosSel.reduce((sum, s) => sum + s.dur, 0)
-  const precioTotal = serviciosSel.reduce((sum, s) => sum + s.precio, 0)
-  const srvKey = srvIds.join(',')
   const isToday = selectedDate === todayIso
-
-  const quitarServicio = (id: string) =>
-    setSrvIds(ids => ids.length > 1 ? ids.filter(x => x !== id) : ids)
-  const agregarServicio = (id: string) => {
-    if (id) setSrvIds(ids => [...ids, id])
-    setAddSrv('')
-  }
-
-  const dayIdx = (() => {
-    const d = new Date(selectedDate + 'T12:00:00')
-    return (d.getDay() + 6) % 7
-  })()
+  const dayIdx = (() => { const d = new Date(selectedDate + 'T12:00:00'); return (d.getDay() + 6) % 7 })()
   const estilistasDia = data.estilistas.filter(es => !es.horarios || es.horarios[dayIdx])
 
-  const citasDelDia = isToday
-    ? data.hoy.filter(a => a.est === est && a.id !== cita.id)
-    : (data.citasFuturas || []).filter(a => a.fecha === selectedDate && a.est === est && a.id !== cita.id)
+  const srvDe = (id: string) => data.servicios.find(s => s.id === id)
+  const lineasInfo = lineas.map((l, idx) => ({ ...l, idx, srv: srvDe(l.servicioId) }))
+    .filter((l): l is typeof l & { srv: NonNullable<typeof l.srv> } => Boolean(l.srv))
+  const precioTotal = lineasInfo.reduce((sum, l) => sum + l.srv.precio, 0)
+  const durTotal = lineasInfo.reduce((sum, l) => sum + l.srv.dur, 0)
 
-  const availableSlots = SLOTS.filter(slot => {
-    const sS = toMin(slot), sE = sS + durTotal
+  // Bloques ocupados ese día por las demás citas (explotados por servicio).
+  const bloquesOcupados = (isToday
+    ? data.hoy
+    : (data.citasFuturas || []).filter(a => a.fecha === selectedDate)
+  ).filter(a => a.id !== cita.id && a.estado !== 'canc').flatMap(citaBloques)
+
+  // Horarios libres para un servicio (est+dur), evitando otras citas y bloqueos
+  // de ese empleado, y las otras líneas de esta misma cita en el mismo empleado.
+  const slotsLibres = (estId: string, dur: number, ignoreIdx: number) => SLOTS.filter(slot => {
+    const sS = toMin(slot), sE = sS + dur
     if (sE > E * 60) return false
-    if (citasDelDia.some(a => { const aS = toMin(a.h); return sS < aS + a.dur && sE > aS })) return false
-    if (bloqueos.filter(b => b.est === est && (!b.fecha || b.fecha === selectedDate)).some(b => {
-      const bS = toMin(b.h), bE = toMin(b.fin)
-      return sS < bE && sE > bS
+    if (bloquesOcupados.some(b => b.est === estId && sS < toMin(b.h) + b.dur && sE > toMin(b.h))) return false
+    if (bloqueos.filter(b => b.est === estId && (!b.fecha || b.fecha === selectedDate))
+      .some(b => sS < toMin(b.fin) && sE > toMin(b.h))) return false
+    if (lineas.some((l, i) => {
+      if (i === ignoreIdx || l.est !== estId) return false
+      const s2 = srvDe(l.servicioId); if (!s2) return false
+      const lS = toMin(l.h); return sS < lS + s2.dur && sE > lS
     })) return false
     return true
   })
 
-  const [h, setH] = useState(() => {
-    const snapped = snapSlot(cita.h || '10:00', S, E, slotMin)
-    return availableSlots.includes(snapped) ? snapped : (availableSlots[0] || snapped)
-  })
-
-  useEffect(() => {
-    if (availableSlots.length > 0 && !availableSlots.includes(h)) {
-      setH(availableSlots[0])
+  const setLinea = (idx: number, patch: Partial<{ est: string; h: string }>) =>
+    setLineas(ls => ls.map((l, i) => i === idx ? { ...l, ...patch } : l))
+  const cambiarEst = (idx: number, newEst: string, dur: number) => {
+    const slots = slotsLibres(newEst, dur, idx)
+    setLinea(idx, { est: newEst, h: slots.includes(lineas[idx].h) ? lineas[idx].h : (slots[0] || lineas[idx].h) })
+  }
+  const quitarLinea = (idx: number) =>
+    setLineas(ls => ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls)
+  const agregarServicio = (id: string) => {
+    if (id) {
+      const s = srvDe(id)
+      const est0 = estilistasDia[0]?.id || defEst
+      const slots = slotsLibres(est0, s?.dur || 60, -1)
+      setLineas(ls => [...ls, { servicioId: id, est: est0, h: slots[0] || defH }])
     }
-  }, [est, srvKey, selectedDate])
+    setAddSrv('')
+  }
 
+  // Al cambiar de fecha, reacomoda empleado/hora de cada línea si dejaron de ser válidos.
   useEffect(() => {
-    if (estilistasDia.length > 0 && !estilistasDia.find(es => es.id === est)) {
-      setEst(estilistasDia[0].id)
-    }
+    setLineas(ls => {
+      let changed = false
+      const next = ls.map((l, i) => {
+        const s = srvDe(l.servicioId); if (!s) return l
+        let est = l.est
+        if (estilistasDia.length && !estilistasDia.find(e => e.id === est)) { est = estilistasDia[0].id; changed = true }
+        const slots = slotsLibres(est, s.dur, i)
+        let h = l.h
+        if (slots.length && !slots.includes(h)) { h = slots[0]; changed = true }
+        return changed ? { ...l, est, h } : l
+      })
+      return changed ? next : ls
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate])
 
-  const displayH = availableSlots.includes(h) ? h : (availableSlots[0] || h)
+  // Cada línea debe tener un horario válido para poder guardar.
+  const lineasValidas = lineasInfo.length > 0 && lineasInfo.every(l => slotsLibres(l.est, l.srv.dur, l.idx).includes(l.h))
   const saldoPreview = Math.max(0, precioTotal - (+ant || 0))
 
   const guardar = async () => {
-    if (!cl.trim() || !serviciosSel.length || availableSlots.length === 0 || saving) return
+    if (!cl.trim() || !lineasValidas || saving) return
     const id = cita.id || ('a' + Date.now())
     const antFinal = Math.min(precioTotal, Math.max(0, +ant || 0))
-    const serviciosCita: CitaServicio[] = serviciosSel.map(s => ({
-      servicioId: s.id, nombre: s.nombre, precio: s.precio, dur: s.dur,
+    const serviciosCita: CitaServicio[] = lineasInfo.map(l => ({
+      servicioId: l.srv.id, nombre: l.srv.nombre, precio: l.srv.precio, dur: l.srv.dur, est: l.est, h: l.h,
     }))
+    // El bloque primario (para el resumen agregado) es el de hora más temprana.
+    const primary = [...lineasInfo].sort((a, b) => toMin(a.h) - toMin(b.h))[0]
     const newCita: Cita = {
       id, cl: cl.trim(),
-      srv: serviciosSel.map(s => s.nombre).join(' + '),
-      servicioId: serviciosSel[0].id,
+      srv: lineasInfo.map(l => l.srv.nombre).join(' + '),
+      servicioId: lineasInfo[0].srv.id,
       servicios: serviciosCita,
-      est, h: displayH, dur: durTotal,
+      est: primary.est, h: primary.h, dur: durTotal,
       estado, total: precioTotal, ant: antFinal,
       ...(isToday ? {} : { fecha: selectedDate }),
     }
@@ -166,7 +219,8 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
       if (isToday) await upsertCita(newCita)
       else await upsertCitaFutura(newCita)
 
-      // Sincronizar venta de apartado cuando hay anticipo: una línea por servicio
+      // Sincronizar venta de apartado cuando hay anticipo: una línea por servicio,
+      // cada una con su propio empleado (para la comisión correcta).
       if (antFinal > 0) {
         const existing = await db.getVentaByCitaId(id)
         const hoy = new Date().toISOString().slice(0, 10)
@@ -179,9 +233,9 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             cliente: cl.trim(), clienteId: '', pago: 'efectivo',
             estado: antFinal >= precioTotal ? 'pagada' : 'apartado',
             desc: 0, anticipo: antFinal, citaId: id,
-            lineas: serviciosSel.map(s => ({
-              tipo: 'servicio' as const, nombre: s.nombre, est, cant: 1, precio: s.precio,
-              com: comisionServicioEstilista(s.id, est, data.estilistas),
+            lineas: lineasInfo.map(l => ({
+              tipo: 'servicio' as const, nombre: l.srv.nombre, est: l.est, cant: 1, precio: l.srv.precio,
+              com: comisionServicioEstilista(l.srv.id, l.est, data.estilistas),
             })),
           }
           await db.addVenta(ventaApartado)
@@ -219,21 +273,48 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             </datalist>
           </div>
           <div className="field">
-            <label>Servicios <span className="muted" style={{ fontWeight: 400 }}>(puedes agregar varios, ej. maquillaje + peinado)</span></label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {serviciosSel.map((s, i) => (
-                <div key={s.id + '-' + i} className="between" style={{ padding: '9px 12px', border: '1px solid var(--line-soft)', borderRadius: 10, background: 'var(--surface)', gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{s.nombre}{s.activo === false ? ' (inactivo)' : ''}</div>
-                    <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>{mxn(s.precio)} · {s.dur} min</div>
+            <label>Fecha</label>
+            <select className="select" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}>
+              {fechasList.map(f => <option key={f.iso} value={f.iso}>{f.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Servicios <span className="muted" style={{ fontWeight: 400 }}>(cada uno con su empleado y hora)</span></label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {lineasInfo.map(l => {
+                const slots = slotsLibres(l.est, l.srv.dur, l.idx)
+                const horaOk = slots.includes(l.h)
+                const fin = toMin(l.h) + l.srv.dur
+                return (
+                  <div key={l.idx} style={{ padding: '10px 12px', border: `1px solid ${horaOk ? 'var(--line-soft)' : 'var(--st-canc)'}`, borderRadius: 10, background: 'var(--surface)' }}>
+                    <div className="between" style={{ gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{l.srv.nombre}{l.srv.activo === false ? ' (inactivo)' : ''}</div>
+                        <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
+                          {mxn(l.srv.precio)} · {l.srv.dur} min{horaOk ? ` · termina ${String(Math.floor(fin / 60)).padStart(2, '0')}:${String(fin % 60).padStart(2, '0')}` : ''}
+                        </div>
+                      </div>
+                      {lineasInfo.length > 1 && (
+                        <button className="icon-btn" style={{ width: 28, height: 28, color: 'var(--st-canc)', flexShrink: 0 }} onClick={() => quitarLinea(l.idx)} title="Quitar servicio">
+                          <Ic n="x" size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                      <select className="select" value={l.est} onChange={e => cambiarEst(l.idx, e.target.value, l.srv.dur)} style={{ fontSize: 12, padding: '7px 26px 7px 10px' }}>
+                        {estilistasDia.map(es => <option key={es.id} value={es.id}>{es.nombre}</option>)}
+                      </select>
+                      {slots.length > 0 ? (
+                        <select className="select" value={horaOk ? l.h : slots[0]} onChange={e => setLinea(l.idx, { h: e.target.value })} style={{ fontSize: 12, padding: '7px 26px 7px 10px' }}>
+                          {slots.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        <div style={{ padding: '7px 10px', border: '1px solid var(--st-canc)', borderRadius: 8, fontSize: 11.5, color: 'var(--st-canc)' }}>Sin horario libre</div>
+                      )}
+                    </div>
                   </div>
-                  {serviciosSel.length > 1 && (
-                    <button className="icon-btn" style={{ width: 28, height: 28, color: 'var(--st-canc)', flexShrink: 0 }} onClick={() => quitarServicio(s.id)} title="Quitar servicio">
-                      <Ic n="x" size={13} />
-                    </button>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
             <select className="select" value={addSrv} onChange={e => agregarServicio(e.target.value)} style={{ marginTop: 8 }}>
               <option value="">+ Agregar otro servicio…</option>
@@ -241,32 +322,6 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
                 <option key={s.id} value={s.id}>{s.nombre} — {mxn(s.precio)} · {s.dur} min</option>
               ))}
             </select>
-          </div>
-          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div className="field">
-              <label>Estilista</label>
-              <select className="select" value={est} onChange={e => setEst(e.target.value)}>
-                {estilistasDia.map(es => <option key={es.id} value={es.id}>{es.nombre}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label>Fecha</label>
-              <select className="select" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}>
-                {fechasList.map(f => <option key={f.iso} value={f.iso}>{f.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="field">
-            <label>Hora de inicio</label>
-            {availableSlots.length > 0 ? (
-              <select className="select" value={displayH} onChange={e => setH(e.target.value)}>
-                {availableSlots.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            ) : (
-              <div style={{ padding: '10px 14px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13, color: 'var(--st-canc)', background: 'var(--surface)' }}>
-                Sin horarios disponibles ese día
-              </div>
-            )}
           </div>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className="field">
@@ -285,22 +340,13 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
           </div>
           <div className="card" style={{ background: 'var(--surface)', padding: 14 }}>
             <div className="between">
-              <span className="muted">Total{serviciosSel.length > 1 ? ` (${serviciosSel.length} servicios)` : ''}</span>
+              <span className="muted">Total{lineasInfo.length > 1 ? ` (${lineasInfo.length} servicios)` : ''}</span>
               <span className="num gold-text" style={{ fontFamily: 'var(--serif)', fontSize: 18, fontWeight: 600 }}>{mxn(precioTotal)}</span>
             </div>
             <div className="between mt10" style={{ fontSize: 12.5 }}>
               <span className="muted">Duración total</span>
               <span className="num">{durTotal} min</span>
             </div>
-            {availableSlots.length > 0 && (
-              <div className="between mt10" style={{ fontSize: 12.5 }}>
-                <span className="muted">Termina aprox.</span>
-                <span className="num">{(() => {
-                  const end = toMin(displayH) + durTotal
-                  return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
-                })()}</span>
-              </div>
-            )}
             <div className="between mt10" style={{ fontSize: 12.5 }}>
               <span className="muted">Saldo por cobrar</span>
               <span className="num" style={{ fontWeight: 600 }}>{mxn(saldoPreview)}</span>
@@ -311,7 +357,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
         <div className="card-pad vc gap12" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
           {(() => {
-            const puede = !!cl.trim() && serviciosSel.length > 0 && availableSlots.length > 0 && !saving
+            const puede = !!cl.trim() && lineasValidas && !saving
             return (
               <button
                 className="btn gold"
@@ -487,17 +533,42 @@ function ApptDetail({ a, onClose, onEdit, onDelete, onCobrar }: {
       </div>
       <div className="card-pad" style={{ paddingTop: 14 }}>
         <div style={{ marginBottom: 14 }}><EstadoBadge k={a.estado} /></div>
-        {([['scissors', a.servicios && a.servicios.length > 1 ? 'Servicios' : 'Servicio', a.srv], ['clock', 'Horario', `${a.h} · ${a.dur} min`], ['user', 'Estilista', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
-          <div key={l} className="list-item" style={{ padding: '11px 0' }}>
-            <div className="ico" style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.08)', border: '1px solid var(--line)', color: 'var(--gold)' }}>
-              <Ic n={ic} />
+        {tienePorServicio(a) ? (
+          // Programación por servicio: cada uno con su empleado y hora.
+          <div className="list-item" style={{ padding: '11px 0', alignItems: 'flex-start' }}>
+            <div className="ico" style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.08)', border: '1px solid var(--line)', color: 'var(--gold)', flexShrink: 0 }}>
+              <Ic n="scissors" />
             </div>
-            <div className="f1">
-              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{l}</div>
-              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{v}</div>
+            <div className="f1" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Servicios</div>
+              {a.servicios!.map((s, i) => {
+                const es = data.estilistas.find(x => x.id === (s.est || a.est))
+                const hh = s.h || a.h
+                const fin = toMin(hh) + s.dur
+                return (
+                  <div key={s.servicioId + '-' + i}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{s.nombre}</div>
+                    <div className="dim" style={{ fontSize: 11.5, marginTop: 1 }}>
+                      {hh}–{String(Math.floor(fin / 60)).padStart(2, '0')}:{String(fin % 60).padStart(2, '0')} · {es?.nombre || '—'}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
-        ))}
+        ) : (
+          ([['scissors', 'Servicio', a.srv], ['clock', 'Horario', `${a.h} · ${a.dur} min`], ['user', 'Estilista', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
+            <div key={l} className="list-item" style={{ padding: '11px 0' }}>
+              <div className="ico" style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.08)', border: '1px solid var(--line)', color: 'var(--gold)' }}>
+                <Ic n={ic} />
+              </div>
+              <div className="f1">
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{l}</div>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{v}</div>
+              </div>
+            </div>
+          ))
+        )}
         {a.fecha && (
           <div className="list-item" style={{ padding: '11px 0' }}>
             <div className="ico" style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.08)', border: '1px solid var(--line)', color: 'var(--gold)' }}>
@@ -788,6 +859,9 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   })()
   const citasDelDia = [...data.hoy, ...(data.citasFuturas || [])]
     .filter(a => (a.fecha || todayIso) === dayIso)
+  // Cada servicio (con su empleado y hora) es un bloque independiente en la
+  // columna del empleado que lo realiza.
+  const bloquesDelDia = citasDelDia.flatMap(citaBloques)
   const bloqueosDelDia = bloqueos.filter(b => !b.fecha || b.fecha === dayIso)
 
   const estilistas = data.estilistas
@@ -952,21 +1026,21 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                     </div>
                   ))}
 
-                  {/* Citas */}
-                  {citasDelDia.filter(a => a.est === e.id).map(a => (
+                  {/* Citas (un bloque por servicio, en la columna de su empleado) */}
+                  {bloquesDelDia.filter(b => b.est === e.id).map(b => (
                     <div
-                      key={a.id}
-                      className={`appt ${a.estado}`}
-                      onClick={() => setSel(a)}
+                      key={b.key}
+                      className={`appt ${b.cita.estado}`}
+                      onClick={() => setSel(b.cita)}
                       style={{
                         position: 'absolute', left: 4, right: 4, zIndex: 2,
-                        top: top(a.h, S) + 2,
-                        height: (a.dur / 60) * PXH - 6,
-                        boxShadow: sel?.id === a.id ? '0 0 0 1.5px var(--gold)' : 'none'
+                        top: top(b.h, S) + 2,
+                        height: (b.dur / 60) * PXH - 6,
+                        boxShadow: sel?.id === b.cita.id ? '0 0 0 1.5px var(--gold)' : 'none'
                       }}
                     >
-                      <div className="t">{a.h} · {a.cl.split(' ')[0]} {a.cl.split(' ')[1] || ''}</div>
-                      <div className="s">{a.srv}</div>
+                      <div className="t">{b.h} · {b.cita.cl.split(' ')[0]} {b.cita.cl.split(' ')[1] || ''}</div>
+                      <div className="s">{b.label}</div>
                     </div>
                   ))}
                 </div>
