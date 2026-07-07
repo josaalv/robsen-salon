@@ -355,8 +355,10 @@ export const db = {
   },
   async deleteVenta(id: string) {
     if (!supabase) throw new Error('Sin conexión a Supabase')
-    // lineas_venta tiene ON DELETE CASCADE, así que se borran solas.
-    const { error } = await supabase.from('ventas').delete().eq('id', id)
+    // Borrado transaccional que repone el stock de los productos y registra el
+    // movimiento inverso (ver eliminar_venta en 031_eliminar_venta.sql).
+    // lineas_venta cae por ON DELETE CASCADE dentro de la función.
+    const { error } = await supabase.rpc('eliminar_venta', { p_venta_id: id })
     if (error) { console.error('[db.deleteVenta]', error.message); throw new Error(error.message) }
   },
 

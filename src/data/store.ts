@@ -408,12 +408,50 @@ export const useStore = create<Store>()(
       },
 
       deleteVenta: async (id) => {
-        const previous = get().data.ventas
-        set(s => ({ data: { ...s.data, ventas: s.data.ventas.filter(v => v.id !== id) } }))
+        // Borrar una venta es el inverso de crearla: repone el stock/vendidos de
+        // los productos y revierte las estadísticas de la clienta. El stock y el
+        // movimiento inverso también se hacen en la BD (RPC eliminar_venta); las
+        // estadísticas de clienta van por separado, igual que en addVenta.
+        const venta = get().data.ventas.find(v => v.id === id)
+        const previous = {
+          ventas: get().data.ventas,
+          productos: get().data.productos,
+          clientas: get().data.clientas,
+        }
+        let syncClienta: Clienta | null = null
+
+        set(s => {
+          let productos = [...s.data.productos]
+          venta?.lineas.forEach(l => {
+            if (l.tipo !== 'producto') return
+            const idx = l.productoId
+              ? productos.findIndex(p => p.id === l.productoId)
+              : productos.findIndex(p => p.nombre === l.nombre)
+            if (idx >= 0) productos = productos.map((p, i) => i === idx
+              ? { ...p, stock: p.stock + l.cant, vendidos: Math.max(0, p.vendidos - l.cant) } : p)
+          })
+
+          let clientas = [...s.data.clientas]
+          if (venta?.clienteId) {
+            const idx = clientas.findIndex(c => c.id === venta.clienteId)
+            if (idx >= 0) {
+              const cl = clientas[idx]
+              const totalVenta = venta.lineas.reduce((sum, l) => sum + l.precio * l.cant, 0) - (venta.desc || 0)
+              const newVisitas = Math.max(0, cl.visitas - 1)
+              const newGasto = Math.max(0, cl.gasto - totalVenta)
+              syncClienta = { ...cl, visitas: newVisitas, gasto: newGasto, ticket: newVisitas ? Math.round(newGasto / newVisitas) : 0 }
+              clientas = clientas.map((c, i) => i === idx ? syncClienta! : c)
+            }
+          }
+
+          return { data: { ...s.data, ventas: s.data.ventas.filter(v => v.id !== id), productos, clientas } }
+        })
+
         try {
           await db.deleteVenta(id)
+          if (syncClienta) await db.upsertClienta(syncClienta)
         } catch (err) {
-          set(s => ({ data: { ...s.data, ventas: previous } }))
+          set(s => ({ data: { ...s.data, ...previous } }))
           throw err
         }
       },
