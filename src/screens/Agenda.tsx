@@ -765,10 +765,30 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const [posCita, setPosCita] = useState<Cita | null>(null)
   const bloqueos = data.bloqueos || []
   const [weekOffset, setWeekOffset] = useState(0)
+  const [dayIso, setDayIso] = useState(() => dateToIso(new Date()))
 
   const hoy = new Date()
   const todayIso = dateToIso(hoy)
   const fechaStr = `${DIAS_FULL[hoy.getDay()]} ${hoy.getDate()} de ${MESES_ES[hoy.getMonth()]}, ${hoy.getFullYear()}`
+
+  // Día seleccionado en la vista "Día": desplaza por días o salta con el
+  // selector de fecha. Las citas sin fecha se consideran de hoy.
+  const shiftDay = (iso: string, delta: number) => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return dateToIso(new Date(y, m - 1, d + delta))
+  }
+  const tomorrowIso = shiftDay(todayIso, 1)
+  const dayLabel = (() => {
+    const [y, m, d] = dayIso.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    const base = `${DIAS_FULL[dt.getDay()]} ${dt.getDate()} ${MESES_CORTOS[dt.getMonth()]} ${dt.getFullYear()}`
+    if (dayIso === todayIso) return `Hoy · ${base}`
+    if (dayIso === tomorrowIso) return `Mañana · ${base}`
+    return base
+  })()
+  const citasDelDia = [...data.hoy, ...(data.citasFuturas || [])]
+    .filter(a => (a.fecha || todayIso) === dayIso)
+  const bloqueosDelDia = bloqueos.filter(b => !b.fecha || b.fecha === dayIso)
 
   const estilistas = data.estilistas
   const visibles = filtro === 'todos' ? estilistas : estilistas.filter(e => e.id === filtro)
@@ -840,7 +860,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
           <button className="btn ghost" onClick={() => setShowBloqueo(true)}>
             <Ic n="lock-simple" />Bloquear horario
           </button>
-          <button className="btn gold" onClick={() => setEditCita({})}><Ic n="plus" />Nueva cita</button>
+          <button className="btn gold" onClick={() => setEditCita(vista === 'Día' && dayIso !== todayIso ? { fecha: dayIso } : {})}><Ic n="plus" />Nueva cita</button>
         </div>
       </div>
 
@@ -872,6 +892,20 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
         {/* Vista día */}
         {vista === 'Día' && (
           <div className="card" style={{ overflow: 'hidden' }}>
+          <div className="between" style={{ padding: '14px 16px', borderBottom: '1px solid var(--line-soft)', flexWrap: 'wrap', gap: 10 }}>
+            <button className="btn ghost" onClick={() => setDayIso(d => shiftDay(d, -1))}><Ic n="caret-left" />Anterior</button>
+            <div className="vc gap10" style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
+                {dayLabel} · {citasDelDia.length} cita{citasDelDia.length !== 1 ? 's' : ''}
+              </span>
+              <input className="input" type="date" value={dayIso} onChange={e => e.target.value && setDayIso(e.target.value)}
+                style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }} />
+              {dayIso !== todayIso && (
+                <button className="btn ghost sm" onClick={() => setDayIso(todayIso)}>Hoy</button>
+              )}
+            </div>
+            <button className="btn ghost" onClick={() => setDayIso(d => shiftDay(d, 1))}>Siguiente<Ic n="caret-right" /></button>
+          </div>
           <div className="agenda-scroll-x">
             <div style={{ minWidth: 64 + visibles.length * 130, display: 'grid', gridTemplateColumns: `64px repeat(${visibles.length},1fr)`, borderBottom: '1px solid var(--line-soft)' }}>
               <div />
@@ -898,7 +932,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                   {horas.map(h => <div key={h} style={{ height: PXH, borderBottom: '1px solid var(--line-soft)' }} />)}
 
                   {/* Bloqueos del día */}
-                  {bloqueos.filter(b => b.est === e.id && (!b.fecha || b.fecha === todayIso)).map(b => (
+                  {bloqueosDelDia.filter(b => b.est === e.id).map(b => (
                     <div
                       key={b.id}
                       title={`${b.nota} · ${b.h}–${b.fin} (clic para quitar)`}
@@ -919,7 +953,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
                   ))}
 
                   {/* Citas */}
-                  {data.hoy.filter(a => a.est === e.id).map(a => (
+                  {citasDelDia.filter(a => a.est === e.id).map(a => (
                     <div
                       key={a.id}
                       className={`appt ${a.estado}`}
