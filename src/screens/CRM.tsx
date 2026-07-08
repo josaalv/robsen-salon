@@ -992,13 +992,19 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
     />
   )
 
-  if (perfil) return (
+  // `perfil` es la clienta seleccionada al hacer clic (una copia). Se re-resuelve
+  // siempre desde el store para que refleje los cambios recientes (ej. fórmulas
+  // recién agregadas) — si no, se trabaja sobre una copia vieja y el historial
+  // se sobrescribe en lugar de acumularse.
+  const perfilLive = perfil ? (data.clientas.find(x => x.id === perfil.id) || perfil) : null
+
+  if (perfilLive) return (
     <>
       <ClientaPerfil
-        c={perfil}
+        c={perfilLive}
         onBack={() => setPerfil(null)}
-        onEdit={() => setEditCl(perfil)}
-        onDelete={() => setConfirmDelete(perfil)}
+        onEdit={() => setEditCl(perfilLive)}
+        onDelete={() => setConfirmDelete(perfilLive)}
         onNavigate={onNavigate}
         editCl={editCl}
         setEditCl={setEditCl}
