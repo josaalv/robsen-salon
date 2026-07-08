@@ -1,0 +1,703 @@
+<title>Anteproyecto residencial · Terreno Robsen</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:      #F1EEE7;
+    --surface: #FBFAF6;
+    --surface-2:#F5F2EA;
+    --ink:     #171C22;
+    --muted:   #67707A;
+    --faint:   #9AA0A6;
+    --line:    #CBC6BA;
+    --line-2:  #E1DDD2;
+    --accent:  #0E9FB6;   /* agua de alberca */
+    --terra:   #BB6440;   /* tabique / casa */
+    --indigo:  #6367A8;   /* referencia casa morada */
+    --z-pool:   #0E9FB6;
+    --z-terraza:#B9A47B;
+    --z-casa:   #BB6440;
+    --z-depa:   #6367A8;
+    --z-park:   #7C8590;
+    --z-serv:   #566470;
+    --shadow: 0 1px 2px rgba(23,28,34,.05), 0 8px 30px rgba(23,28,34,.06);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:      #0F1319;
+      --surface: #161B22;
+      --surface-2:#1B212A;
+      --ink:     #ECEFF1;
+      --muted:   #9AA3AC;
+      --faint:   #6B747D;
+      --line:    #2A323C;
+      --line-2:  #222A33;
+      --accent:  #2AB9CF;
+      --terra:   #D07E56;
+      --indigo:  #8A8ED6;
+      --z-pool:   #2AB9CF;
+      --z-terraza:#CBB68B;
+      --z-casa:   #D07E56;
+      --z-depa:   #8A8ED6;
+      --z-park:   #8B95A0;
+      --z-serv:   #A7B2BD;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg:#F1EEE7; --surface:#FBFAF6; --surface-2:#F5F2EA; --ink:#171C22;
+    --muted:#67707A; --faint:#9AA0A6; --line:#CBC6BA; --line-2:#E1DDD2;
+    --accent:#0E9FB6; --terra:#BB6440; --indigo:#6367A8;
+    --z-pool:#0E9FB6; --z-terraza:#B9A47B; --z-casa:#BB6440; --z-depa:#6367A8;
+    --z-park:#7C8590; --z-serv:#566470;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#0F1319; --surface:#161B22; --surface-2:#1B212A; --ink:#ECEFF1;
+    --muted:#9AA3AC; --faint:#6B747D; --line:#2A323C; --line-2:#222A33;
+    --accent:#2AB9CF; --terra:#D07E56; --indigo:#8A8ED6;
+    --z-pool:#2AB9CF; --z-terraza:#CBB68B; --z-casa:#D07E56; --z-depa:#8A8ED6;
+    --z-park:#8B95A0; --z-serv:#A7B2BD;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- typography ---------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .28em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+  h1 {
+    font-weight: 300;
+    letter-spacing: -.01em;
+    line-height: 1.05;
+    text-wrap: balance;
+    margin: 14px 0 0;
+    font-size: clamp(34px, 6vw, 62px);
+  }
+  h1 b { font-weight: 600; }
+  h2 {
+    font-weight: 400;
+    font-size: clamp(22px, 3vw, 30px);
+    letter-spacing: -.01em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h3 { font-weight: 600; font-size: 17px; margin: 0; letter-spacing: -.01em; }
+  p { margin: 0; color: var(--ink); }
+  .lead { font-size: clamp(16px, 1.8vw, 19px); color: var(--muted); font-weight: 300; }
+  .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .1em;
+    color: var(--accent);
+  }
+
+  /* ---------- header ---------- */
+  header {
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .head-inner { padding: 40px 24px 34px; max-width: 1040px; margin: 0 auto; }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 26px 44px;
+    margin-top: 30px; padding-top: 26px;
+    border-top: 1px solid var(--line-2);
+  }
+  .meta { display: flex; flex-direction: column; gap: 3px; }
+  .meta .k { font-family: var(--mono); font-size: 10.5px; letter-spacing:.18em; text-transform: uppercase; color: var(--faint); }
+  .meta .v { font-size: 15px; }
+  .meta .v small { color: var(--muted); font-size: 13px; }
+
+  /* ---------- sections ---------- */
+  section { padding: 62px 0; border-bottom: 1px solid var(--line-2); }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 30px; }
+  .sec-head .num { padding-top: 4px; white-space: nowrap; }
+  .sec-head .txt { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ---------- figure / drawings ---------- */
+  figure { margin: 0; }
+  .plate {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .plate svg { display: block; width: 100%; height: auto; background: var(--surface); }
+  figcaption {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    padding: 12px 16px;
+    border-top: 1px solid var(--line-2);
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  figcaption .tag { text-transform: uppercase; letter-spacing:.16em; color: var(--faint); }
+
+  /* svg drawing classes (theme-aware) */
+  .s-ink   { stroke: var(--ink); }
+  .s-line  { stroke: var(--line); }
+  .s-muted { stroke: var(--muted); }
+  .f-surface { fill: var(--surface); }
+  .f-bg { fill: var(--surface-2); }
+  .lbl { font-family: var(--mono); fill: var(--ink); }
+  .lbl-m { font-family: var(--mono); fill: var(--muted); }
+  .lbl-f { font-family: var(--mono); fill: var(--faint); }
+  .dim { stroke: var(--accent); fill: var(--accent); }
+  .dim-t { font-family: var(--mono); fill: var(--accent); }
+
+  /* ---------- legend ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px 22px; margin-top: 22px; }
+  .lg { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); }
+  .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.12); }
+
+  /* ---------- level cards ---------- */
+  .levels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+  .lvl {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column;
+  }
+  .lvl svg { display: block; width: 100%; height: auto; background: var(--surface-2); border-bottom: 1px solid var(--line-2); }
+  .lvl-body { padding: 18px 20px 22px; display: flex; flex-direction: column; gap: 10px; }
+  .lvl-tag {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+    padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted);
+  }
+  .lvl ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+  .lvl ul li { margin: 2px 0; }
+
+  /* ---------- material / prose grids ---------- */
+  .grid2 { display: grid; grid-template-columns: 1.15fr .85fr; gap: 40px; align-items: start; }
+  .stack { display: flex; flex-direction: column; gap: 18px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 4px; padding: 22px 24px; box-shadow: var(--shadow);
+  }
+  .mat-list { display: flex; flex-direction: column; gap: 0; }
+  .mat {
+    display: grid; grid-template-columns: 120px 1fr; gap: 16px;
+    padding: 14px 0; border-top: 1px solid var(--line-2); align-items: baseline;
+  }
+  .mat:first-child { border-top: 0; }
+  .mat .m-k { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .mat .m-v { font-size: 14.5px; color: var(--ink); }
+
+  .prose p + p { margin-top: 14px; }
+  .prose .lead + p { margin-top: 18px; }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    padding: 4px 0 4px 20px;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .callout b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- steps ---------- */
+  .steps { display: grid; grid-template-columns: repeat(2,1fr); gap: 2px; background: var(--line-2); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .step { background: var(--surface); padding: 22px 24px; display: flex; flex-direction: column; gap: 8px; }
+  .step .num { color: var(--terra); }
+  .step p { font-size: 14px; color: var(--muted); }
+
+  footer { padding: 40px 0 60px; }
+  .note { font-size: 13px; color: var(--faint); font-family: var(--mono); letter-spacing: .02em; line-height: 1.8; }
+
+  @media (max-width: 760px) {
+    .levels { grid-template-columns: 1fr; }
+    .grid2 { grid-template-columns: 1fr; gap: 26px; }
+    .steps { grid-template-columns: 1fr; }
+    section { padding: 46px 0; }
+    .sec-head { flex-direction: column; gap: 8px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(10px); animation: rise .7s ease forwards; }
+    @keyframes rise { to { opacity: 1; transform: none; } }
+  }
+</style>
+
+<header>
+  <div class="head-inner reveal">
+    <p class="eyebrow">Anteproyecto arquitectónico · Vivienda + departamento</p>
+    <h1>Terreno <b>Robsen</b><br>Plataforma nivelada sobre el desnivel</h1>
+    <p class="lead" style="margin-top:22px; max-width:60ch;">
+      Estudio volumétrico para el lote urbano: se levanta la terraza hasta el nivel de la
+      casa morada del fondo, el hueco del desnivel se ocupa con estacionamiento y servicios,
+      y sobre la plataforma se ordenan alberca, terraza y casa en lenguaje moderno.
+    </p>
+    <div class="meta-row">
+      <div class="meta"><span class="k">Ubicación</span><span class="v">Lote urbano entrecalle<br><small>Zona metropolitana · Jalisco</small></span></div>
+      <div class="meta"><span class="k">Programa</span><span class="v">Casa + departamento<br><small>Alberca · estacionamiento · bodega</small></span></div>
+      <div class="meta"><span class="k">Estrategia</span><span class="v">Nivelación por plataforma<br><small>Servicios bajo terraza</small></span></div>
+      <div class="meta"><span class="k">Lenguaje</span><span class="v">Moderno · losas + vidrio<br><small>Ref. imagen 4</small></span></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 01 ANÁLISIS DEL SITIO -->
+  <section>
+    <div class="sec-head">
+      <span class="num">01</span>
+      <div class="txt">
+        <h2>Lectura del terreno</h2>
+        <p class="lead">Orientación, desnivel y los puntos que marcaste en la fotografía.</p>
+      </div>
+    </div>
+
+    <figure class="plate">
+      <svg viewBox="0 0 900 470" role="img" aria-label="Plano de conjunto del terreno con zonificación">
+        <defs>
+          <pattern id="brk" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="12" stroke="var(--line)" stroke-width="1"/>
+          </pattern>
+        </defs>
+
+        <!-- calle -->
+        <rect x="705" y="20" width="175" height="430" fill="var(--surface-2)"/>
+        <line x1="705" y1="20" x2="705" y2="450" class="s-line" stroke-width="1.5"/>
+        <g stroke="var(--line)" stroke-width="2" stroke-dasharray="4 12">
+          <line x1="792" y1="30" x2="792" y2="440"/>
+        </g>
+        <text x="793" y="245" class="lbl-m" font-size="12" letter-spacing="3" transform="rotate(90 793 245)" text-anchor="middle">CALLE · ACCESO</text>
+
+        <!-- predio vecino (casa morada, fondo) -->
+        <rect x="470" y="20" width="235" height="96" fill="var(--indigo)" opacity="0.16"/>
+        <rect x="470" y="20" width="235" height="96" fill="none" class="s-muted" stroke-width="1.2" stroke-dasharray="5 4"/>
+        <text x="588" y="62" class="lbl-m" font-size="12" text-anchor="middle">CASA MORADA</text>
+        <text x="588" y="80" class="lbl-f" font-size="10.5" text-anchor="middle" letter-spacing="1">nivel de referencia (+0.00)</text>
+
+        <!-- lindero / lote -->
+        <path d="M60 60 L470 60 L470 116 L705 116 L705 430 L60 430 Z" fill="var(--surface)" class="s-ink" stroke-width="2"/>
+
+        <!-- vecinos izq (casas existentes) -->
+        <rect x="20" y="120" width="40" height="250" fill="url(#brk)"/>
+        <text x="40" y="250" class="lbl-f" font-size="10" transform="rotate(90 40 250)" text-anchor="middle" letter-spacing="1">COLINDANCIA</text>
+
+        <!-- ZONA A alberca -->
+        <rect x="78" y="150" width="150" height="262" fill="var(--z-pool)" opacity="0.18"/>
+        <rect x="78" y="150" width="150" height="262" fill="none" stroke="var(--z-pool)" stroke-width="1.4"/>
+        <text x="153" y="285" class="lbl" font-size="14" text-anchor="middle" font-weight="700">A · ALBERCA</text>
+        <text x="153" y="303" class="lbl-f" font-size="10.5" text-anchor="middle">lateral izquierdo</text>
+
+        <!-- terraza centro -->
+        <rect x="228" y="150" width="215" height="262" fill="var(--z-terraza)" opacity="0.20"/>
+        <text x="335" y="278" class="lbl" font-size="14" text-anchor="middle" font-weight="700">TERRAZA</text>
+        <text x="335" y="296" class="lbl-f" font-size="10.5" text-anchor="middle">plataforma nivelada</text>
+
+        <!-- casa / depto (C-D) der -->
+        <rect x="443" y="150" width="200" height="262" fill="var(--z-casa)" opacity="0.18"/>
+        <rect x="443" y="150" width="200" height="262" fill="none" stroke="var(--z-casa)" stroke-width="1.4"/>
+        <text x="543" y="272" class="lbl" font-size="14" text-anchor="middle" font-weight="700">C · CASA</text>
+        <text x="543" y="290" class="lbl" font-size="13" text-anchor="middle" font-weight="700">D · DEPARTAMENTO</text>
+        <text x="543" y="308" class="lbl-f" font-size="10.5" text-anchor="middle">lateral derecho · en altura</text>
+
+        <!-- franja B estacionamiento (frente, bajo plataforma) -->
+        <rect x="78" y="412" width="565" height="0.5"/>
+        <g>
+          <rect x="78" y="386" width="565" height="34" fill="var(--z-park)" opacity="0.22"/>
+          <rect x="78" y="386" width="565" height="34" fill="none" stroke="var(--z-park)" stroke-width="1.2" stroke-dasharray="6 4"/>
+          <text x="360" y="407" class="lbl" font-size="12" text-anchor="middle" letter-spacing="2">B · ESTACIONAMIENTO A LO LARGO DEL FRENTE  (nivel calle, bajo terraza)</text>
+        </g>
+
+        <!-- flecha de acceso -->
+        <g class="dim">
+          <line x1="700" y1="403" x2="648" y2="403" stroke="var(--accent)" stroke-width="2"/>
+          <path d="M648 403 l10 -5 l0 10 z" fill="var(--accent)"/>
+        </g>
+
+        <!-- brújula -->
+        <g transform="translate(95 100)">
+          <circle r="16" fill="none" class="s-line" stroke-width="1"/>
+          <path d="M0 -16 L4 0 L0 -4 L-4 0 Z" fill="var(--accent)"/>
+          <path d="M0 16 L4 0 L0 4 L-4 0 Z" fill="var(--muted)"/>
+          <text x="0" y="-22" class="lbl-m" font-size="10" text-anchor="middle">N</text>
+        </g>
+      </svg>
+      <figcaption>
+        <span>Plano de conjunto — zonificación general (esquemático, sin escala)</span>
+        <span class="tag">Fig. 01 · Planta de conjunto</span>
+      </figcaption>
+    </figure>
+
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--z-pool)"></span>A · Alberca (lateral izq.)</span>
+      <span class="lg"><span class="sw" style="background:var(--z-terraza)"></span>Terraza (centro)</span>
+      <span class="lg"><span class="sw" style="background:var(--z-casa)"></span>C · Casa (lateral der.)</span>
+      <span class="lg"><span class="sw" style="background:var(--z-depa)"></span>D · Departamento (en altura)</span>
+      <span class="lg"><span class="sw" style="background:var(--z-park)"></span>B · Estacionamiento (bajo terraza)</span>
+      <span class="lg"><span class="sw" style="background:var(--indigo)"></span>Casa morada (nivel de referencia)</span>
+    </div>
+  </section>
+
+  <!-- 02 CORTE / NIVELACIÓN -->
+  <section>
+    <div class="sec-head">
+      <span class="num">02</span>
+      <div class="txt">
+        <h2>El principio: nivelar con una plataforma</h2>
+        <p class="lead">El desnivel entre la calle y la casa morada se convierte en planta útil.</p>
+      </div>
+    </div>
+
+    <figure class="plate">
+      <svg viewBox="0 0 900 520" role="img" aria-label="Corte esquemático mostrando la nivelación por plataforma">
+        <defs>
+          <pattern id="ground" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="var(--line)" stroke-width="1"/>
+          </pattern>
+          <pattern id="water" width="14" height="8" patternUnits="userSpaceOnUse">
+            <path d="M0 4 q 3.5 -4 7 0 t 7 0" fill="none" stroke="var(--z-pool)" stroke-width="1" opacity="0.6"/>
+          </pattern>
+        </defs>
+
+        <!-- cielo -->
+        <rect x="0" y="0" width="900" height="520" fill="var(--surface)"/>
+
+        <!-- terreno natural (desnivel: calle baja der -> fondo alto izq) -->
+        <path d="M0 300 L360 300 L560 372 L900 372 L900 520 L0 520 Z" fill="url(#ground)"/>
+        <path d="M0 300 L360 300 L560 372 L900 372" fill="none" class="s-muted" stroke-width="2"/>
+        <text x="770" y="400" class="lbl-f" font-size="11" text-anchor="middle">terreno natural</text>
+        <text x="150" y="292" class="lbl-f" font-size="11" text-anchor="middle">nivel fondo</text>
+
+        <!-- plataforma estructural -->
+        <rect x="55" y="300" width="800" height="12" fill="var(--z-serv)" opacity="0.35"/>
+        <!-- N.P.T. terraza -->
+        <line x1="20" y1="300" x2="880" y2="300" class="dim" stroke-width="1.2" stroke-dasharray="7 5"/>
+        <text x="30" y="293" class="dim-t" font-size="11">N.P.T. TERRAZA = nivel casa morada (±0.00)</text>
+
+        <!-- HUECO INFERIOR: estacionamiento + servicios -->
+        <!-- estacionamiento (der, más profundo, hacia calle) -->
+        <rect x="360" y="312" width="495" height="60" fill="var(--z-park)" opacity="0.14"/>
+        <text x="610" y="348" class="lbl" font-size="12" text-anchor="middle" letter-spacing="1">ESTACIONAMIENTO</text>
+        <!-- bodega + control (izq, más somero) -->
+        <rect x="70" y="312" width="290" height="0"/>
+        <line x1="215" y1="300" x2="215" y2="360" class="s-line" stroke-width="1"/>
+        <text x="140" y="330" class="lbl-m" font-size="11" text-anchor="middle">BODEGA</text>
+        <text x="285" y="330" class="lbl-m" font-size="11" text-anchor="middle">C. CONTROL</text>
+
+        <!-- acceso vehicular desde calle -->
+        <g class="dim">
+          <line x1="878" y1="356" x2="838" y2="356" stroke="var(--accent)" stroke-width="2"/>
+          <path d="M838 356 l10 -5 l0 10 z" fill="var(--accent)"/>
+        </g>
+        <text x="858" y="345" class="dim-t" font-size="9.5" text-anchor="middle">acceso</text>
+
+        <!-- ===== SOBRE LA PLATAFORMA ===== -->
+        <!-- ALBERCA (izq) recortada en plataforma -->
+        <rect x="90" y="270" width="170" height="30" fill="url(#water)"/>
+        <rect x="90" y="270" width="170" height="30" fill="var(--z-pool)" opacity="0.12"/>
+        <path d="M90 270 L90 300 L260 300 L260 270" fill="none" stroke="var(--z-pool)" stroke-width="1.5"/>
+        <text x="175" y="262" class="lbl" font-size="12" text-anchor="middle" font-weight="700">ALBERCA</text>
+
+        <!-- terraza libre (centro) -->
+        <line x1="275" y1="300" x2="470" y2="300" class="s-ink" stroke-width="2.5"/>
+        <text x="372" y="288" class="lbl-m" font-size="11" text-anchor="middle">TERRAZA</text>
+
+        <!-- CASA volumétrica moderna (der) -->
+        <!-- PB -->
+        <rect x="490" y="222" width="330" height="78" class="f-surface s-ink" stroke-width="2"/>
+        <rect x="505" y="238" width="300" height="46" fill="var(--accent)" opacity="0.12"/>
+        <text x="655" y="266" class="lbl" font-size="12" text-anchor="middle">CASA · P. BAJA</text>
+        <!-- losa entre PB y N2 (voladizo hacia alberca) -->
+        <rect x="300" y="212" width="520" height="10" fill="var(--ink)"/>
+        <!-- N2 recámaras -->
+        <rect x="490" y="140" width="330" height="72" class="f-surface s-ink" stroke-width="2"/>
+        <rect x="505" y="156" width="300" height="42" fill="var(--accent)" opacity="0.12"/>
+        <text x="655" y="184" class="lbl" font-size="12" text-anchor="middle">RECÁMARAS</text>
+        <!-- BALCÓN voladizo hacia alberca -->
+        <rect x="300" y="200" width="150" height="12" fill="var(--terra)" opacity="0.55"/>
+        <line x1="300" y1="200" x2="450" y2="200" class="s-ink" stroke-width="1.5"/>
+        <text x="372" y="194" class="lbl" font-size="10.5" text-anchor="middle" fill="var(--terra)">BALCÓN → alberca</text>
+        <!-- losa entre N2 y depto -->
+        <rect x="470" y="130" width="360" height="10" fill="var(--ink)"/>
+        <!-- DEPARTAMENTO -->
+        <rect x="500" y="58" width="320" height="72" class="f-surface s-ink" stroke-width="2"/>
+        <rect x="515" y="74" width="290" height="42" fill="var(--indigo)" opacity="0.14"/>
+        <text x="660" y="102" class="lbl" font-size="12" text-anchor="middle">DEPARTAMENTO</text>
+        <!-- azotea / alero moderno -->
+        <rect x="486" y="48" width="360" height="10" fill="var(--ink)"/>
+
+        <!-- casa morada de referencia (fondo izq) -->
+        <rect x="10" y="230" width="60" height="70" fill="var(--indigo)" opacity="0.18"/>
+        <rect x="10" y="230" width="60" height="70" fill="none" class="s-muted" stroke-width="1" stroke-dasharray="4 3"/>
+        <text x="40" y="222" class="lbl-f" font-size="9.5" text-anchor="middle">casa morada</text>
+
+        <!-- cota del desnivel -->
+        <g class="dim">
+          <line x1="882" y1="300" x2="882" y2="372" stroke="var(--accent)" stroke-width="1.2"/>
+          <path d="M882 300 l-5 10 l10 0 z" fill="var(--accent)"/>
+          <path d="M882 372 l-5 -10 l10 0 z" fill="var(--accent)"/>
+        </g>
+        <text x="888" y="340" class="dim-t" font-size="10" transform="rotate(90 888 340)" text-anchor="middle">DESNIVEL ≈ 2.5–3.0 m</text>
+
+        <!-- guía calle -->
+        <text x="820" y="392" class="lbl-f" font-size="10" text-anchor="end">↳ nivel calle</text>
+      </svg>
+      <figcaption>
+        <span>Corte esquemático longitudinal — nivelación por plataforma y apilamiento del programa</span>
+        <span class="tag">Fig. 02 · Corte A-A'</span>
+      </figcaption>
+    </figure>
+
+    <div class="callout" style="margin-top:26px;">
+      La plataforma resuelve dos cosas a la vez: <b>iguala la terraza al nivel de la casa morada</b>
+      (vistas y continuidad hacia el fondo) y <b>libera la planta baja</b> que el desnivel dejaba
+      enterrada, donde caben el estacionamiento a lo largo del frente, el cuarto de control y la bodega.
+    </div>
+  </section>
+
+  <!-- 03 PROGRAMA POR NIVELES -->
+  <section>
+    <div class="sec-head">
+      <span class="num">03</span>
+      <div class="txt">
+        <h2>Programa por niveles</h2>
+        <p class="lead">Cuatro plantas apiladas, del servicio en calle al departamento en la cima.</p>
+      </div>
+    </div>
+
+    <div class="levels">
+
+      <!-- NIVEL 0 -->
+      <div class="lvl">
+        <svg viewBox="0 0 340 240" role="img" aria-label="Planta nivel calle: estacionamiento, control, bodega">
+          <rect x="0" y="0" width="340" height="240" fill="var(--surface-2)"/>
+          <path d="M34 26 L306 26 L306 214 L34 214 Z" class="f-surface s-ink" stroke-width="2"/>
+          <!-- estacionamiento -->
+          <rect x="34" y="120" width="272" height="94" fill="var(--z-park)" opacity="0.20"/>
+          <text x="150" y="170" class="lbl" font-size="12" text-anchor="middle" letter-spacing="1">ESTACIONAMIENTO</text>
+          <!-- cajones -->
+          <g stroke="var(--z-park)" stroke-width="1" opacity="0.7">
+            <line x1="90" y1="120" x2="90" y2="214"/><line x1="150" y1="120" x2="150" y2="214"/>
+            <line x1="210" y1="120" x2="210" y2="214"/><line x1="258" y1="120" x2="258" y2="214"/>
+          </g>
+          <!-- bodega -->
+          <rect x="34" y="26" width="130" height="94" fill="var(--z-serv)" opacity="0.16"/>
+          <text x="99" y="76" class="lbl-m" font-size="11" text-anchor="middle">BODEGA</text>
+          <!-- control -->
+          <rect x="164" y="26" width="142" height="94" fill="var(--z-serv)" opacity="0.24"/>
+          <text x="235" y="70" class="lbl-m" font-size="11" text-anchor="middle">CUARTO DE</text>
+          <text x="235" y="84" class="lbl-m" font-size="11" text-anchor="middle">CONTROL</text>
+          <!-- acceso -->
+          <g class="dim"><line x1="306" y1="188" x2="276" y2="188" stroke="var(--accent)" stroke-width="2"/><path d="M276 188 l9 -4 l0 8 z" fill="var(--accent)"/></g>
+          <text x="332" y="118" class="lbl-f" font-size="9" transform="rotate(90 332 118)" text-anchor="middle" letter-spacing="2">CALLE</text>
+        </svg>
+        <div class="lvl-body">
+          <div class="lvl-tag"><span class="chip">NIVEL 0</span> Nivel calle · bajo plataforma</div>
+          <h3>Servicios y estacionamiento</h3>
+          <ul>
+            <li>Estacionamiento a lo largo del frente (punto B)</li>
+            <li>Cuarto de control / instalaciones</li>
+            <li>Bodega</li>
+            <li>Acceso vehicular directo desde la calle</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- NIVEL 1 -->
+      <div class="lvl">
+        <svg viewBox="0 0 340 240" role="img" aria-label="Planta terraza: alberca, terraza, casa">
+          <rect x="0" y="0" width="340" height="240" fill="var(--surface-2)"/>
+          <path d="M34 26 L306 26 L306 214 L34 214 Z" class="f-surface s-ink" stroke-width="2"/>
+          <!-- alberca izq -->
+          <rect x="34" y="26" width="74" height="188" fill="var(--z-pool)" opacity="0.24"/>
+          <rect x="46" y="48" width="50" height="144" fill="none" stroke="var(--z-pool)" stroke-width="1.4"/>
+          <text x="71" y="124" class="lbl" font-size="11" text-anchor="middle" transform="rotate(90 71 124)">ALBERCA</text>
+          <!-- terraza centro -->
+          <rect x="108" y="26" width="108" height="188" fill="var(--z-terraza)" opacity="0.22"/>
+          <text x="162" y="124" class="lbl-m" font-size="12" text-anchor="middle">TERRAZA</text>
+          <!-- casa der -->
+          <rect x="216" y="26" width="90" height="188" fill="var(--z-casa)" opacity="0.20"/>
+          <text x="261" y="112" class="lbl" font-size="11" text-anchor="middle">CASA</text>
+          <text x="261" y="128" class="lbl-f" font-size="9.5" text-anchor="middle">estar/comedor</text>
+          <text x="261" y="142" class="lbl-f" font-size="9.5" text-anchor="middle">cocina</text>
+        </svg>
+        <div class="lvl-body">
+          <div class="lvl-tag"><span class="chip">NIVEL 1</span> Plataforma · nivel casa morada</div>
+          <h3>Alberca · terraza · casa</h3>
+          <ul>
+            <li>Alberca al lateral izquierdo (punto A)</li>
+            <li>Terraza al centro, corazón social</li>
+            <li>Casa al lateral derecho: estar, comedor, cocina</li>
+            <li>Continuidad interior–exterior con vidrio</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- NIVEL 2 -->
+      <div class="lvl">
+        <svg viewBox="0 0 340 240" role="img" aria-label="Segundo nivel: recámaras y balcón hacia alberca">
+          <rect x="0" y="0" width="340" height="240" fill="var(--surface-2)"/>
+          <path d="M34 26 L306 26 L306 214 L34 214 Z" fill="none" class="s-line" stroke-width="1.4" stroke-dasharray="5 4"/>
+          <!-- vacío sobre terraza/alberca -->
+          <rect x="34" y="26" width="182" height="188" fill="var(--z-pool)" opacity="0.07"/>
+          <text x="120" y="120" class="lbl-f" font-size="11" text-anchor="middle">VACÍO / DOBLE ALTURA</text>
+          <text x="120" y="136" class="lbl-f" font-size="9.5" text-anchor="middle">sobre alberca + terraza</text>
+          <!-- recámaras der -->
+          <rect x="216" y="26" width="90" height="188" fill="var(--z-casa)" opacity="0.22"/>
+          <rect x="216" y="26" width="90" height="188" fill="none" stroke="var(--z-casa)" stroke-width="1.6"/>
+          <line x1="216" y1="120" x2="306" y2="120" stroke="var(--z-casa)" stroke-width="1" opacity="0.6"/>
+          <text x="261" y="76" class="lbl" font-size="11" text-anchor="middle">RECÁMARAS</text>
+          <text x="261" y="172" class="lbl-f" font-size="9.5" text-anchor="middle">recámara ppal.</text>
+          <!-- balcón voladizo -->
+          <rect x="150" y="86" width="66" height="68" fill="var(--terra)" opacity="0.30"/>
+          <rect x="150" y="86" width="66" height="68" fill="none" stroke="var(--terra)" stroke-width="1.6"/>
+          <text x="183" y="116" class="lbl" font-size="10" text-anchor="middle" fill="var(--terra)">BALCÓN</text>
+          <g class="dim"><line x1="150" y1="120" x2="120" y2="120" stroke="var(--accent)" stroke-width="1.6"/><path d="M120 120 l8 -4 l0 8 z" fill="var(--accent)"/></g>
+        </svg>
+        <div class="lvl-body">
+          <div class="lvl-tag"><span class="chip">NIVEL 2</span> Segundo nivel de la casa</div>
+          <h3>Recámaras + balcón a la alberca</h3>
+          <ul>
+            <li>Recámaras sobre el volumen de la casa</li>
+            <li>Balcón en voladizo asomado a la alberca</li>
+            <li>Doble altura sobre terraza para vistas y luz</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- NIVEL 3 -->
+      <div class="lvl">
+        <svg viewBox="0 0 340 240" role="img" aria-label="Departamento en la planta superior con azotea">
+          <rect x="0" y="0" width="340" height="240" fill="var(--surface-2)"/>
+          <path d="M34 26 L306 26 L306 214 L34 214 Z" fill="none" class="s-line" stroke-width="1.4" stroke-dasharray="5 4"/>
+          <!-- azotea jardín -->
+          <rect x="34" y="26" width="160" height="188" fill="var(--z-terraza)" opacity="0.12"/>
+          <text x="114" y="124" class="lbl-f" font-size="11" text-anchor="middle">AZOTEA / ROOF</text>
+          <!-- departamento -->
+          <rect x="194" y="26" width="112" height="188" fill="var(--z-depa)" opacity="0.22"/>
+          <rect x="194" y="26" width="112" height="188" fill="none" stroke="var(--z-depa)" stroke-width="1.6"/>
+          <line x1="250" y1="26" x2="250" y2="214" stroke="var(--z-depa)" stroke-width="1" opacity="0.5"/>
+          <text x="250" y="112" class="lbl" font-size="11" text-anchor="middle">DEPARTAMENTO</text>
+          <text x="250" y="130" class="lbl-f" font-size="9.5" text-anchor="middle">independiente</text>
+        </svg>
+        <div class="lvl-body">
+          <div class="lvl-tag"><span class="chip">NIVEL 3</span> Planta superior</div>
+          <h3>Departamento independiente</h3>
+          <ul>
+            <li>Departamento en la cima (punto D), rentable o para huésped</li>
+            <li>Azotea / roof-garden sobre el resto de la planta</li>
+            <li>Alero horizontal moderno que remata el conjunto</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 04 LENGUAJE / MATERIALES -->
+  <section>
+    <div class="sec-head">
+      <span class="num">04</span>
+      <div class="txt">
+        <h2>Lenguaje moderno</h2>
+        <p class="lead">Referencia de la 4ª imagen: losas blancas, voladizos y vidrio de piso a techo.</p>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="prose">
+        <p class="lead" style="color:var(--ink); font-weight:300;">
+          Volúmenes limpios de losas horizontales blancas que se deslizan una sobre otra,
+          voladizos marcados y cerramientos de vidrio que abren la casa hacia la alberca.
+        </p>
+        <p style="color:var(--muted);">
+          La terraza nivelada funciona como el gran plano de piso del proyecto —igual que la
+          plataforma de la villa de referencia—: alberca de espejo al costado, superficie
+          pétrea clara al centro y el volumen de la casa como fondo. En altura, las losas
+          voladas generan sombra y el balcón del segundo nivel se proyecta hacia el agua.
+        </p>
+        <p style="color:var(--muted);">
+          El contraste con el contexto de tabique es intencional: el blanco y el vidrio
+          hacen resaltar la casa dentro de la manzana, mientras un guiño en indigo —tomado de
+          la casa morada— aparece en el volumen del departamento para amarrar el proyecto al lugar.
+        </p>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <h3 style="margin-bottom:6px;">Paleta de materiales</h3>
+          <div class="mat-list">
+            <div class="mat"><span class="m-k">Losas</span><span class="m-v">Concreto aparente / blanco, cantos delgados y voladizos</span></div>
+            <div class="mat"><span class="m-k">Cerramientos</span><span class="m-v">Cristal templado piso-techo, cancelería negra mínima</span></div>
+            <div class="mat"><span class="m-k">Terraza</span><span class="m-v">Piso pétreo claro; pasto en franjas</span></div>
+            <div class="mat"><span class="m-k">Alberca</span><span class="m-v">Rebosante / espejo de agua, borde a ras de terraza</span></div>
+            <div class="mat"><span class="m-k">Barandal</span><span class="m-v">Vidrio sin marco en balcón y roof</span></div>
+            <div class="mat"><span class="m-k">Acento</span><span class="m-v">Indigo (ref. casa morada) en el departamento</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 SIGUIENTES PASOS -->
+  <section style="border-bottom:0;">
+    <div class="sec-head">
+      <span class="num">05</span>
+      <div class="txt">
+        <h2>Para afinar el diseño a tu gusto</h2>
+        <p class="lead">Lo que necesito de ti para pasar de este esquema al proyecto dimensionado.</p>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <span class="num">A</span>
+        <h3>Medidas reales del lote</h3>
+        <p>Frente, fondo, colindancias y el desnivel exacto (levantamiento topográfico). Con eso ajusto proporciones y número de cajones.</p>
+      </div>
+      <div class="step">
+        <span class="num">B</span>
+        <h3>Programa fino</h3>
+        <p>Cuántas recámaras, baños, si el departamento es de 1 o 2 recámaras y si la bodega/control necesitan medidas específicas.</p>
+      </div>
+      <div class="step">
+        <span class="num">C</span>
+        <h3>Reglamento municipal</h3>
+        <p>Restricciones, altura máxima, COS/CUS y cajones exigidos. Definen cuánto podemos levantar y volar.</p>
+      </div>
+      <div class="step">
+        <span class="num">D</span>
+        <h3>Ajuste sobre este esquema</h3>
+        <p>Dime qué mover —posición de la alberca, tamaño de terraza, orientación del balcón— y lo reacomodo sobre estos planos.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p class="note">
+      Anteproyecto conceptual · dibujos esquemáticos sin escala, para estudio volumétrico y de programa.
+      Las cotas indicadas (desnivel ≈ 2.5–3.0 m) son estimaciones a confirmar con levantamiento.
+      No constituye proyecto ejecutivo ni cálculo estructural.
+    </p>
+  </footer>
+
+</main>
