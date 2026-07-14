@@ -29,6 +29,11 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   // Inventario tab: category filter
   const rawCats = Array.from(new Set(productos.map(p => p.cat)))
   const cats = ['Todos', ...rawCats]
+
+  // Marcas: las semilla más las que ya usan los productos (así aparecen las
+  // marcas reales importadas y las nuevas persisten al guardar un producto).
+  const marcasTodas = Array.from(new Set([...marcas, ...productos.map(p => p.marca).filter(Boolean)]))
+    .sort((a, b) => a.localeCompare(b))
   const listaFiltrada = catFiltro === 'Todos' ? productos : productos.filter(p => p.cat === catFiltro)
 
   return (
@@ -38,7 +43,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
         <div>
           <h1 className="display" style={{ fontSize: 26, margin: 0 }}>Productos</h1>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            {productos.length} productos · {marcas.length} marcas · {productos.reduce((s, p) => s + p.stock, 0)} unidades · ventas de productos: {mxn(ventasMes)}
+            {productos.length} productos · {marcasTodas.length} marcas · {productos.reduce((s, p) => s + p.stock, 0)} unidades · ventas de productos: {mxn(ventasMes)}
           </div>
         </div>
         <div className="vc gap10">
@@ -329,7 +334,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
       {editor !== null && (
         <ProductoEditor
           p={editor}
-          marcas={marcas}
+          marcas={marcasTodas}
           cats={rawCats}
           onSave={async prod => {
             try {
@@ -447,6 +452,7 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
   const [nombre, setNombre] = useState(p.nombre ?? '')
   const [sku, setSku] = useState(p.sku ?? '')
   const [marca, setMarca] = useState(p.marca ?? (marcas[0] ?? ''))
+  const [marcaInput, setMarcaInput] = useState('')
   const [cat, setCat] = useState(p.cat ?? (cats[0] ?? ''))
   const [catInput, setCatInput] = useState('')
   const [uso, setUso] = useState<'retail' | 'interno'>(p.uso ?? 'retail')
@@ -461,7 +467,7 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
       id: p.id ?? ('p' + Date.now()),
       nombre: nombre.trim(),
       sku: sku.trim(),
-      marca,
+      marca: marca || marcaInput.trim() || 'Sin marca',
       cat: cat || catInput.trim() || 'General',
       uso,
       costo,
@@ -520,7 +526,16 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
               <label className="label">Marca</label>
               <select className="input" value={marca} onChange={e => setMarca(e.target.value)}>
                 {marcas.map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="">+ Nueva marca</option>
               </select>
+              {marca === '' && (
+                <input
+                  className="input mt8"
+                  value={marcaInput}
+                  onChange={e => setMarcaInput(e.target.value)}
+                  placeholder="Nueva marca"
+                />
+              )}
             </div>
             <div>
               <label className="label">Categoría</label>
