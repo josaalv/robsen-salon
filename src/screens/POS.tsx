@@ -110,7 +110,12 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
       precio: p.precio,
       sub: p.marca + ' · ' + p.stock + ' en stock',
       stock: p.stock,
-      com: comisiones['_producto'] ?? 10,
+      // Comisión propia del producto (monto fijo o %) o, si no tiene, la global.
+      ...(p.comValor != null
+        ? (p.comTipo === 'monto'
+            ? { com: 0, comMonto: p.comValor }
+            : { com: p.comValor, comMonto: undefined })
+        : { com: comisiones['_producto'] ?? 10, comMonto: undefined }),
       cant: 1,
       est: null,
     })),
