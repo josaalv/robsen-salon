@@ -109,7 +109,7 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
                         {estilista.nombre.split(' ')[0]}
                       </span>
                     )}
-                    {l.com ? <span>com. {l.com}%</span> : null}
+                    {l.comMonto != null ? <span>com. {mxn(l.comMonto)}</span> : l.com ? <span>com. {l.com}%</span> : null}
                   </div>
                 </div>
                 <div className="num" style={{ fontWeight: 600 }}>{mxn(l.precio * l.cant)}</div>
@@ -387,7 +387,9 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const subtotalV = (v: Venta) => v.lineas.reduce((s, l) => s + totalLinea(l), 0)
   const totalVenta = (v: Venta) => subtotalV(v) - (v.desc || 0)
   const saldo = (v: Venta) => Math.max(0, totalVenta(v) - (v.anticipo || 0))
-  const comisionVenta = (v: Venta) => v.lineas.reduce((s, l) => s + Math.round(totalLinea(l) * (l.com || 0) / 100), 0)
+  const comisionVenta = (v: Venta) => v.lineas.reduce((s, l) => s + (
+    l.comMonto != null ? Math.round(l.comMonto * l.cant) : Math.round(totalLinea(l) * (l.com || 0) / 100)
+  ), 0)
 
   const todayStr = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
   const mesStr = new Date().toLocaleDateString('es-MX', { month: 'short' })

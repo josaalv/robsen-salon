@@ -7,6 +7,10 @@ export type EstadoVenta = 'pagada' | 'parcial' | 'pendiente' | 'apartado'
 export type TipoMovimiento = 'entrada' | 'salida' | 'consumo'
 export type EstadoMensaje = 'enviado' | 'entregado' | 'respondido'
 
+// Excepción de comisión por servicio: un porcentaje o un monto fijo por
+// unidad. Un número suelto se interpreta como porcentaje (retrocompat).
+export type ComisionOverride = { tipo: 'porcentaje' | 'monto'; valor: number }
+
 export interface Estilista {
   id: string
   nombre: string
@@ -14,7 +18,8 @@ export interface Estilista {
   color: string
   ini: string
   com?: number
-  comisiones?: Record<string, number>  // excepción puntual por servicio: { [servicioId]: pct } — si falta, se usa `com`
+  // excepción por servicio: { [servicioId]: pct | { tipo, valor } } — si falta, se usa `com`
+  comisiones?: Record<string, number | ComisionOverride>
   horarios?: boolean[]  // [Lun,Mar,Mié,Jue,Vie,Sáb,Dom]
   foto?: string
   bio?: string
@@ -103,7 +108,8 @@ export interface LineaVenta {
   est: string | null
   cant: number
   precio: number
-  com: number
+  com: number          // comisión en porcentaje
+  comMonto?: number    // si está, comisión FIJA por unidad (ignora `com`)
 }
 
 export interface Venta {

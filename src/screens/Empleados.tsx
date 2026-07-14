@@ -5,7 +5,7 @@ import { useStore } from '../data/store'
 import { mxn, applyEscala } from '../lib/helpers'
 import { db } from '../lib/db'
 import type { EscalaTramo } from '../lib/helpers'
-import type { Estilista } from '../types'
+import type { Estilista, ComisionOverride } from '../types'
 
 const COLORES = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8CE8A']
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -17,15 +17,30 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
   const [rol, setRol] = useState(est.rol || '')
   const [color, setColor] = useState(est.color || COLORES[0])
   const [comPct, setComPct] = useState(est.com ?? 30)
-  const [comisiones, setComisiones] = useState<Record<string, number>>({ ...(est.comisiones || {}) })
+  const [comisiones, setComisiones] = useState<Record<string, number | ComisionOverride>>({ ...(est.comisiones || {}) })
   const [foto, setFoto] = useState(est.foto || '')
   const [bio, setBio] = useState(est.bio || '')
   const [uploading, setUploading] = useState(false)
   const fotoRef = useRef<HTMLInputElement>(null)
 
   const servReal = est.id ? data.servicios.filter(s => s.prof.includes(est.id!)) : []
-  const setComOverride = (servicioId: string, val: number) =>
-    setComisiones(prev => ({ ...prev, [servicioId]: Math.min(100, Math.max(0, val)) }))
+  // Normaliza el override guardado (número suelto = porcentaje) a { tipo, valor }.
+  const ovDe = (servicioId: string): ComisionOverride | undefined => {
+    const v = comisiones[servicioId]
+    if (v == null) return undefined
+    return typeof v === 'number' ? { tipo: 'porcentaje', valor: v } : v
+  }
+  const setComTipo = (servicioId: string, tipo: 'porcentaje' | 'monto') =>
+    setComisiones(prev => {
+      const cur = ovDe(servicioId) || { tipo: 'porcentaje', valor: comPct }
+      return { ...prev, [servicioId]: { tipo, valor: cur.valor } }
+    })
+  const setComValor = (servicioId: string, val: number) =>
+    setComisiones(prev => {
+      const cur = ovDe(servicioId) || { tipo: 'porcentaje' as const, valor: 0 }
+      const max = cur.tipo === 'porcentaje' ? 100 : 1000000
+      return { ...prev, [servicioId]: { tipo: cur.tipo, valor: Math.min(max, Math.max(0, val)) } }
+    })
   const resetComOverride = (servicioId: string) =>
     setComisiones(prev => { const n = { ...prev }; delete n[servicioId]; return n })
 
@@ -150,29 +165,36 @@ function EstilistaEditor({ est, onClose }: { est: Partial<Estilista> & { id?: st
         ) : (
           <>
             <div className="muted" style={{ fontSize: 12 }}>
-              Por defecto cada servicio usa la comisión base ({comPct}%). Puedes definir una excepción puntual por servicio.
+              Por defecto cada servicio usa la comisión base ({comPct}%). Puedes definir una excepción por servicio, ya sea en <b>porcentaje</b> o en <b>monto fijo</b> ($).
             </div>
             {servReal.length === 0 && <div className="dim" style={{ fontSize: 12.5 }}>Esta estilista no tiene servicios asignados aún.</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {servReal.map(s => {
-                const override = comisiones[s.id]
-                const val = override ?? comPct
+                const ov = ovDe(s.id)
+                const tipo = ov?.tipo ?? 'porcentaje'
+                const val = ov ? ov.valor : comPct
                 return (
                   <div key={s.id} className="between" style={{ padding: '8px 10px', border: '1px solid var(--line-soft)', borderRadius: 8, gap: 10 }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{s.nombre}</div>
                       <div className="muted" style={{ fontSize: 11 }}>
-                        {mxn(s.precio)} · {override != null ? <span style={{ color: 'var(--gold)' }}>personalizada</span> : 'heredado'}
+                        {mxn(s.precio)} · {ov != null
+                          ? <span style={{ color: 'var(--gold)' }}>{tipo === 'monto' ? `comisión fija ${mxn(val)}` : 'personalizada'}</span>
+                          : 'heredado'}
                       </div>
                     </div>
-                    <div className="vc gap8" style={{ flexShrink: 0 }}>
+                    <div className="vc gap6" style={{ flexShrink: 0 }}>
+                      <select className="select" value={tipo} onChange={e => setComTipo(s.id, e.target.value as 'porcentaje' | 'monto')}
+                        style={{ width: 54, padding: '6px 20px 6px 8px', fontSize: 12 }}>
+                        <option value="porcentaje">%</option>
+                        <option value="monto">$</option>
+                      </select>
                       <input
-                        className="input" type="number" min="0" max="100" value={val}
-                        style={{ width: 64, textAlign: 'right' }}
-                        onChange={e => setComOverride(s.id, Number(e.target.value))}
+                        className="input" type="number" min="0" max={tipo === 'porcentaje' ? 100 : undefined} value={val}
+                        style={{ width: 72, textAlign: 'right' }}
+                        onChange={e => setComValor(s.id, Number(e.target.value))}
                       />
-                      <span className="dim" style={{ fontSize: 12 }}>%</span>
-                      {override != null && (
+                      {ov != null && (
                         <button className="icon-btn" title="Restaurar comisión base" onClick={() => resetComOverride(s.id)}><Ic n="arrow-counter-clockwise" /></button>
                       )}
                     </div>
@@ -357,7 +379,9 @@ export function ScreenEmpleados({ onNavigate }: { onNavigate: (r: string) => voi
         const monto = l.precio * l.cant
         r[l.est].ventas += monto
         if (esMes) r[l.est].ventasMes += monto
-        if (!useEscalaLocal) r[l.est].comision += Math.round(monto * (l.com || 0) / 100)
+        if (!useEscalaLocal) r[l.est].comision += l.comMonto != null
+          ? Math.round(l.comMonto * l.cant)
+          : Math.round(monto * (l.com || 0) / 100)
       })
       const mainEst = v.lineas.find(l => l.tipo === 'servicio')?.est
       if (mainEst && r[mainEst]) r[mainEst].citas++

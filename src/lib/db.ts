@@ -46,7 +46,7 @@ const mapVenta = (r: any, lineas: any[]): Venta => ({
   saldoCobradoMonto: r.saldo_cobrado_monto ?? undefined,
   lineas: lineas.filter(l => l.venta_id === r.id).map(l => ({
     tipo: l.tipo, nombre: l.nombre, productoId: l.producto_id ?? undefined, est: l.est ?? null,
-    cant: l.cant, precio: l.precio, com: l.com,
+    cant: l.cant, precio: l.precio, com: l.com, comMonto: l.com_monto ?? undefined,
   })),
 })
 
@@ -327,6 +327,7 @@ export const db = {
       p_lineas: v.lineas.map(l => ({
         tipo: l.tipo, nombre: l.nombre, producto_id: l.productoId ?? null,
         est: l.est ?? null, cant: l.cant, precio: l.precio, com: l.com,
+        com_monto: l.comMonto ?? null,
       })),
     })
     if (error) { console.error('[db.addVenta]', error.message); throw new Error(error.message) }
