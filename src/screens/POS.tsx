@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Avatar, Seg } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, comisionServicioEstilista } from '../lib/helpers'
+import { mxn, resolverComision } from '../lib/helpers'
 import type { Venta, Cita } from '../types'
 
 interface CartItem {
@@ -12,10 +12,17 @@ interface CartItem {
   precio: number
   sub: string
   stock?: number
-  com: number
+  com: number         // comisión en %
+  comMonto?: number   // comisión fija por unidad (si está, ignora com)
   prof?: string[]
   cant: number
   est: string | null
+}
+
+// Comisión resuelta → campos de la línea (com % / comMonto fijo).
+const comLinea = (servicioId: string, est: string | null, estilistas: Parameters<typeof resolverComision>[2]) => {
+  const r = resolverComision(servicioId, est, estilistas)
+  return r.tipo === 'monto' ? { com: 0, comMonto: r.monto } : { com: r.pct, comMonto: undefined }
 }
 
 export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
@@ -46,7 +53,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
           nombre: s.nombre,
           precio: s.precio,
           sub: `${s.dur} min`,
-          com: comisionServicioEstilista(s.servicioId, est, data.estilistas),
+          ...comLinea(s.servicioId, est, data.estilistas),
           cant: 1,
           est,
         }
@@ -126,8 +133,10 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
       const ex = c.find(l => l.key === it.key)
       if (ex) return c.map(l => l.key === it.key ? { ...l, cant: l.cant + 1 } : l)
       const defEst = it.tipo === 'adicional' ? null : (it.prof && it.prof[0]) || data.estilistas[0].id
-      const com = it.tipo === 'servicio' ? comisionServicioEstilista(it.key, defEst, data.estilistas) : it.com
-      return [...c, { ...it, cant: 1, est: defEst, com }]
+      const com = it.tipo === 'servicio'
+        ? comLinea(it.key, defEst, data.estilistas)
+        : { com: it.com, comMonto: it.comMonto }
+      return [...c, { ...it, cant: 1, est: defEst, ...com }]
     })
   }
 
@@ -155,14 +164,16 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   const del = (key: string) => setCart(c => c.filter(l => l.key !== key))
   const setLineEst = (key: string, est: string | null) => setCart(c => c.map(l => {
     if (l.key !== key) return l
-    const com = l.tipo === 'servicio' ? comisionServicioEstilista(l.key, est, data.estilistas) : l.com
-    return { ...l, est, com }
+    if (l.tipo !== 'servicio') return { ...l, est }
+    return { ...l, est, ...comLinea(l.key, est, data.estilistas) }
   }))
 
   const subtotal = cart.reduce((s, l) => s + l.precio * l.cant, 0)
   const total = Math.max(0, subtotal - desc)
   const saldo = Math.max(0, total - anticipo)
-  const comision = cart.reduce((s, l) => s + Math.round(l.precio * l.cant * (l.com || 0) / 100), 0)
+  const comision = cart.reduce((s, l) => s + (
+    l.comMonto != null ? Math.round(l.comMonto * l.cant) : Math.round(l.precio * l.cant * (l.com || 0) / 100)
+  ), 0)
 
   const [confirming, setConfirming] = useState(false)
   const confirmar = async () => {
@@ -185,6 +196,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
         cant: l.cant,
         precio: l.precio,
         com: l.com,
+        comMonto: l.comMonto,
       })),
     }
     setConfirming(true)
@@ -313,7 +325,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                     <div className="f1" style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{l.nombre}</div>
                       <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
-                        {mxn(l.precio)} c/u{l.com ? ` · com. ${l.com}%` : ''}
+                        {mxn(l.precio)} c/u{l.comMonto != null ? ` · com. ${mxn(l.comMonto)}` : l.com ? ` · com. ${l.com}%` : ''}
                       </div>
                     </div>
                     <div className="num" style={{ fontWeight: 600, fontSize: 13.5 }}>{mxn(l.precio * l.cant)}</div>

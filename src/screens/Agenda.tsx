@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Avatar, EstadoBadge, Seg, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, comisionServicioEstilista } from '../lib/helpers'
+import { mxn, resolverComision } from '../lib/helpers'
 import type { Cita, CitaServicio, EstadoCita, Bloqueo, Venta } from '../types'
 import { db } from '../lib/db'
 import { POSBuilder } from './POS'
@@ -233,10 +233,14 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
             cliente: cl.trim(), clienteId: '', pago: 'efectivo',
             estado: antFinal >= precioTotal ? 'pagada' : 'apartado',
             desc: 0, anticipo: antFinal, citaId: id,
-            lineas: lineasInfo.map(l => ({
-              tipo: 'servicio' as const, nombre: l.srv.nombre, est: l.est, cant: 1, precio: l.srv.precio,
-              com: comisionServicioEstilista(l.srv.id, l.est, data.estilistas),
-            })),
+            lineas: lineasInfo.map(l => {
+              const r = resolverComision(l.srv.id, l.est, data.estilistas)
+              return {
+                tipo: 'servicio' as const, nombre: l.srv.nombre, est: l.est, cant: 1, precio: l.srv.precio,
+                com: r.tipo === 'porcentaje' ? r.pct : 0,
+                comMonto: r.tipo === 'monto' ? r.monto : undefined,
+              }
+            }),
           }
           await db.addVenta(ventaApartado)
         }

@@ -26,17 +26,41 @@ export const telefonoValido = (t: string): boolean => {
 export const telefonoError = (t: string): string =>
   !t.trim() || telefonoValido(t) ? '' : 'Ingresa un teléfono a 10 dígitos con lada, ej. 33 1234 5678'
 
-// Resuelve el % de comisión de un servicio para un estilista específico.
-// La comisión base es siempre del empleado (estilista.com); estilista.comisiones
-// permite una excepción puntual por servicio sobre esa base.
+type ComisionOverride = { tipo: 'porcentaje' | 'monto'; valor: number }
+type EstilistaCom = { id: string; com?: number; comisiones?: Record<string, number | ComisionOverride> }
+
+// Comisión resuelta para un servicio de un estilista: un porcentaje sobre el
+// precio, o un monto fijo por unidad.
+export type ComisionResuelta = { tipo: 'porcentaje'; pct: number } | { tipo: 'monto'; monto: number }
+
+// Resuelve la comisión de un servicio para un estilista. La base es del empleado
+// (estilista.com, siempre %); estilista.comisiones permite una excepción por
+// servicio que puede ser porcentaje o monto fijo.
+export const resolverComision = (
+  servicioId: string,
+  estId: string | null | undefined,
+  estilistas: EstilistaCom[]
+): ComisionResuelta => {
+  const est = estilistas.find(e => e.id === estId)
+  const ov = est?.comisiones?.[servicioId]
+  if (ov != null) {
+    if (typeof ov === 'number') return { tipo: 'porcentaje', pct: ov }
+    if (ov.tipo === 'monto') return { tipo: 'monto', monto: ov.valor }
+    return { tipo: 'porcentaje', pct: ov.valor }
+  }
+  return { tipo: 'porcentaje', pct: est?.com ?? 30 }
+}
+
+// Compatibilidad: sigue devolviendo un % (para lugares que solo manejan %).
+// Si la comisión resuelta es de monto fijo, aquí se reporta 0% (el monto viaja
+// aparte en la línea de venta).
 export const comisionServicioEstilista = (
   servicioId: string,
   estId: string | null | undefined,
-  estilistas: { id: string; com?: number; comisiones?: Record<string, number> }[]
+  estilistas: EstilistaCom[]
 ): number => {
-  const est = estilistas.find(e => e.id === estId)
-  if (!est) return 30
-  return est.comisiones?.[servicioId] ?? est.com ?? 30
+  const r = resolverComision(servicioId, estId, estilistas)
+  return r.tipo === 'porcentaje' ? r.pct : 0
 }
 
 export type EscalaTramo = { limite: number | null; pct: number }
@@ -104,7 +128,11 @@ export const ventaCalc = {
   comision: (v: Venta) => {
     const sub = ventaCalc.subtotal(v)
     const ratio = sub > 0 ? (sub - (v.desc || 0)) / sub : 1
-    return v.lineas.reduce((s, l) => s + Math.round(l.precio * l.cant * ratio * (l.com || 0) / 100), 0)
+    return v.lineas.reduce((s, l) => s + (
+      l.comMonto != null
+        ? Math.round(l.comMonto * l.cant)                       // monto fijo por unidad
+        : Math.round(l.precio * l.cant * ratio * (l.com || 0) / 100)  // porcentaje
+    ), 0)
   },
   porTipo: (v: Venta, tipo: string) => v.lineas.filter(l => l.tipo === tipo).reduce((s, l) => s + l.precio * l.cant, 0),
 }
