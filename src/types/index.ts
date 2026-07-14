@@ -158,6 +158,10 @@ export interface Producto {
   stock: number
   min: number
   vendidos: number
+  // Comisión propia del producto (sobrescribe la global de "Productos"): un
+  // porcentaje o un monto fijo por unidad. Si falta, se usa la global.
+  comValor?: number
+  comTipo?: 'porcentaje' | 'monto'
 }
 
 export interface Movimiento {

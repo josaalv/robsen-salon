@@ -460,6 +460,9 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
   const [precio, setPrecio] = useState(p.precio ?? 0)
   const [stock, setStock] = useState(p.stock ?? 0)
   const [min, setMin] = useState(p.min ?? 3)
+  // Comisión propia del producto: 'default' usa la global; si no, % o monto fijo.
+  const [comModo, setComModo] = useState<'default' | 'porcentaje' | 'monto'>(p.comValor != null ? (p.comTipo === 'monto' ? 'monto' : 'porcentaje') : 'default')
+  const [comValor, setComValor] = useState(p.comValor ?? 0)
 
   const handleSave = () => {
     if (!nombre.trim()) { toast('El nombre es requerido'); return }
@@ -475,6 +478,8 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
       stock,
       min,
       vendidos: p.vendidos ?? 0,
+      comValor: comModo === 'default' ? undefined : comValor,
+      comTipo: comModo === 'default' ? undefined : comModo,
     })
   }
 
@@ -616,6 +621,35 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
                 value={min}
                 onChange={e => setMin(Number(e.target.value))}
               />
+            </div>
+          </div>
+
+          {/* Comisión del producto */}
+          <div>
+            <label className="label">Comisión al vender</label>
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <select className="input" value={comModo} onChange={e => setComModo(e.target.value as 'default' | 'porcentaje' | 'monto')}>
+                <option value="default">Comisión general de productos</option>
+                <option value="porcentaje">Porcentaje propio (%)</option>
+                <option value="monto">Monto fijo por unidad ($)</option>
+              </select>
+              {comModo !== 'default' && (
+                <div style={{ position: 'relative' }}>
+                  <input className="input" type="number" min={0} max={comModo === 'porcentaje' ? 100 : undefined}
+                    value={comValor} onChange={e => setComValor(Number(e.target.value))}
+                    placeholder={comModo === 'porcentaje' ? '10' : '50'} />
+                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-4)' }}>
+                    {comModo === 'porcentaje' ? '%' : '$'}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              {comModo === 'monto'
+                ? `El vendedor gana ${mxn(comValor)} fijo por unidad vendida.`
+                : comModo === 'porcentaje'
+                ? `El vendedor gana ${comValor}% del precio.`
+                : 'Usa la comisión general de productos configurada en Ajustes.'}
             </div>
           </div>
 
