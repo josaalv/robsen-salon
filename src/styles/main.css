@@ -569,7 +569,9 @@ body {
   .topbar .page-title { font-size: 17px; }
   .topbar .page-sub { display: none; }
   .search { width: auto; flex: 1; min-width: 0; }
-  .search input { width: 100%; }
+  /* 16px evita que iOS/Android hagan zoom o recorten el texto del buscador al
+     enfocarlo (con fuentes < 16px), lo que hacía "desaparecer" el buscador. */
+  .search input { width: 100%; font-size: 16px; }
   .top-pop { width: min(340px, calc(100vw - 28px)); right: -8px; }
 
   /* Tablas: scroll horizontal en vez de romper el layout */
