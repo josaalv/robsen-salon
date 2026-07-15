@@ -241,7 +241,10 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
             <div style={{ padding: '14px 22px 0' }}>
               <div className="vc gap12" style={{ marginBottom: 14, flexWrap: 'wrap' }}>
                 <Seg opts={['Servicios', 'Productos', 'Adicionales']} value={tab} onChange={setTab} />
-                <div className="search f1">
+                {/* min-width para que el buscador baje a su propia línea a ancho
+                    completo cuando no cabe junto a las pestañas, en vez de
+                    aplastarse hasta desaparecer en pantallas chicas. */}
+                <div className="search f1" style={{ minWidth: 'min(220px, 100%)' }}>
                   <Ic n="magnifying-glass" />
                   <input placeholder={'Buscar en ' + tab.toLowerCase() + '…'} value={q} onChange={e => setQ(e.target.value)} />
                 </div>
