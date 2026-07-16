@@ -1,9 +1,34 @@
-import React, { useState, useEffect } from 'react'
-import { Avatar, Seg } from '../components/ui'
+import React, { useState, useEffect, useRef } from 'react'
+import { Avatar, Seg, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, resolverComision } from '../lib/helpers'
-import type { Venta, Cita } from '../types'
+import type { Venta, Cita, Producto } from '../types'
+
+// Sonido de confirmación/error para el escáner. Usa Web Audio (sin archivos):
+// un bip agudo corto para éxito, uno grave doble para error. El AudioContext se
+// crea/reactiva dentro del gesto de teclado del escáner (política de autoplay).
+let _audio: AudioContext | null = null
+const beep = (freq: number, durMs: number, delayMs = 0) => {
+  try {
+    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    if (!AC) return
+    _audio = _audio || new AC()
+    if (_audio.state === 'suspended') _audio.resume()
+    const t0 = _audio.currentTime + delayMs / 1000
+    const osc = _audio.createOscillator()
+    const gain = _audio.createGain()
+    osc.type = 'square'
+    osc.frequency.value = freq
+    osc.connect(gain); gain.connect(_audio.destination)
+    gain.gain.setValueAtTime(0.0001, t0)
+    gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.008)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + durMs / 1000)
+    osc.start(t0); osc.stop(t0 + durMs / 1000)
+  } catch { /* audio no disponible: el escáner sigue funcionando sin sonido */ }
+}
+const beepOk = () => beep(1050, 110)
+const beepError = () => { beep(300, 140); beep(240, 160, 150) }
 
 interface CartItem {
   key: string
@@ -91,6 +116,25 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   ].filter(Boolean) as string[]
   const [pago, setPago] = useState(pagoOpts[0] || 'Tarjeta')
 
+  // Construye el ítem de carrito para un producto (mismo shape para el catálogo
+  // y para el escáner de código de barras).
+  const productoItem = (p: Producto): CartItem => ({
+    tipo: 'producto',
+    key: p.id,
+    nombre: p.nombre,
+    precio: p.precio,
+    sub: p.marca + ' · ' + p.stock + ' en stock',
+    stock: p.stock,
+    // Comisión propia del producto (monto fijo o %) o, si no tiene, la global.
+    ...(p.comValor != null
+      ? (p.comTipo === 'monto'
+          ? { com: 0, comMonto: p.comValor }
+          : { com: p.comValor, comMonto: undefined })
+      : { com: comisiones['_producto'] ?? 10, comMonto: undefined }),
+    cant: 1,
+    est: null,
+  })
+
   const catalogo: Record<string, CartItem[]> = {
     Servicios: data.servicios.filter(s => s.activo !== false).map(s => ({
       tipo: 'servicio' as const,
@@ -103,22 +147,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
       cant: 1,
       est: null,
     })),
-    Productos: data.productos.filter(p => p.uso === 'retail').map(p => ({
-      tipo: 'producto' as const,
-      key: p.id,
-      nombre: p.nombre,
-      precio: p.precio,
-      sub: p.marca + ' · ' + p.stock + ' en stock',
-      stock: p.stock,
-      // Comisión propia del producto (monto fijo o %) o, si no tiene, la global.
-      ...(p.comValor != null
-        ? (p.comTipo === 'monto'
-            ? { com: 0, comMonto: p.comValor }
-            : { com: p.comValor, comMonto: undefined })
-        : { com: comisiones['_producto'] ?? 10, comMonto: undefined }),
-      cant: 1,
-      est: null,
-    })),
+    Productos: data.productos.filter(p => p.uso === 'retail').map(productoItem),
     Adicionales: data.adicionales.map(a => ({
       tipo: 'adicional' as const,
       key: a.id,
@@ -144,6 +173,42 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
       return [...c, { ...it, cant: 1, est: defEst, ...com }]
     })
   }
+
+  // ── Escáner de código de barras ──────────────────────────────────────────
+  // Los escáneres USB/Bluetooth funcionan como un teclado: "teclean" el código
+  // muy rápido y cierran con Enter. Detectamos esa ráfaga (teclas a < 80 ms) y,
+  // al llegar el Enter, buscamos el producto por su SKU y lo agregamos al
+  // carrito, con un bip de confirmación o de error.
+  const scanBuf = useRef('')
+  const scanLast = useRef(0)
+  const scanHandler = useRef<(e: KeyboardEvent) => void>(() => {})
+  scanHandler.current = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      const code = scanBuf.current.trim()
+      scanBuf.current = ''
+      if (code.length < 6) return   // demasiado corto: no es un código de barras
+      e.preventDefault()
+      setQ('')
+      const norm = (s: string) => (s || '').trim()
+      const p = data.productos.find(x => norm(x.sku) === code)
+        || data.productos.find(x => norm(x.sku).toLowerCase() === code.toLowerCase())
+      if (p && p.uso === 'retail') { addItem(productoItem(p)); beepOk(); toast(`✓ ${p.nombre}`) }
+      else if (p) { beepError(); toast(`${p.nombre} es de uso interno, no se vende`) }
+      else { beepError(); toast(`Código no reconocido: ${code}`) }
+      return
+    }
+    if (e.key.length === 1) {
+      const now = performance.now()
+      if (now - scanLast.current > 80) scanBuf.current = ''  // pausa larga = tecleo humano: reinicia
+      scanBuf.current += e.key
+      scanLast.current = now
+    }
+  }
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => scanHandler.current(e)
+    document.addEventListener('keydown', on)
+    return () => document.removeEventListener('keydown', on)
+  }, [])
 
   const [customNombre, setCustomNombre] = useState('')
   const [customPrecio, setCustomPrecio] = useState('')
@@ -232,7 +297,13 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
             <div className="eyebrow">Punto de venta · Ticket {ticket}</div>
             <h3 style={{ marginTop: 6 }}>Nueva venta</h3>
           </div>
-          <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
+          <div className="vc gap12">
+            <span className="vc gap6" title="Lee un producto con el escáner para agregarlo automáticamente"
+              style={{ fontSize: 11.5, color: 'var(--st-conf)', border: '1px solid rgba(147,181,140,0.3)', background: 'rgba(147,181,140,0.1)', borderRadius: 20, padding: '4px 10px' }}>
+              <Ic n="barcode" size={14} />Escáner activo
+            </span>
+            <button className="icon-btn" onClick={onClose}><Ic n="x" /></button>
+          </div>
         </div>
 
         <div className="pos-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', flex: 1, minHeight: 0 }}>
