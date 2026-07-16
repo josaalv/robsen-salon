@@ -524,7 +524,24 @@ export const db = {
       .select()
       .single()
     if (error) throw new Error(error.message)
-    return data as Usuario
+    return mapUsuario(data)
+  },
+  // Guarda el propio perfil (pantalla "Mi perfil"). Usa UPDATE, no UPSERT:
+  // los roles no-admin (estilista, recepción) tienen política de UPDATE de su
+  // propia fila pero NO de INSERT, y un upsert es un INSERT que RLS rechaza aun
+  // cuando la fila ya existe — por eso les fallaba el guardado. Solo actualiza
+  // campos seguros del perfil (no rol/activo), para que un self-update no pueda
+  // escalar privilegios.
+  async updateMiPerfil(u: Usuario): Promise<Usuario> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase
+      .from('usuarios')
+      .update({ nombre: u.nombre, tel: u.tel, ini: u.ini, avatar: u.avatar ?? null })
+      .eq('id', u.id)
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    return mapUsuario(data)
   },
 
   // — Cierres de caja —
