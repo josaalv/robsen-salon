@@ -45,7 +45,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
       URL.revokeObjectURL(preview)
       if (!url) throw new Error('uploadMedia returned null')
       const patch = { ...user, avatar: url }
-      const saved = await db.upsertUsuario(patch)
+      const saved = await db.updateMiPerfil(patch)
       setAvatar(url)
       upsertUsuario(saved).catch(() => {})
       await refreshUser()
@@ -84,7 +84,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
     try {
       const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
       const patch = { ...user, nombre: nombre.trim(), tel, ini }
-      const saved = await db.upsertUsuario(patch)
+      const saved = await db.updateMiPerfil(patch)
       upsertUsuario(saved).catch(() => {})
       await refreshUser()
       toast('Perfil actualizado')
