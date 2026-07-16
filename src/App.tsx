@@ -70,8 +70,9 @@ function AppShell() {
   }, [])
 
   useEffect(() => {
-    if (data.config?.acento) {
-      document.documentElement.style.setProperty('--gold', data.config.acento)
+    const acento = localStorage.getItem('rb_acento') || data.config?.acento
+    if (acento) {
+      document.documentElement.style.setProperty('--gold', acento)
     }
   }, [data.config?.acento])
 

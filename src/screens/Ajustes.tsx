@@ -904,9 +904,9 @@ function applyTema(t: string) {
 }
 
 function AjustesApariencia() {
-  const { data, updateConfig } = useStore()
+  const { data } = useStore()
   const ACENTOS = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8834A', '#5B8DB8']
-  const [acento, setAcento] = useState(data.config.acento || ACENTOS[0])
+  const [acento, setAcento] = useState(() => localStorage.getItem('rb_acento') || data.config.acento || ACENTOS[0])
   const [tema, setTema] = useState(() => localStorage.getItem('rb_tema') || 'Oscuro')
   const [idioma, setIdioma] = useState(() => localStorage.getItem('rb_idioma') || 'es')
 
@@ -927,17 +927,10 @@ function AjustesApariencia() {
       : 'Idioma configurado: Español (México)')
   }
 
-  const handleAccento = async (c: string) => {
-    const previous = acento
+  const handleAccento = (c: string) => {
     setAcento(c)
+    localStorage.setItem('rb_acento', c)
     document.documentElement.style.setProperty('--gold', c)
-    try {
-      await updateConfig({ acento: c })
-    } catch {
-      setAcento(previous)
-      document.documentElement.style.setProperty('--gold', previous)
-      toast('No se pudo guardar el color de acento. Intenta de nuevo.')
-    }
   }
 
 

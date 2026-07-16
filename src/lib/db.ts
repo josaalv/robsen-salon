@@ -294,8 +294,18 @@ export const db = {
   },
   async upsertCita(c: Partial<Cita> & { id: string }) {
     if (!supabase) throw new Error('Sin conexión a Supabase')
-    const { error } = await supabase.from('citas').upsert(toCitaRow(c), { onConflict: 'id' })
-    if (error) { console.error('[db.upsertCita]', error.message); throw new Error(error.message) }
+    const row = toCitaRow(c)
+    // Editar una cita existente se hace con UPDATE, no con upsert: el estilista
+    // tiene permiso RLS para actualizar SUS propias citas, pero un upsert exige
+    // además una política de INSERT que su rol no posee (INSERT ... ON CONFLICT
+    // valida el INSERT aunque la fila ya exista). Si la fila no existe todavía
+    // (cita nueva, que crea gestión), caemos a INSERT.
+    const { data, error } = await supabase.from('citas').update(row).eq('id', c.id).select('id')
+    if (error) { console.error('[db.upsertCita:update]', error.message); throw new Error(error.message) }
+    if (!data || data.length === 0) {
+      const { error: insErr } = await supabase.from('citas').insert(row)
+      if (insErr) { console.error('[db.upsertCita:insert]', insErr.message); throw new Error(insErr.message) }
+    }
   },
   async deleteCita(id: string) {
     if (!supabase) throw new Error('Sin conexión a Supabase')
@@ -378,6 +388,15 @@ export const db = {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('productos').delete().eq('id', id)
     if (error) { console.error('[db.deleteProducto]', error.message); throw new Error(error.message) }
+  },
+  // Ajuste de stock por rol operativo (recepción / estilista): la política RLS
+  // productos_update_stock_operativo permite el UPDATE solo si precio y costo no
+  // cambian, por eso se actualiza únicamente la columna stock (no un upsert de la
+  // fila completa, que exigiría permiso de escritura total del catálogo).
+  async updateStock(id: string, stock: number) {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('productos').update({ stock }).eq('id', id)
+    if (error) { console.error('[db.updateStock]', error.message); throw new Error(error.message) }
   },
 
   // — Movimientos —
