@@ -389,10 +389,17 @@ export const useStore = create<Store>()(
         // estadísticas de clienta sí quedan fuera de esa transacción.
         try {
           await db.addVenta(v)
-          if (syncClienta) await db.upsertClienta(syncClienta)
         } catch (err) {
           set(s => ({ data: { ...s.data, ...previous } }))
           throw err
+        }
+        // La venta ya quedó registrada de forma transaccional (RPC). Actualizar
+        // las estadísticas de la clienta es best-effort: si el rol no tiene
+        // permiso para escribir clientas (p. ej. estilista), NO revertimos una
+        // venta ya cobrada — solo se omite la sincronización de estadísticas.
+        if (syncClienta) {
+          try { await db.upsertClienta(syncClienta) }
+          catch (e) { console.error('[addVenta:syncClienta]', e) }
         }
       },
 
@@ -449,10 +456,16 @@ export const useStore = create<Store>()(
 
         try {
           await db.deleteVenta(id)
-          if (syncClienta) await db.upsertClienta(syncClienta)
         } catch (err) {
           set(s => ({ data: { ...s.data, ...previous } }))
           throw err
+        }
+        // El borrado ya se hizo de forma transaccional (RPC). La reversión de
+        // estadísticas de la clienta es best-effort: no revertimos el borrado si
+        // solo falla la sincronización de estadísticas.
+        if (syncClienta) {
+          try { await db.upsertClienta(syncClienta) }
+          catch (e) { console.error('[deleteVenta:syncClienta]', e) }
         }
       },
 
@@ -585,7 +598,7 @@ export const useStore = create<Store>()(
 
         if (!syncProd) return
         try {
-          await db.upsertProducto(syncProd)
+          await db.updateStock(productoId, syncProd.stock)
           for (const m of syncMov) await db.addMovimiento(m)
         } catch (err) {
           set(s => ({ data: { ...s.data, ...previous } }))
