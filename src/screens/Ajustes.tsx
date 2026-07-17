@@ -31,7 +31,9 @@ function AjustesPerfil({ user }: { user: Usuario }) {
   const [showPw, setShowPw] = useState(false)
   const avatarRef = useRef<HTMLInputElement>(null)
   const [avatar, setAvatar] = useState(() => user.avatar || '')
+  const [color, setColor] = useState(user.color || '')
   const [saving, setSaving] = useState(false)
+  const COLORES_PERFIL = ['#C8A14A', '#93B58C', '#6FA6B8', '#C77B7B', '#B08AC7', '#E8834A', '#5B8DB8', '#7C8CA1']
 
   const onAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -83,7 +85,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
     setSaving(true)
     try {
       const ini = nombre.trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
-      const patch = { ...user, nombre: nombre.trim(), tel, ini }
+      const patch = { ...user, nombre: nombre.trim(), tel, ini, color: color || null }
       const saved = await db.updateMiPerfil(patch)
       upsertUsuario(saved).catch(() => {})
       await refreshUser()
@@ -124,12 +126,34 @@ function AjustesPerfil({ user }: { user: Usuario }) {
         <div className="vc gap16" style={{ marginBottom: 20 }}>
           {avatar
             ? <img src={avatar} alt={user.ini} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--line)' }} />
-            : <Avatar ini={user.ini} color={user.color} size="lg" />}
+            : <Avatar ini={user.ini} color={color || undefined} size="lg" />}
           <input ref={avatarRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={onAvatarFile} />
           <button className="btn ghost sm" disabled={saving} onClick={() => avatarRef.current?.click()}><Ic n="camera" />{avatar ? 'Cambiar foto' : 'Subir foto'}</button>
           {avatar && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} disabled={saving} onClick={quitarAvatar}><Ic n="trash" /></button>}
           <span className={'badge ' + (rolBadgeClass[user.rol] || 'neutral')} style={{ fontSize: 11.5 }}>{user.rol}</span>
         </div>
+        {!avatar && (
+          <div className="field" style={{ marginBottom: 20 }}>
+            <label>Color de perfil</label>
+            <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
+              {COLORES_PERFIL.map(c => (
+                <div
+                  key={c}
+                  onClick={() => setColor(c)}
+                  title={c}
+                  style={{
+                    width: 28, height: 28, borderRadius: '50%', background: c, cursor: 'pointer',
+                    outline: (color || '').toLowerCase() === c.toLowerCase() ? `3px solid ${c}` : '3px solid transparent',
+                    outlineOffset: 2, transition: 'outline 0.15s',
+                  }}
+                />
+              ))}
+            </div>
+            <div className="dim" style={{ fontSize: 11.5, marginTop: 6 }}>
+              Se usa como color de tu inicial cuando no tienes foto. Presiona “Guardar cambios” para aplicarlo.
+            </div>
+          </div>
+        )}
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div className="field"><label>Nombre completo</label><input className="input" value={nombre} onChange={e => setNombre(e.target.value)} /></div>
           <div className="field"><label>Rol</label><input className="input" value={user.rol} disabled style={{ opacity: 0.6 }} /></div>
@@ -143,7 +167,7 @@ function AjustesPerfil({ user }: { user: Usuario }) {
         </div>
         <div className="vc gap8 mt14">
           <button className="btn gold" disabled={saving || telInvalido} onClick={guardar}><Ic n={saving ? 'spinner' : 'check'} />{saving ? 'Guardando…' : 'Guardar cambios'}</button>
-          <button className="btn ghost" disabled={saving} onClick={() => { setNombre(user.nombre); setTel(user.tel || '') }}>Cancelar</button>
+          <button className="btn ghost" disabled={saving} onClick={() => { setNombre(user.nombre); setTel(user.tel || ''); setColor(user.color || '') }}>Cancelar</button>
         </div>
       </div>
       <div className="card card-pad">
