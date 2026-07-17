@@ -292,6 +292,11 @@ export interface SalonConfig {
   comisiones: Record<string, number>
   escalaComisiones: { limite: number | null; pct: number }[]
 
+  // Permisos de módulos configurables por rol. Mapa { rolId: [moduloId, …] }.
+  // Si un rol no aparece, se usa el permiso por defecto de mockData. El rol
+  // admin nunca se guarda aquí: siempre tiene acceso total.
+  permisos?: Record<string, string[]>
+
   logo?: string
 
   notifs: {

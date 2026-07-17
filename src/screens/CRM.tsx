@@ -18,6 +18,23 @@ function abrirWA(tel: string | undefined, msg: string) {
 }
 
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+// El cumpleaños se guarda como "DD Mon" (sin año) para el resto del sistema.
+// Para el <input type="date"> usamos un año neutro (2000, bisiesto → admite
+// 29 Feb) y lo descartamos al guardar.
+const cumpleAIso = (cumple: string): string => {
+  const p = (cumple || '').trim().split(/\s+/)
+  if (p.length < 2) return ''
+  const d = parseInt(p[0], 10)
+  const mi = MESES_CORTOS.findIndex(m => m.toLowerCase() === p[1].toLowerCase())
+  if (!d || mi < 0) return ''
+  return `2000-${String(mi + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+const isoACumple = (iso: string): string => {
+  if (!iso) return ''
+  const [, m, d] = iso.split('-').map(Number)
+  if (!m || !d) return ''
+  return `${d} ${MESES_CORTOS[m - 1]}`
+}
 function fechaHoy() {
   const d = new Date()
   return `${d.getDate()} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`
@@ -140,8 +157,8 @@ function ClientaModal({ c, onClose, onSaved }: {
               </select>
             </div>
             <div className="field">
-              <label>Cumpleaños (ej. 14 Ago)</label>
-              <input className="input" value={cumple} onChange={e => setCumple(e.target.value)} placeholder="14 Ago" />
+              <label>Cumpleaños</label>
+              <input className="input" type="date" value={cumpleAIso(cumple)} onChange={e => setCumple(isoACumple(e.target.value))} />
             </div>
             <div className="field">
               <label>Ciclo de recompra (semanas)</label>
