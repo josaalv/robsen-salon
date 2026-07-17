@@ -4,6 +4,7 @@ import { PhosphorIcon as Ic } from './components/PhosphorIcon'
 import { Avatar, ToastHost, toast } from './components/ui'
 import { useStore } from './data/store'
 import { usuarios, roles } from './data/mockData'
+import { rolPuede } from './lib/helpers'
 import { hasSupabase } from './lib/supabase'
 import type { NavGroup } from './types'
 
@@ -147,8 +148,11 @@ function AppShell() {
   if (!user) return null
 
   const rolData = roles[user.rol] || roles.admin
-  const can = (id: string) => rolData.allow === '*' || (Array.isArray(rolData.allow) && rolData.allow.includes(id))
-  const effRoute = can(route) ? route : 'dashboard'
+  const can = (id: string) => rolPuede(user.rol, id, data.config, roles)
+  // Si el rol no puede ver la ruta actual, cae al primer módulo permitido (o a
+  // Ajustes, siempre accesible desde el menú de cuenta para el perfil propio).
+  const primerModulo = ALL.find(i => can(i.id))?.id || 'ajustes'
+  const effRoute = route === 'ajustes' || can(route) ? route : primerModulo
   const meta = ALL.find(i => i.id === effRoute) || ALL[0]
 
   // Public booking view

@@ -5,7 +5,7 @@ import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
 import { supabase } from '../lib/supabase'
-import { telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
+import { telefonoValido, telefonoError, filtrarTel, rolAllow, rolPuede } from '../lib/helpers'
 import type { Usuario, SlotMinutos, RolUsuario } from '../types'
 
 function SettingRow({ title, desc, children, last }: { title: string; desc?: string; children: React.ReactNode; last?: boolean }) {
@@ -697,10 +697,32 @@ function UsuarioModal({ usr, selfId, esAdmin, onClose }: { usr: Partial<Usuario>
 }
 
 function AjustesUsuarios({ user }: { user: Usuario }) {
-  const { data } = useStore()
+  const { data, updateConfig } = useStore()
   const [modal, setModal] = useState<Partial<Usuario> | null | false>(false)
   const rolBadge: Record<string, string> = { admin: 'vip', gerente: 'pay', recepcion: 'conf', estilista: 'done' }
   const esAdmin = user.rol === 'admin'
+
+  // Activa / desactiva un módulo para un rol y lo guarda en config.permisos.
+  // El admin no es editable: siempre conserva acceso total.
+  const togglePermiso = async (rolId: string, moduloId: string, activar: boolean) => {
+    if (rolId === 'admin') return
+    // Partimos del permiso efectivo actual de cada rol (a medida o por defecto)
+    // para no perder los que ya tenía al cambiar uno solo.
+    const next: Record<string, string[]> = {}
+    for (const r of Object.values(data.roles)) {
+      if (r.id === 'admin') continue
+      const eff = rolAllow(r.id, data.config, data.roles)
+      next[r.id] = eff === '*' ? data.modulos.map(m => m.id) : [...eff]
+    }
+    const actual = new Set(next[rolId] || [])
+    if (activar) actual.add(moduloId); else actual.delete(moduloId)
+    next[rolId] = data.modulos.filter(m => actual.has(m.id)).map(m => m.id)
+    try {
+      await updateConfig({ permisos: next })
+    } catch {
+      toast('No se pudieron guardar los permisos. Intenta de nuevo.')
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -750,32 +772,50 @@ function AjustesUsuarios({ user }: { user: Usuario }) {
         </table>
       </div>
       <div className="card">
-        <CardHead title="Permisos por rol" sub="Módulos disponibles por nivel de acceso" />
-        <table className="table" style={{ marginTop: 6 }}>
-          <thead>
-            <tr>
-              <th>Módulo</th>
-              {Object.values(data.roles).map(r => <th key={r.id} style={{ textAlign: 'center' }}>{r.nombre}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {data.modulos.map(m => (
-              <tr key={m.id}>
-                <td style={{ fontWeight: 600 }}>{m.label}</td>
-                {Object.values(data.roles).map(r => {
-                  const ok = r.allow === '*' || (Array.isArray(r.allow) && r.allow.includes(m.id))
-                  return (
-                    <td key={r.id} style={{ textAlign: 'center' }}>
-                      {ok ? <Ic n="check-circle" size={16} style={{ color: 'var(--st-conf)' }} /> : <Ic n="x-circle" size={16} style={{ color: 'var(--text-4)' }} />}
-                    </td>
-                  )
-                })}
+        <CardHead
+          title="Permisos por rol"
+          sub={esAdmin
+            ? 'Activa o desactiva los módulos que ve cada rol. Los cambios se aplican al instante en el menú de cada usuario.'
+            : 'Módulos disponibles por nivel de acceso'} />
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table" style={{ marginTop: 6 }}>
+            <thead>
+              <tr>
+                <th>Módulo</th>
+                {Object.values(data.roles).map(r => <th key={r.id} style={{ textAlign: 'center' }}>{r.nombre}</th>)}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.modulos.map(m => (
+                <tr key={m.id}>
+                  <td style={{ fontWeight: 600 }}>{m.label}</td>
+                  {Object.values(data.roles).map(r => {
+                    const ok = rolPuede(r.id, m.id, data.config, data.roles)
+                    const bloqueado = r.id === 'admin' || !esAdmin
+                    return (
+                      <td key={r.id} style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={ok}
+                          disabled={bloqueado}
+                          onChange={e => togglePermiso(r.id, m.id, e.target.checked)}
+                          title={r.id === 'admin' ? 'El administrador siempre tiene acceso total' : undefined}
+                          style={{ accentColor: 'var(--gold)', width: 16, height: 16, cursor: bloqueado ? 'default' : 'pointer' }}
+                        />
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <div style={{ padding: '12px 22px' }}>
-          <div className="dim" style={{ fontSize: 12 }}>Los permisos se gestionan por rol. Contacta al administrador para cambios de acceso.</div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {esAdmin
+              ? 'El administrador siempre conserva acceso total y no es editable. Si un rol no tiene un módulo activado, ese módulo no aparece en el menú de esos usuarios.'
+              : 'Los permisos se gestionan por rol. Contacta al administrador para cambios de acceso.'}
+          </div>
         </div>
       </div>
     </div>

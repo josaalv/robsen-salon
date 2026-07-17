@@ -1,4 +1,30 @@
-import type { Venta } from '../types'
+import type { Venta, SalonConfig, Rol } from '../types'
+
+// ─── Permisos de módulos por rol ─────────────────────────────────────────────
+// Fuente única de verdad para "qué módulos ve cada rol". El admin siempre tiene
+// acceso total. Para el resto, si el administrador configuró permisos a medida
+// (config.permisos) se usan esos; si no, el permiso por defecto del rol.
+export const rolAllow = (
+  roleId: string,
+  config: Pick<SalonConfig, 'permisos'>,
+  roles: Record<string, Rol>,
+): string[] | '*' => {
+  if (roleId === 'admin') return '*'
+  const custom = config.permisos?.[roleId]
+  if (Array.isArray(custom)) return custom
+  const base = roles[roleId]?.allow
+  return base === '*' ? '*' : (base ?? [])
+}
+
+export const rolPuede = (
+  roleId: string,
+  moduloId: string,
+  config: Pick<SalonConfig, 'permisos'>,
+  roles: Record<string, Rol>,
+): boolean => {
+  const a = rolAllow(roleId, config, roles)
+  return a === '*' || a.includes(moduloId)
+}
 
 const MES: Record<string, number> = { Ene:0,Feb:1,Mar:2,Abr:3,May:4,Jun:5,Jul:6,Ago:7,Sep:8,Oct:9,Nov:10,Dic:11 }
 const MESN = Object.keys(MES)
