@@ -651,6 +651,13 @@ export const db = {
     const { error } = await supabase.from('wa_mensajes').insert(rows.map(toWaMensajeRow))
     if (error) { console.error('[db.insertWaMensajes]', error.message); throw new Error(error.message) }
   },
+  // Dispara el conector: envía por WhatsApp los mensajes en estado 'aprobado'.
+  async enviarWaAprobados(): Promise<{ procesados: number }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('wa-enviar', { body: {} })
+    if (error) throw new Error(error.message)
+    return data as { procesados: number }
+  },
   async updateWaMensaje(id: string, patch: Partial<WaMensaje>): Promise<void> {
     if (!supabase) return
     const row: Record<string, unknown> = {}

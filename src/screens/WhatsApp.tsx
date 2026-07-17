@@ -178,6 +178,7 @@ function PanelAutomatizacion() {
   const [cola, setCola] = useState<WaMensaje[]>([])
   const [cargando, setCargando] = useState(true)
   const [generando, setGenerando] = useState(false)
+  const [enviando, setEnviando] = useState(false)
 
   const recargar = async () => {
     const [p, c] = await Promise.all([db.getWaPlantillas(), db.getWaMensajes()])
@@ -258,6 +259,18 @@ function PanelAutomatizacion() {
     for (const m of pend) await setEstado(m, 'aprobado')
     if (pend.length) toast(`${pend.length} aprobado${pend.length > 1 ? 's' : ''}.`)
   }
+  const enviarAprobados = async () => {
+    setEnviando(true)
+    try {
+      const r = await db.enviarWaAprobados()
+      await recargar()
+      toast(r?.procesados ? `${r.procesados} mensaje${r.procesados > 1 ? 's' : ''} enviado${r.procesados > 1 ? 's' : ''}.` : 'No había mensajes listos para enviar.')
+    } catch {
+      toast('No se pudo enviar. Revisa el token de WhatsApp e intenta de nuevo.')
+    } finally {
+      setEnviando(false)
+    }
+  }
 
   const porAprobar = cola.filter(m => m.estado === 'pendiente_aprobacion')
   const listos     = cola.filter(m => m.estado === 'aprobado')
@@ -294,7 +307,12 @@ function PanelAutomatizacion() {
           {porAprobar.length > 0 && (
             <button className="btn ghost sm" onClick={aprobarTodos}><Ic n="check" />Aprobar todos ({porAprobar.length})</button>
           )}
-          <button className="btn gold sm" disabled={generando} onClick={generar}>
+          {listos.length > 0 && (
+            <button className="btn gold sm" disabled={enviando} onClick={enviarAprobados}>
+              <Ic n={enviando ? 'spinner' : 'paper-plane-tilt'} />{enviando ? 'Enviando…' : `Enviar aprobados (${listos.length})`}
+            </button>
+          )}
+          <button className="btn ghost sm" disabled={generando} onClick={generar}>
             <Ic n={generando ? 'spinner' : 'arrows-clockwise'} />{generando ? 'Generando…' : 'Generar cola de hoy'}
           </button>
         </div>
