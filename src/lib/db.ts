@@ -557,7 +557,7 @@ export const db = {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { data, error } = await supabase
       .from('usuarios')
-      .update({ nombre: u.nombre, tel: u.tel, ini: u.ini, avatar: u.avatar ?? null })
+      .update({ nombre: u.nombre, tel: u.tel, ini: u.ini, avatar: u.avatar ?? null, color: u.color ?? null })
       .eq('id', u.id)
       .select()
       .single()
