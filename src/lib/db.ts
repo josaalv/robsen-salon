@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja } from '../types'
+import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja, WaMensaje, WaPlantilla } from '../types'
 
 const BUCKET = 'media'
 const BUCKET_PRIVADO = 'fotos-clientas'
@@ -123,6 +123,40 @@ const mapClienta = (r: any): Clienta => ({
   formulas: r.formulas ?? [],
   fotos: r.fotos ?? [],
   waOptin: r.wa_optin ?? true,
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapWaMensaje = (r: any): WaMensaje => ({
+  id: r.id,
+  clientaId: r.clienta_id ?? undefined,
+  tel: r.tel,
+  flujo: r.flujo,
+  plantilla: r.plantilla ?? undefined,
+  variables: r.variables ?? {},
+  cuerpo: r.cuerpo ?? '',
+  estado: r.estado,
+  requiereAprobacion: r.requiere_aprobacion,
+  programadoPara: r.programado_para ?? undefined,
+  enviadoAt: r.enviado_at ?? undefined,
+  waMessageId: r.wa_message_id ?? undefined,
+  error: r.error ?? undefined,
+  citaId: r.cita_id ?? undefined,
+  creadoPor: r.creado_por,
+  createdAt: r.created_at,
+})
+
+const toWaMensajeRow = (m: Omit<WaMensaje, 'id' | 'createdAt'>) => ({
+  clienta_id: m.clientaId ?? null,
+  tel: m.tel,
+  flujo: m.flujo,
+  plantilla: m.plantilla ?? null,
+  variables: m.variables ?? {},
+  cuerpo: m.cuerpo ?? '',
+  estado: m.estado,
+  requiere_aprobacion: m.requiereAprobacion,
+  programado_para: m.programadoPara ?? null,
+  cita_id: m.citaId ?? null,
+  creado_por: m.creadoPor ?? 'sistema',
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -592,6 +626,41 @@ export const db = {
       notas: c.notas ?? null,
     })
     if (error) { console.error('[db.addCierreCaja]', error.message); throw error }
+  },
+
+  // ─── WhatsApp: plantillas y cola de mensajes ──────────────────────────────
+  async getWaPlantillas(): Promise<WaPlantilla[]> {
+    if (!supabase) return []
+    const { data, error } = await supabase.from('wa_plantillas').select('*').order('flujo')
+    if (error) { console.error('[db.getWaPlantillas]', error.message); return [] }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (data ?? []).map((r: any): WaPlantilla => ({
+      id: r.id, nombre: r.nombre, idioma: r.idioma, categoria: r.categoria,
+      flujo: r.flujo ?? undefined, cuerpo: r.cuerpo ?? '', estadoMeta: r.estado_meta, activa: r.activa,
+    }))
+  },
+  async getWaMensajes(limite = 300): Promise<WaMensaje[]> {
+    if (!supabase) return []
+    const { data, error } = await supabase.from('wa_mensajes')
+      .select('*').order('created_at', { ascending: false }).limit(limite)
+    if (error) { console.error('[db.getWaMensajes]', error.message); return [] }
+    return (data ?? []).map(mapWaMensaje)
+  },
+  async insertWaMensajes(rows: Omit<WaMensaje, 'id' | 'createdAt'>[]): Promise<void> {
+    if (!supabase || rows.length === 0) return
+    const { error } = await supabase.from('wa_mensajes').insert(rows.map(toWaMensajeRow))
+    if (error) { console.error('[db.insertWaMensajes]', error.message); throw new Error(error.message) }
+  },
+  async updateWaMensaje(id: string, patch: Partial<WaMensaje>): Promise<void> {
+    if (!supabase) return
+    const row: Record<string, unknown> = {}
+    if (patch.estado             !== undefined) row.estado              = patch.estado
+    if (patch.requiereAprobacion !== undefined) row.requiere_aprobacion = patch.requiereAprobacion
+    if (patch.error              !== undefined) row.error               = patch.error
+    if (patch.waMessageId        !== undefined) row.wa_message_id        = patch.waMessageId
+    row.updated_at = new Date().toISOString()
+    const { error } = await supabase.from('wa_mensajes').update(row).eq('id', id)
+    if (error) { console.error('[db.updateWaMensaje]', error.message); throw new Error(error.message) }
   },
 
   // ─── Carga completa desde Supabase ────────────────────────────────────────

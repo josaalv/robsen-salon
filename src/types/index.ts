@@ -256,6 +256,41 @@ export interface Gasto {
   categoria: string
 }
 
+// ─── WhatsApp (CRM automatizado) ─────────────────────────────────────────────
+export type WaEstado =
+  | 'borrador' | 'pendiente_aprobacion' | 'aprobado' | 'enviando'
+  | 'enviado' | 'entregado' | 'leido' | 'respondido' | 'fallido' | 'cancelado'
+
+export interface WaPlantilla {
+  id: string
+  nombre: string
+  idioma: string
+  categoria: string
+  flujo?: string
+  cuerpo: string
+  estadoMeta: string   // borrador | pendiente | aprobada | rechazada
+  activa: boolean
+}
+
+export interface WaMensaje {
+  id: string
+  clientaId?: string
+  tel: string
+  flujo: string
+  plantilla?: string
+  variables: Record<string, string | number>
+  cuerpo: string
+  estado: WaEstado
+  requiereAprobacion: boolean
+  programadoPara?: string
+  enviadoAt?: string
+  waMessageId?: string
+  error?: string
+  citaId?: string
+  creadoPor: string
+  createdAt: string
+}
+
 export interface NavItem {
   id: string
   label: string
