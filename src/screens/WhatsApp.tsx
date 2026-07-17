@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Avatar, CardHead, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { db } from '../lib/db'
 import { mxn } from '../lib/helpers'
-import type { Clienta } from '../types'
+import type { Clienta, WaMensaje, WaPlantilla } from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const HOY = new Date()
@@ -145,6 +146,208 @@ function saveContactados(s: Set<string>) {
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
+// ─── Panel de automatización (cola + aprobación) ────────────────────────────
+const renderPlantilla = (cuerpo: string, vars: string[]) =>
+  cuerpo.replace(/\{\{(\d+)\}\}/g, (_m, n) => vars[Number(n) - 1] ?? '')
+
+const EST_META: Record<string, { label: string; color: string }> = {
+  aprobada:  { label: 'Aprobada', color: 'var(--st-conf)' },
+  pendiente: { label: 'En revisión', color: 'var(--st-pend)' },
+  rechazada: { label: 'Rechazada', color: 'var(--st-canc)' },
+  borrador:  { label: 'Borrador', color: 'var(--text-3)' },
+}
+const EST_MSG: Record<string, { label: string; color: string }> = {
+  pendiente_aprobacion: { label: 'Por aprobar',   color: 'var(--st-pend)' },
+  aprobado:             { label: 'Listo',          color: 'var(--gold)' },
+  enviando:             { label: 'Enviando',       color: 'var(--gold)' },
+  enviado:              { label: 'Enviado',        color: 'var(--st-conf)' },
+  entregado:            { label: 'Entregado ✓✓',   color: 'var(--st-conf)' },
+  leido:                { label: 'Leído',          color: 'var(--st-conf)' },
+  respondido:           { label: 'Respondió',      color: 'var(--gold)' },
+  fallido:              { label: 'Falló',          color: 'var(--st-canc)' },
+  cancelado:            { label: 'Cancelado',      color: 'var(--text-3)' },
+}
+const FLUJO_LABEL: Record<string, string> = {
+  confirmacion: 'Confirmación', recordatorio_24h: 'Recordatorio', post_visita: 'Post-visita',
+  cumpleanos: 'Cumpleaños', bienvenida: 'Bienvenida', reactivacion: 'Reactivación',
+}
+
+function PanelAutomatizacion() {
+  const { data } = useStore()
+  const [plantillas, setPlantillas] = useState<WaPlantilla[]>([])
+  const [cola, setCola] = useState<WaMensaje[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [generando, setGenerando] = useState(false)
+
+  const recargar = async () => {
+    const [p, c] = await Promise.all([db.getWaPlantillas(), db.getWaMensajes()])
+    setPlantillas(p); setCola(c)
+  }
+  useEffect(() => { recargar().finally(() => setCargando(false)) }, [])
+
+  const tplPorFlujo = useMemo(() => {
+    const m: Record<string, WaPlantilla> = {}
+    plantillas.forEach(p => { if (p.flujo) m[p.flujo] = p })
+    return m
+  }, [plantillas])
+
+  const clByNombre = (nombre: string) => data.clientas.find(c => c.nombre === nombre)
+  const estNombre = (id: string) => data.estilistas.find(e => e.id === id)?.nombre.split(' ')[0] || 'tu estilista'
+  const nom1 = (n: string) => n.split(' ')[0]
+
+  const generar = async () => {
+    setGenerando(true)
+    try {
+      const hoy = new Date()
+      const man = new Date(hoy); man.setDate(hoy.getDate() + 1)
+      const manStr = `${man.getFullYear()}-${String(man.getMonth() + 1).padStart(2, '0')}-${String(man.getDate()).padStart(2, '0')}`
+      // Evita duplicar lo ya encolado (por clienta + flujo + cita).
+      const yaEncolado = new Set(
+        cola.filter(m => m.estado !== 'cancelado' && m.estado !== 'fallido')
+          .map(m => `${m.clientaId || ''}|${m.flujo}|${m.citaId || ''}`))
+      const nuevos: Omit<WaMensaje, 'id' | 'createdAt'>[] = []
+
+      const encolar = (flujo: string, cl: Clienta | undefined, tel: string, vars: string[], requiere: boolean, citaId?: string) => {
+        const tpl = tplPorFlujo[flujo]
+        if (!tpl || !tel) return
+        if (cl && cl.waOptin === false) return           // respeta el opt-out
+        const key = `${cl?.id || ''}|${flujo}|${citaId || ''}`
+        if (yaEncolado.has(key)) return
+        yaEncolado.add(key)
+        nuevos.push({
+          clientaId: cl?.id, tel, flujo, plantilla: tpl.nombre,
+          variables: vars.reduce((o, v, i) => { o[String(i + 1)] = v; return o }, {} as Record<string, string | number>),
+          cuerpo: renderPlantilla(tpl.cuerpo, vars),
+          estado: requiere ? 'pendiente_aprobacion' : 'aprobado',
+          requiereAprobacion: requiere, citaId, creadoPor: 'sistema',
+        })
+      }
+
+      // Recordatorios 24h (rutinario → automático)
+      data.citasFuturas.filter(c => c.fecha === manStr).forEach(c => {
+        const cl = clByNombre(c.cl)
+        encolar('recordatorio_24h', cl, cl?.tel || '', [nom1(c.cl), c.srv, c.h, estNombre(c.est)], false, c.id)
+      })
+      // Cumpleaños de hoy (rutinario → automático)
+      data.clientas.filter(c => diasCumple(c.cumple) === 0).forEach(c => {
+        encolar('cumpleanos', c, c.tel, [nom1(c.nombre)], false)
+      })
+      // Reactivación de inactivas (sensible → requiere aprobación)
+      data.clientas.filter(c => c.estado === 'Inactiva' || diasDesde(c.ultima) > c.ciclo * 7 * 1.5).forEach(c => {
+        encolar('reactivacion', c, c.tel, [nom1(c.nombre), String(diasDesde(c.ultima)), c.fav || 'servicio'], true)
+      })
+
+      if (nuevos.length === 0) { toast('No hay mensajes nuevos por encolar ahora mismo.'); return }
+      await db.insertWaMensajes(nuevos)
+      await recargar()
+      toast(`${nuevos.length} mensaje${nuevos.length > 1 ? 's' : ''} en la cola.`)
+    } catch {
+      toast('No se pudo generar la cola. Intenta de nuevo.')
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  const setEstado = async (m: WaMensaje, estado: WaMensaje['estado']) => {
+    setCola(prev => prev.map(x => x.id === m.id ? { ...x, estado } : x))
+    try { await db.updateWaMensaje(m.id, { estado }) }
+    catch { toast('No se pudo actualizar. Intenta de nuevo.'); recargar() }
+  }
+  const aprobarTodos = async () => {
+    const pend = cola.filter(m => m.estado === 'pendiente_aprobacion')
+    for (const m of pend) await setEstado(m, 'aprobado')
+    if (pend.length) toast(`${pend.length} aprobado${pend.length > 1 ? 's' : ''}.`)
+  }
+
+  const porAprobar = cola.filter(m => m.estado === 'pendiente_aprobacion')
+  const listos     = cola.filter(m => m.estado === 'aprobado')
+  const enviados   = cola.filter(m => ['enviando', 'enviado', 'entregado', 'leido', 'respondido'].includes(m.estado))
+  const aprobadasN = plantillas.filter(p => p.estadoMeta === 'aprobada').length
+
+  const nombreDe = (m: WaMensaje) => data.clientas.find(c => c.id === m.clientaId)?.nombre || m.tel
+
+  const Fila = ({ m, acciones }: { m: WaMensaje; acciones?: React.ReactNode }) => {
+    const est = EST_MSG[m.estado] || { label: m.estado, color: 'var(--text-3)' }
+    return (
+      <div style={{ padding: '12px 14px', border: '1px solid var(--line-soft)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="between" style={{ gap: 10 }}>
+          <div className="vc gap8" style={{ minWidth: 0 }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{nombreDe(m)}</span>
+            <span className="badge neutral" style={{ fontSize: 10.5 }}>{FLUJO_LABEL[m.flujo] || m.flujo}</span>
+          </div>
+          <span className="badge" style={{ fontSize: 10.5, color: est.color, borderColor: est.color }}>{est.label}</span>
+        </div>
+        <div className="dim" style={{ fontSize: 12, lineHeight: 1.45 }}>{m.cuerpo}</div>
+        {acciones && <div className="vc gap8" style={{ marginTop: 2 }}>{acciones}</div>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="between" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 2 }}>Automatización</div>
+          <h3 style={{ margin: 0 }}>WhatsApp automático</h3>
+        </div>
+        <div className="vc gap8">
+          {porAprobar.length > 0 && (
+            <button className="btn ghost sm" onClick={aprobarTodos}><Ic n="check" />Aprobar todos ({porAprobar.length})</button>
+          )}
+          <button className="btn gold sm" disabled={generando} onClick={generar}>
+            <Ic n={generando ? 'spinner' : 'arrows-clockwise'} />{generando ? 'Generando…' : 'Generar cola de hoy'}
+          </button>
+        </div>
+      </div>
+
+      {/* Estado de plantillas */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <span className="dim" style={{ fontSize: 12 }}>Plantillas: <b>{aprobadasN}/{plantillas.length || 6}</b> aprobadas por Meta</span>
+        {plantillas.map(p => {
+          const e = EST_META[p.estadoMeta] || EST_META.borrador
+          return <span key={p.id} className="badge" style={{ fontSize: 10.5, color: e.color, borderColor: e.color }}>{FLUJO_LABEL[p.flujo || ''] || p.nombre} · {e.label}</span>
+        })}
+      </div>
+      {aprobadasN < (plantillas.length || 6) && (
+        <div className="dim" style={{ fontSize: 11.5, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 12px' }}>
+          El envío real se activa cuando Meta apruebe las plantillas (en revisión). Mientras tanto puedes generar y aprobar la cola.
+        </div>
+      )}
+
+      {cargando ? (
+        <div className="dim center" style={{ padding: 20, fontSize: 13 }}>Cargando…</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="eyebrow">Por aprobar ({porAprobar.length})</div>
+            {porAprobar.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Nada pendiente.</div>}
+            {porAprobar.map(m => (
+              <Fila key={m.id} m={m} acciones={<>
+                <button className="btn gold sm" onClick={() => setEstado(m, 'aprobado')}><Ic n="check" />Aprobar</button>
+                <button className="btn ghost sm" onClick={() => setEstado(m, 'cancelado')}>Descartar</button>
+              </>} />
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="eyebrow">Listos para enviar ({listos.length})</div>
+            {listos.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Nada listo.</div>}
+            {listos.map(m => (
+              <Fila key={m.id} m={m} acciones={
+                <button className="btn ghost sm" onClick={() => setEstado(m, 'cancelado')}>Cancelar</button>
+              } />
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="eyebrow">Enviados ({enviados.length})</div>
+            {enviados.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Aún nada enviado.</div>}
+            {enviados.map(m => <Fila key={m.id} m={m} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:string)=>void }) {
   const { data } = useStore()
   const [sec, setSec] = useState('hoy_pend')
@@ -269,6 +472,8 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       {showNueva && <NuevaPlantillaModal onClose={()=>setShowNueva(false)} />}
+
+      <PanelAutomatizacion />
 
       {/* KPI row */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
