@@ -99,6 +99,8 @@ const toClientaRow = (c: Clienta) => ({
   notas: c.notas ?? null,
   formulas: c.formulas ?? [],
   fotos: c.fotos ?? [],
+  wa_optin: c.waOptin ?? true,
+  // wa_optout_at se maneja solo desde el webhook (BAJA); no se toca desde la app.
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,6 +122,7 @@ const mapClienta = (r: any): Clienta => ({
   notas: r.notas ?? undefined,
   formulas: r.formulas ?? [],
   fotos: r.fotos ?? [],
+  waOptin: r.wa_optin ?? true,
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
