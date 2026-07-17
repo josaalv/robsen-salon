@@ -67,6 +67,7 @@ export interface Clienta {
   notas?: string
   formulas?: { id: string; fecha: string; srv: string; formula: string; editadoEl?: string }[]
   fotos?: FotoEntry[]
+  waOptin?: boolean   // consentimiento para recibir mensajes automáticos por WhatsApp
 }
 
 // Un servicio dentro de una cita. Una cita puede tener varios (ej. maquillaje +

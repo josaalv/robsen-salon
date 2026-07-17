@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, toast, ConfirmModal } from '../components/ui'
+import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, Switch, toast, ConfirmModal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
@@ -54,6 +54,7 @@ function ClientaModal({ c, onClose, onSaved }: {
   const [fav, setFav] = useState(c.fav || data.servicios[0].nombre)
   const [cumple, setCumple] = useState(c.cumple || '')
   const [ciclo, setCiclo] = useState(c.ciclo || 8)
+  const [waOptin, setWaOptin] = useState(c.waOptin ?? true)
   const [forzarDuplicado, setForzarDuplicado] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -84,6 +85,7 @@ function ClientaModal({ c, onClose, onSaved }: {
         fav,
         cumple: cumple || '01 Ene',
         ciclo: +ciclo || 8,
+        waOptin,
         ini,
         ultima: c.ultima || fechaHoy(),
         ticket: c.ticket || 0,
@@ -163,6 +165,20 @@ function ClientaModal({ c, onClose, onSaved }: {
             <div className="field">
               <label>Ciclo de recompra (semanas)</label>
               <input className="input num" type="number" min="1" value={ciclo} onChange={e => setCiclo(Math.max(1, +e.target.value))} />
+            </div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <div className="between" style={{ gap: 14, padding: '10px 14px', border: '1px solid var(--line)', borderRadius: 10, background: 'var(--surface-2)' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span style={{ color: 'var(--gold)', marginTop: 1 }}><Ic n="whatsapp-logo" /></span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>Recibe mensajes por WhatsApp</div>
+                    <div className="dim" style={{ fontSize: 11.5, marginTop: 2, lineHeight: 1.45 }}>
+                      Confirmaciones, recordatorios y avisos automáticos. Desactívalo si la clienta pide no recibirlos.
+                    </div>
+                  </div>
+                </div>
+                <Switch on={waOptin} onClick={() => setWaOptin(v => !v)} />
+              </div>
             </div>
           </div>
         </div>
