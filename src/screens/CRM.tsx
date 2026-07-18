@@ -55,22 +55,34 @@ function ClientaModal({ c, onClose, onSaved }: {
   const [cumple, setCumple] = useState(c.cumple || '')
   const [ciclo, setCiclo] = useState(c.ciclo || 8)
   const [waOptin, setWaOptin] = useState(c.waOptin ?? true)
-  const [forzarDuplicado, setForzarDuplicado] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [confirmarDup, setConfirmarDup] = useState<Clienta[] | null>(null)
 
   const estadosCl: EstadoClienta[] = ['VIP', 'Frecuente', 'Activa', 'Nueva', 'Inactiva']
 
-  const telNorm = normalizarTel(tel)
-  const duplicado = telNorm.length >= 8
-    ? data.clientas.find(x => x.id !== c.id && normalizarTel(x.tel) === telNorm)
-    : undefined
-
   const telInvalido = !!tel.trim() && !telefonoValido(tel)
 
-  const guardar = async () => {
-    if (!nombre.trim() || saving) return
-    if (telInvalido) return
-    if (duplicado && !forzarDuplicado) return
+  // Posibles coincidencias: mismo teléfono (últimos 10 dígitos) o nombre muy
+  // parecido (2+ palabras en común). Es solo un aviso con confirmación, no un
+  // bloqueo — algunas clientas comparten teléfono (p. ej. familiares).
+  const normNombre = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
+  const buscarSimilares = (): Clienta[] => {
+    const telDig = normalizarTel(tel)
+    const tokens = normNombre(nombre).split(' ').filter(t => t.length > 1)
+    return data.clientas.filter(x => {
+      if (x.id === c.id) return false
+      const xdig = normalizarTel(x.tel)
+      const telMatch = telDig.length >= 8 && xdig.length >= 8 && xdig.slice(-10) === telDig.slice(-10)
+      const xt = normNombre(x.nombre).split(' ').filter(t => t.length > 1)
+      const shared = tokens.filter(t => xt.includes(t)).length
+      const nombreMatch = tokens.length >= 2 && shared >= 2
+      return telMatch || nombreMatch
+    }).slice(0, 6)
+  }
+
+  const doSave = async () => {
+    if (saving) return
+    setConfirmarDup(null)
     const id = c.id || ('c' + Date.now())
     const ini = nombre.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
     setSaving(true)
@@ -97,14 +109,60 @@ function ClientaModal({ c, onClose, onSaved }: {
     } catch (err) {
       const code = (err as { code?: string })?.code
       toast(code === '23505'
-        ? 'Ya existe una clienta con ese teléfono. Revisa el listado antes de crear una nueva.'
+        ? 'Ya existe una clienta con esos datos.'
         : 'No se pudo guardar la clienta. Intenta de nuevo.')
       setSaving(false)
     }
   }
 
+  // Antes de guardar, si hay coincidencias muestra el pop-up para decidir.
+  const intentarGuardar = () => {
+    if (!nombre.trim()) { toast('El nombre no puede estar vacío'); return }
+    if (telInvalido) { toast('Ingresa un teléfono válido a 10 dígitos'); return }
+    const sim = buscarSimilares()
+    if (sim.length) { setConfirmarDup(sim); return }
+    doSave()
+  }
+
   return (
     <div className="rb-modal-bg" onClick={onClose}>
+      {confirmarDup && (
+        <div className="rb-modal-bg" style={{ zIndex: 60 }} onClick={e => { e.stopPropagation(); setConfirmarDup(null) }}>
+          <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 460, maxWidth: '94vw' }}>
+            <div className="card-head">
+              <div>
+                <div className="eyebrow">Posible duplicado</div>
+                <h3 style={{ marginTop: 6 }}>¿Ya existe esta clienta?</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setConfirmarDup(null)}><Ic n="x" /></button>
+            </div>
+            <div className="card-pad" style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="dim" style={{ fontSize: 13, lineHeight: 1.5 }}>
+                Encontramos {confirmarDup.length === 1 ? 'una clienta parecida' : `${confirmarDup.length} clientas parecidas`} (por teléfono o por nombre). Revisa si es la misma persona antes de crear una nueva.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {confirmarDup.map(x => (
+                  <div key={x.id} className="between" style={{ gap: 10, padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'var(--surface-2)' }}>
+                    <div className="vc gap10" style={{ minWidth: 0 }}>
+                      <Avatar ini={x.ini} size="sm" />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.nombre}</div>
+                        <div className="dim num" style={{ fontSize: 11.5 }}>{x.tel || 'sin teléfono'}{x.ultima ? ` · últ. ${x.ultima}` : ''}</div>
+                      </div>
+                    </div>
+                    <span className="badge neutral" style={{ fontSize: 10.5, flex: '0 0 auto' }}>{x.estado}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <hr className="hr" />
+            <div className="card-pad vc gap12" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button className="btn ghost" onClick={() => setConfirmarDup(null)}>Cancelar</button>
+              <button className="btn gold" disabled={saving} onClick={doSave}><Ic n="user-plus" />Agregar de todas formas</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '94vw' }}>
         <div className="card-head">
           <div>
@@ -124,22 +182,12 @@ function ClientaModal({ c, onClose, onSaved }: {
               <input
                 className="input"
                 value={tel}
-                onChange={e => { setTel(filtrarTel(e.target.value)); setForzarDuplicado(false) }}
+                onChange={e => setTel(filtrarTel(e.target.value))}
                 placeholder="33 1234 5678"
                 style={{ borderColor: telInvalido ? 'var(--st-canc)' : undefined }}
               />
               {telInvalido && <div style={{ fontSize: 11.5, color: 'var(--st-canc)', marginTop: 4 }}>{telefonoError(tel)}</div>}
             </div>
-            {duplicado && (
-              <div style={{ gridColumn: '1 / -1', background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--st-canc)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span>Ya existe una clienta con este teléfono: <b>{duplicado.nombre}</b>. ¿Es la misma persona?</span>
-                {!forzarDuplicado && (
-                  <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => setForzarDuplicado(true)}>
-                    Es una persona distinta, guardar de todas formas
-                  </button>
-                )}
-              </div>
-            )}
             <div className="field">
               <label>Estado</label>
               <select className="select" value={estado} onChange={e => setEstado(e.target.value as EstadoClienta)}>
@@ -187,9 +235,9 @@ function ClientaModal({ c, onClose, onSaved }: {
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
           <button
             className="btn gold"
-            onClick={guardar}
+            onClick={intentarGuardar}
             style={(() => {
-              const ok = !!nombre.trim() && !telInvalido && (!duplicado || forzarDuplicado) && !saving
+              const ok = !!nombre.trim() && !telInvalido && !saving
               return { opacity: ok ? 1 : .4, pointerEvents: ok ? 'auto' : 'none' }
             })()}
           >
