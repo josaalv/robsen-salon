@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, Seg, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, resolverComision } from '../lib/helpers'
+import { mxn, resolverComision, normalizarTel } from '../lib/helpers'
 import type { Venta, Cita, Producto } from '../types'
 
 // Sonido de confirmación/error para el escáner. Usa Web Audio (sin archivos):
@@ -87,6 +87,8 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
     try { return JSON.parse(localStorage.getItem(DRAFT_KEY + '_cart') || '[]') } catch { return [] }
   })
   const [cliente, setCliente] = useState(() => citaOrigen ? citaOrigen.cl : (localStorage.getItem(DRAFT_KEY + '_cliente') || ''))
+  const [clienteQ, setClienteQ] = useState('')
+  const [clienteOpen, setClienteOpen] = useState(false)
   const [desc, setDesc] = useState(() => citaOrigen ? 0 : Number(localStorage.getItem(DRAFT_KEY + '_desc') || '0'))
   const [anticipo, setAnticipo] = useState(() => citaOrigen ? (citaOrigen.ant || 0) : Number(localStorage.getItem(DRAFT_KEY + '_anticipo') || '0'))
 
@@ -231,7 +233,23 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   }
 
   const setCant = (key: string, d: number) => setCart(c => c.map(l => l.key === key ? { ...l, cant: Math.max(1, l.cant + d) } : l))
+  // Precio unitario editable por línea (p. ej. un servicio que cambió de precio).
+  // La venta sigue registrándose con el mismo servicio, solo con el precio nuevo;
+  // los totales y la comisión por % se recalculan solos a partir de este precio.
+  const setLinePrecio = (key: string, precio: number) => setCart(c => c.map(l => l.key === key ? { ...l, precio: Math.max(0, precio) } : l))
   const del = (key: string) => setCart(c => c.filter(l => l.key !== key))
+
+  // Buscador de clientas por nombre o teléfono.
+  const clienteResultados = (() => {
+    const term = clienteQ.trim().toLowerCase()
+    const dig = normalizarTel(clienteQ)
+    const base = !term
+      ? data.clientas
+      : data.clientas.filter(c =>
+          c.nombre.toLowerCase().includes(term) ||
+          (dig.length >= 3 && normalizarTel(c.tel).includes(dig)))
+    return base.slice(0, 8)
+  })()
   const setLineEst = (key: string, est: string | null) => setCart(c => c.map(l => {
     if (l.key !== key) return l
     if (l.tipo !== 'servicio') return { ...l, est }
@@ -373,12 +391,42 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
           {/* Ticket / carrito */}
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--bg-2)' }}>
             <div style={{ padding: '16px 20px 12px', flex: '0 0 auto' }}>
-              <div className="field">
+              <div className="field" style={{ position: 'relative' }}>
                 <label>Clienta</label>
-                <select className="select" value={cliente} onChange={e => setCliente(e.target.value)}>
-                  <option value="">Venta de mostrador</option>
-                  {data.clientas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                </select>
+                <div className="vc gap6">
+                  <input
+                    className="input f1"
+                    style={{ minWidth: 0 }}
+                    value={clienteOpen ? clienteQ : (cliente || '')}
+                    placeholder="Buscar por nombre o teléfono…"
+                    onFocus={() => { setClienteOpen(true); setClienteQ('') }}
+                    onChange={e => { setClienteQ(e.target.value); setClienteOpen(true) }}
+                  />
+                  {cliente && !clienteOpen && (
+                    <button className="btn icon ghost sm" title="Quitar clienta"
+                      onClick={() => { setCliente(''); setClienteQ('') }}><Ic n="x" /></button>
+                  )}
+                </div>
+                {clienteOpen && (
+                  <>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setClienteOpen(false)} />
+                    <div className="card" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 41, marginTop: 4, maxHeight: 260, overflowY: 'auto', padding: 4, boxShadow: 'var(--sh-lg)' }}>
+                      <div className="nav-item" onClick={() => { setCliente(''); setClienteQ(''); setClienteOpen(false) }}>
+                        <Ic n="storefront" />Venta de mostrador
+                      </div>
+                      {clienteResultados.map(c => (
+                        <div key={c.id} className="nav-item" style={{ justifyContent: 'space-between', gap: 10 }}
+                          onClick={() => { setCliente(c.nombre); setClienteQ(''); setClienteOpen(false) }}>
+                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
+                          <span className="dim num" style={{ fontSize: 11, flex: '0 0 auto' }}>{c.tel || '—'}</span>
+                        </div>
+                      ))}
+                      {clienteResultados.length === 0 && (
+                        <div className="dim" style={{ padding: '10px 12px', fontSize: 12 }}>Sin coincidencias.</div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             <hr className="hr" />
@@ -403,8 +451,23 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                   <div className="between" style={{ gap: 10 }}>
                     <div className="f1" style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{l.nombre}</div>
-                      <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
-                        {mxn(l.precio)} c/u{l.comMonto != null ? ` · com. ${mxn(l.comMonto)}` : l.com ? ` · com. ${l.com}%` : ''}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <span className="dim" style={{ fontSize: 12 }}>$</span>
+                          <input
+                            className="input num"
+                            type="number"
+                            min="0"
+                            value={l.precio}
+                            onChange={e => setLinePrecio(l.key, +e.target.value || 0)}
+                            title="Precio unitario — editable si el servicio cambió de precio"
+                            style={{ width: 88, padding: '4px 8px', fontSize: 12.5 }}
+                          />
+                          <span className="dim" style={{ fontSize: 11 }}>c/u</span>
+                        </div>
+                        {(l.comMonto != null || l.com) ? (
+                          <span className="dim" style={{ fontSize: 10.5 }}>· {l.comMonto != null ? `com. ${mxn(l.comMonto)}` : `com. ${l.com}%`}</span>
+                        ) : null}
                       </div>
                     </div>
                     <div className="num" style={{ fontWeight: 600, fontSize: 13.5 }}>{mxn(l.precio * l.cant)}</div>
