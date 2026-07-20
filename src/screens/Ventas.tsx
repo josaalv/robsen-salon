@@ -363,7 +363,9 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const [filtroTipo, setFiltroTipo] = useState('Todas')
   const [filtroPeriodo, setFiltroPeriodo] = useState('Todo')
   const [filtroPago, setFiltroPago] = useState('Todos')
-  const [dia, setDia] = useState('')   // 'YYYY-MM-DD' — selector por día como en la agenda
+  const [dia, setDia] = useState('')     // 'YYYY-MM-DD' — selector por día como en la agenda
+  const [desde, setDesde] = useState('') // rango de fechas (corte): desde…
+  const [hasta, setHasta] = useState('') // …hasta
   const [q, setQ] = useState('')
   const [confirmDel, setConfirmDel] = useState<Venta | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -415,12 +417,28 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
   })() : ''
 
+  // Timestamp real de la venta (ms): de created_at, o del id ('v'+epoch) como
+  // respaldo. Es la base para el corte por rango de fechas.
+  const ventaTS = (v: Venta): number | null => {
+    if (v.createdAt) { const t = Date.parse(v.createdAt); if (!isNaN(t)) return t }
+    const m = /^v(\d{13})$/.exec(v.id || '')
+    return m ? Number(m[1]) : null
+  }
+  const rangoActivo = !!(desde || hasta)
+  const rangoDesde = desde ? Date.parse(desde + 'T00:00:00') : -Infinity
+  const rangoHasta = hasta ? Date.parse(hasta + 'T23:59:59.999') : Infinity
+
   const apartados = ventas.filter(v => v.estado === 'apartado')
 
   const lista = ventas.filter(v => {
     if (v.estado === 'apartado') return false
-    // El día seleccionado manda sobre el filtro de periodo.
-    if (dia ? !v.fecha.startsWith(diaStr) : !periodFilter(v)) return false
+    // Prioridad de filtro temporal: rango de fechas > día > periodo.
+    if (rangoActivo) {
+      const t = ventaTS(v)
+      if (t == null || t < rangoDesde || t > rangoHasta) return false
+    } else if (dia) {
+      if (!v.fecha.startsWith(diaStr)) return false
+    } else if (!periodFilter(v)) return false
     if (filtroPago !== 'Todos' && v.pago !== filtroPago) return false
     if (q && !v.cliente.toLowerCase().includes(q.toLowerCase()) && !v.ticket.includes(q)) return false
     if (filtroTipo === 'Con producto') return v.lineas.some(l => l.tipo === 'producto')
@@ -435,6 +453,29 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return acc
   }, {} as Record<string, number>)
   const metodosPago = ['Todos', 'Efectivo', 'Tarjeta', 'Transferencia', 'Crédito']
+
+  // Corte del periodo mostrado (día o rango): totales para cuadrar caja.
+  const corteTotal = lista.reduce((s, v) => s + totalVenta(v), 0)
+  const corteComis = lista.reduce((s, v) => s + comisionVenta(v), 0)
+  const corteDesc = lista.reduce((s, v) => s + (v.desc || 0), 0)
+  const corteAnticipos = lista.reduce((s, v) => s + (v.anticipo || 0), 0)
+  const cortePromedio = lista.length ? Math.round(corteTotal / lista.length) : 0
+  const fmtDia = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) }
+  const corteLabel = rangoActivo
+    ? `${desde ? fmtDia(desde) : '…'} — ${hasta ? fmtDia(hasta) : '…'}`
+    : dia ? fmtDia(dia) : ''
+
+  const corteItems: [string, string, string?][] = [
+    ['Tickets', String(lista.length)],
+    ['Ticket promedio', mxn(cortePromedio)],
+    ['Efectivo', mxn(totalesPorPago['Efectivo'] || 0), 'var(--st-conf)'],
+    ['Tarjeta', mxn(totalesPorPago['Tarjeta'] || 0), 'var(--gold)'],
+  ]
+  if (totalesPorPago['Transferencia']) corteItems.push(['Transferencia', mxn(totalesPorPago['Transferencia'])])
+  if (totalesPorPago['Crédito']) corteItems.push(['Crédito', mxn(totalesPorPago['Crédito'])])
+  corteItems.push(['Comisiones', mxn(corteComis), '#B08AC7'])
+  if (corteDesc > 0) corteItems.push(['Descuentos', mxn(corteDesc)])
+  if (corteAnticipos > 0) corteItems.push(['Anticipos', mxn(corteAnticipos)])
 
   const registrarVenta = async (venta: Venta) => {
     try {
@@ -503,18 +544,35 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
             <input placeholder="Buscar por clienta o ticket…" value={q} onChange={e => setQ(e.target.value)} />
           </div>
           <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
-            {/* Selector por día (como en la agenda) — manda sobre el periodo */}
-            <div className="vc gap6">
-              <input type="date" className="input" value={dia} onChange={e => setDia(e.target.value)} style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }} />
-              {dia && <button className="chip" onClick={() => setDia('')} title="Quitar día"><Ic n="x" size={12} /></button>}
+            {/* Selector por día y por rango (corte). Son excluyentes entre sí y
+                mandan sobre el filtro de periodo. */}
+            <div className="vc gap6" style={{ flexWrap: 'wrap' }}>
+              <span className="dim" style={{ fontSize: 11.5 }}>Día</span>
+              <input type="date" className="input" value={dia}
+                onChange={e => { setDia(e.target.value); if (e.target.value) { setDesde(''); setHasta('') } }}
+                style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }} />
+              <span className="dim" style={{ fontSize: 11.5, marginLeft: 4 }}>Rango</span>
+              <input type="date" className="input" value={desde} title="Desde"
+                onChange={e => { setDesde(e.target.value); if (e.target.value) setDia('') }}
+                style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }} />
+              <span className="dim">–</span>
+              <input type="date" className="input" value={hasta} title="Hasta"
+                onChange={e => { setHasta(e.target.value); if (e.target.value) setDia('') }}
+                style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }} />
+              {(dia || desde || hasta) && (
+                <button className="chip" onClick={() => { setDia(''); setDesde(''); setHasta('') }} title="Limpiar fechas"><Ic n="x" size={12} /></button>
+              )}
             </div>
             <div style={{ width: 1, height: 20, background: 'var(--line-soft)' }} />
             <div className="vc gap6">
-              {['Todo', 'Hoy', 'Mes'].map(f => (
-                <button key={f} className="chip" disabled={!!dia}
-                  style={{ ...(filtroPeriodo === f && !dia ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}), ...(dia ? { opacity: .4 } : {}) }}
-                  onClick={() => setFiltroPeriodo(f)}>{f}</button>
-              ))}
+              {['Todo', 'Hoy', 'Mes'].map(f => {
+                const off = !!dia || rangoActivo
+                return (
+                  <button key={f} className="chip" disabled={off}
+                    style={{ ...(filtroPeriodo === f && !off ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}), ...(off ? { opacity: .4 } : {}) }}
+                    onClick={() => setFiltroPeriodo(f)}>{f}</button>
+                )
+              })}
             </div>
             <div style={{ width: 1, height: 20, background: 'var(--line-soft)' }} />
             <div className="vc gap6">
@@ -541,6 +599,33 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
           </div>
         </div>
       </div>
+
+      {(dia || rangoActivo) && (
+        <div className="card card-pad" style={{ marginBottom: 16, borderTop: '3px solid var(--gold)' }}>
+          <div className="between" style={{ flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
+            <div className="vc gap10">
+              <Ic n="scissors" style={{ color: 'var(--gold)' }} />
+              <div>
+                <div className="eyebrow" style={{ marginBottom: 2 }}>Corte del periodo</div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{corteLabel}</div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div className="dim" style={{ fontSize: 11 }}>Total vendido</div>
+              <div className="num" style={{ fontWeight: 800, fontSize: 22, color: 'var(--gold)' }}>{mxn(corteTotal)}</div>
+            </div>
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+            {corteItems.map(([label, val, color]) => (
+              <div key={label} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px' }}>
+                <div className="dim" style={{ fontSize: 11 }}>{label}</div>
+                <div className="num" style={{ fontWeight: 700, fontSize: 15, color: color || 'var(--text)', marginTop: 2 }}>{val}</div>
+              </div>
+            ))}
+          </div>
+          {lista.length === 0 && <div className="dim" style={{ fontSize: 12.5, marginTop: 12 }}>Sin ventas en este periodo.</div>}
+        </div>
+      )}
 
       {apartados.length > 0 && (
         <div className="card" style={{ marginBottom: 16, border: '1px solid rgba(200,161,74,0.25)' }}>

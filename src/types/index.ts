@@ -119,6 +119,7 @@ export interface Venta {
   fecha: string
   cliente: string
   clienteId: string
+  createdAt?: string   // timestamp real de creación (ISO), para cortes por rango
   pago: string
   estado: EstadoVenta
   desc: number
