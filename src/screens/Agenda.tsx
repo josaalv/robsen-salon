@@ -156,7 +156,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
     return true
   })
 
-  const setLinea = (idx: number, patch: Partial<{ est: string; h: string }>) =>
+  const setLinea = (idx: number, patch: Partial<{ servicioId: string; est: string; h: string }>) =>
     setLineas(ls => ls.map((l, i) => i === idx ? { ...l, ...patch } : l))
   const cambiarEst = (idx: number, newEst: string, dur: number) => {
     const slots = slotsLibres(newEst, dur, idx)
@@ -164,6 +164,14 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   }
   const quitarLinea = (idx: number) =>
     setLineas(ls => ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls)
+  // Cambia el servicio de una línea en el lugar y reacomoda la hora según la
+  // nueva duración (sin tener que borrar y recrear la cita).
+  const cambiarServicio = (idx: number, newId: string) => {
+    const s = srvDe(newId)
+    if (!s) return
+    const slots = slotsLibres(lineas[idx].est, s.dur, idx)
+    setLinea(idx, { servicioId: newId, h: slots.includes(lineas[idx].h) ? lineas[idx].h : (slots[0] || lineas[idx].h) })
+  }
   const agregarServicio = (id: string) => {
     if (id) {
       const s = srvDe(id)
@@ -291,18 +299,29 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
                 const fin = toMin(l.h) + l.srv.dur
                 return (
                   <div key={l.idx} style={{ padding: '10px 12px', border: `1px solid ${horaOk ? 'var(--line-soft)' : 'var(--st-canc)'}`, borderRadius: 10, background: 'var(--surface)' }}>
-                    <div className="between" style={{ gap: 10 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>{l.srv.nombre}{l.srv.activo === false ? ' (inactivo)' : ''}</div>
-                        <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
-                          {mxn(l.srv.precio)} · {l.srv.dur} min{horaOk ? ` · termina ${String(Math.floor(fin / 60)).padStart(2, '0')}:${String(fin % 60).padStart(2, '0')}` : ''}
-                        </div>
-                      </div>
-                      {lineasInfo.length > 1 && (
-                        <button className="icon-btn" style={{ width: 28, height: 28, color: 'var(--st-canc)', flexShrink: 0 }} onClick={() => quitarLinea(l.idx)} title="Quitar servicio">
-                          <Ic n="x" size={13} />
-                        </button>
-                      )}
+                    <div className="between" style={{ gap: 8 }}>
+                      <select
+                        className="select f1"
+                        value={l.servicioId}
+                        onChange={e => cambiarServicio(l.idx, e.target.value)}
+                        style={{ minWidth: 0, fontSize: 12.5, fontWeight: 600, padding: '7px 26px 7px 10px' }}
+                      >
+                        {data.servicios.filter(s => s.activo !== false || s.id === l.servicioId).map(s => (
+                          <option key={s.id} value={s.id}>{s.nombre}{s.activo === false ? ' (inactivo)' : ''} — {mxn(s.precio)}</option>
+                        ))}
+                      </select>
+                      <button
+                        className="icon-btn"
+                        disabled={lineasInfo.length === 1}
+                        onClick={() => quitarLinea(l.idx)}
+                        title={lineasInfo.length === 1 ? 'Debe quedar al menos un servicio' : 'Quitar servicio'}
+                        style={{ width: 30, height: 30, flexShrink: 0, color: lineasInfo.length === 1 ? 'var(--text-4)' : 'var(--st-canc)', opacity: lineasInfo.length === 1 ? .45 : 1 }}
+                      >
+                        <Ic n="trash" size={14} />
+                      </button>
+                    </div>
+                    <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
+                      {l.srv.dur} min{horaOk ? ` · termina ${String(Math.floor(fin / 60)).padStart(2, '0')}:${String(fin % 60).padStart(2, '0')}` : ''}
                     </div>
                     <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
                       <select className="select" value={l.est} onChange={e => cambiarEst(l.idx, e.target.value, l.srv.dur)} style={{ fontSize: 12, padding: '7px 26px 7px 10px' }}>
