@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, Seg, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, resolverComision, normalizarTel } from '../lib/helpers'
+import { mxn, mxn0, resolverComision, normalizarTel } from '../lib/helpers'
 import type { Venta, Cita, Producto } from '../types'
 
 // Sonido de confirmación/error para el escáner. Usa Web Audio (sin archivos):
@@ -117,6 +117,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
     metodosPago?.credito && 'Crédito',
   ].filter(Boolean) as string[]
   const [pago, setPago] = useState(pagoOpts[0] || 'Tarjeta')
+  const [recibido, setRecibido] = useState('')   // efectivo recibido (para el cambio)
 
   // Construye el ítem de carrito para un producto (mismo shape para el catálogo
   // y para el escáner de código de barras).
@@ -259,6 +260,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   const subtotal = cart.reduce((s, l) => s + l.precio * l.cant, 0)
   const total = Math.max(0, subtotal - desc)
   const saldo = Math.max(0, total - anticipo)
+  const cambio = (Number(recibido) || 0) - saldo   // + a favor del cliente, − falta
   const comision = cart.reduce((s, l) => s + (
     l.comMonto != null ? Math.round(l.comMonto * l.cant) : Math.round(l.precio * l.cant * (l.com || 0) / 100)
   ), 0)
@@ -511,6 +513,21 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                   </select>
                 </div>
               </div>
+              {pago === 'Efectivo' && (
+                <div className="vc gap10" style={{ marginBottom: 10 }}>
+                  <div className="field f1" style={{ minWidth: 0 }}>
+                    <label style={{ fontSize: 11 }}>Efectivo recibido</label>
+                    <input className="input num" type="number" min="0" value={recibido} placeholder={mxn0(saldo)}
+                      onChange={e => setRecibido(e.target.value)} style={{ padding: '8px 10px' }} />
+                  </div>
+                  <div className="field f1" style={{ minWidth: 0 }}>
+                    <label style={{ fontSize: 11 }}>Cambio</label>
+                    <div className="input num" style={{ padding: '8px 10px', fontWeight: 700, color: recibido === '' ? 'var(--text-3)' : (cambio >= 0 ? 'var(--st-conf)' : 'var(--st-canc)'), display: 'flex', alignItems: 'center' }}>
+                      {recibido === '' ? '—' : (cambio >= 0 ? mxn(cambio) : `Faltan ${mxn(-cambio)}`)}
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="between" style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 4 }}>
                 <span>Subtotal</span>
                 <span className="num">{mxn(subtotal)}</span>
