@@ -362,6 +362,8 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const [cierreCaja, setCierreCaja] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('Todas')
   const [filtroPeriodo, setFiltroPeriodo] = useState('Todo')
+  const [filtroPago, setFiltroPago] = useState('Todos')
+  const [dia, setDia] = useState('')   // 'YYYY-MM-DD' — selector por día como en la agenda
   const [q, setQ] = useState('')
   const [confirmDel, setConfirmDel] = useState<Venta | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -407,17 +409,32 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return true
   }
 
+  // Día seleccionado (como en la agenda) → "DD mmm" para casar con v.fecha.
+  const diaStr = dia ? (() => {
+    const [y, m, d] = dia.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+  })() : ''
+
   const apartados = ventas.filter(v => v.estado === 'apartado')
 
   const lista = ventas.filter(v => {
     if (v.estado === 'apartado') return false
-    if (!periodFilter(v)) return false
+    // El día seleccionado manda sobre el filtro de periodo.
+    if (dia ? !v.fecha.startsWith(diaStr) : !periodFilter(v)) return false
+    if (filtroPago !== 'Todos' && v.pago !== filtroPago) return false
     if (q && !v.cliente.toLowerCase().includes(q.toLowerCase()) && !v.ticket.includes(q)) return false
     if (filtroTipo === 'Con producto') return v.lineas.some(l => l.tipo === 'producto')
     if (filtroTipo === 'Solo servicio') return v.lineas.every(l => l.tipo !== 'producto')
     if (filtroTipo === 'Con saldo') return saldo(v) > 0
     return true
   })
+
+  // Totales por método de pago sobre la lista visible (separa efectivo/tarjeta).
+  const totalesPorPago = lista.reduce((acc, v) => {
+    acc[v.pago] = (acc[v.pago] || 0) + totalVenta(v)
+    return acc
+  }, {} as Record<string, number>)
+  const metodosPago = ['Todos', 'Efectivo', 'Tarjeta', 'Transferencia', 'Crédito']
 
   const registrarVenta = async (venta: Venta) => {
     try {
@@ -479,22 +496,48 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
         </div>
       </div>
 
-      <div className="card card-pad between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-        <div className="search" style={{ width: 280 }}>
-          <Ic n="magnifying-glass" />
-          <input placeholder="Buscar por clienta o ticket…" value={q} onChange={e => setQ(e.target.value)} />
+      <div className="card card-pad" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="between" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <div className="search" style={{ width: 280, maxWidth: '100%' }}>
+            <Ic n="magnifying-glass" />
+            <input placeholder="Buscar por clienta o ticket…" value={q} onChange={e => setQ(e.target.value)} />
+          </div>
+          <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
+            {/* Selector por día (como en la agenda) — manda sobre el periodo */}
+            <div className="vc gap6">
+              <input type="date" className="input" value={dia} onChange={e => setDia(e.target.value)} style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }} />
+              {dia && <button className="chip" onClick={() => setDia('')} title="Quitar día"><Ic n="x" size={12} /></button>}
+            </div>
+            <div style={{ width: 1, height: 20, background: 'var(--line-soft)' }} />
+            <div className="vc gap6">
+              {['Todo', 'Hoy', 'Mes'].map(f => (
+                <button key={f} className="chip" disabled={!!dia}
+                  style={{ ...(filtroPeriodo === f && !dia ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}), ...(dia ? { opacity: .4 } : {}) }}
+                  onClick={() => setFiltroPeriodo(f)}>{f}</button>
+              ))}
+            </div>
+            <div style={{ width: 1, height: 20, background: 'var(--line-soft)' }} />
+            <div className="vc gap6">
+              {['Todas', 'Con producto', 'Solo servicio', 'Con saldo'].map(f => (
+                <button key={f} className="chip" style={filtroTipo === f ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}} onClick={() => setFiltroTipo(f)}>{f}</button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
-          <div className="vc gap6">
-            {['Todo', 'Hoy', 'Mes'].map(f => (
-              <button key={f} className="chip" style={filtroPeriodo === f ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}} onClick={() => setFiltroPeriodo(f)}>{f}</button>
+        {/* Método de pago (menú extra): separa efectivo, tarjeta, etc. */}
+        <div className="between" style={{ flexWrap: 'wrap', gap: 10, borderTop: '1px solid var(--line-soft)', paddingTop: 12 }}>
+          <div className="vc gap6" style={{ flexWrap: 'wrap' }}>
+            <span className="dim" style={{ fontSize: 11.5, marginRight: 2 }}>Método de pago</span>
+            {metodosPago.map(f => (
+              <button key={f} className="chip" style={filtroPago === f ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}} onClick={() => setFiltroPago(f)}>{f}</button>
             ))}
           </div>
-          <div style={{ width: 1, height: 20, background: 'var(--line-soft)' }} />
-          <div className="vc gap6">
-            {['Todas', 'Con producto', 'Solo servicio', 'Con saldo'].map(f => (
-              <button key={f} className="chip" style={filtroTipo === f ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}} onClick={() => setFiltroTipo(f)}>{f}</button>
-            ))}
+          <div className="vc gap12" style={{ flexWrap: 'wrap', fontSize: 12 }}>
+            <span className="vc gap4"><Ic n="hand-coins" style={{ color: 'var(--st-conf)' }} /><b className="num">{mxn(totalesPorPago['Efectivo'] || 0)}</b><span className="dim">efectivo</span></span>
+            <span className="vc gap4"><Ic n="credit-card" style={{ color: 'var(--gold)' }} /><b className="num">{mxn(totalesPorPago['Tarjeta'] || 0)}</b><span className="dim">tarjeta</span></span>
+            {(totalesPorPago['Transferencia'] || 0) > 0 && (
+              <span className="vc gap4"><b className="num">{mxn(totalesPorPago['Transferencia'])}</b><span className="dim">transf.</span></span>
+            )}
           </div>
         </div>
       </div>
