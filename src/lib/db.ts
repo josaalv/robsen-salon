@@ -38,6 +38,7 @@ const toCitaRow = (c: Partial<Cita> & { id: string }) => ({
 const mapVenta = (r: any, lineas: any[]): Venta => ({
   id: r.id, ticket: r.ticket, fecha: r.fecha, cliente: r.cliente,
   clienteId: r.cliente_id ?? '',
+  createdAt: r.created_at ?? undefined,
   pago: r.pago, estado: r.estado,
   desc: r.descuento ?? 0,
   anticipo: r.anticipo ?? 0,
