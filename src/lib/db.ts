@@ -651,6 +651,14 @@ export const db = {
     const { error } = await supabase.from('wa_mensajes').insert(rows.map(toWaMensajeRow))
     if (error) { console.error('[db.insertWaMensajes]', error.message); throw new Error(error.message) }
   },
+  // Vacía la cola de solicitudes pendientes (todo lo que no se ha enviado):
+  // por aprobar, listos, borradores y fallidos. Conserva el historial enviado.
+  async vaciarColaWa(): Promise<void> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { error } = await supabase.from('wa_mensajes').delete()
+      .in('estado', ['borrador', 'pendiente_aprobacion', 'aprobado', 'fallido'])
+    if (error) { console.error('[db.vaciarColaWa]', error.message); throw new Error(error.message) }
+  },
   // Dispara el conector: envía por WhatsApp los mensajes en estado 'aprobado'.
   async enviarWaAprobados(): Promise<{ procesados: number }> {
     if (!supabase) throw new Error('Sin conexión a Supabase')

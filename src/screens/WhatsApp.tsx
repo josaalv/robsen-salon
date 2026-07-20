@@ -179,6 +179,7 @@ function PanelAutomatizacion() {
   const [cargando, setCargando] = useState(true)
   const [generando, setGenerando] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  const [confirmVaciar, setConfirmVaciar] = useState(false)
 
   const recargar = async () => {
     const [p, c] = await Promise.all([db.getWaPlantillas(), db.getWaMensajes()])
@@ -259,6 +260,16 @@ function PanelAutomatizacion() {
     for (const m of pend) await setEstado(m, 'aprobado')
     if (pend.length) toast(`${pend.length} aprobado${pend.length > 1 ? 's' : ''}.`)
   }
+  const vaciar = async () => {
+    try {
+      await db.vaciarColaWa()
+      await recargar()
+      setConfirmVaciar(false)
+      toast('Solicitudes borradas.')
+    } catch {
+      toast('No se pudo vaciar la cola. Intenta de nuevo.')
+    }
+  }
   const enviarAprobados = async () => {
     setEnviando(true)
     try {
@@ -275,6 +286,7 @@ function PanelAutomatizacion() {
   const porAprobar = cola.filter(m => m.estado === 'pendiente_aprobacion')
   const listos     = cola.filter(m => m.estado === 'aprobado')
   const enviados   = cola.filter(m => ['enviando', 'enviado', 'entregado', 'leido', 'respondido'].includes(m.estado))
+  const borrables  = cola.filter(m => ['borrador', 'pendiente_aprobacion', 'aprobado', 'fallido'].includes(m.estado)).length
   const aprobadasN = plantillas.filter(p => p.estadoMeta === 'aprobada').length
 
   const nombreDe = (m: WaMensaje) => data.clientas.find(c => c.id === m.clientaId)?.nombre || m.tel
@@ -315,6 +327,17 @@ function PanelAutomatizacion() {
           <button className="btn ghost sm" disabled={generando} onClick={generar}>
             <Ic n={generando ? 'spinner' : 'arrows-clockwise'} />{generando ? 'Generando…' : 'Generar cola de hoy'}
           </button>
+          {borrables > 0 && (
+            <button
+              className="btn ghost sm"
+              style={{ color: 'var(--st-canc)' }}
+              onClick={() => (confirmVaciar ? vaciar() : setConfirmVaciar(true))}
+              onMouseLeave={() => setConfirmVaciar(false)}
+              title="Borra todas las solicitudes pendientes de una vez"
+            >
+              <Ic n="trash" />{confirmVaciar ? '¿Confirmar borrar todo?' : `Vaciar solicitudes (${borrables})`}
+            </button>
+          )}
         </div>
       </div>
 
