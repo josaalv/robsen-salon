@@ -542,6 +542,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
           <div className="search" style={{ width: 280, maxWidth: '100%' }}>
             <Ic n="magnifying-glass" />
             <input placeholder="Buscar por clienta o ticket…" value={q} onChange={e => setQ(e.target.value)} />
+            {q && <button className="icon-btn" onClick={() => setQ('')} title="Limpiar" style={{ width: 22, height: 22, flex: '0 0 auto' }}><Ic n="x" size={12} /></button>}
           </div>
           <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
             {/* Selector por día y por rango (corte). Son excluyentes entre sí y

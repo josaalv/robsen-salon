@@ -1140,6 +1140,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
               <div className="search" style={{ width: 320 }}>
                 <Ic n="magnifying-glass" />
                 <input placeholder="Buscar por nombre o teléfono…" value={q} onChange={e => setQ(e.target.value)} />
+                {q && <button className="icon-btn" onClick={() => setQ('')} title="Limpiar" style={{ width: 22, height: 22, flex: '0 0 auto' }}><Ic n="x" size={12} /></button>}
               </div>
               <div className="vc gap8" style={{ flexWrap: 'wrap' }}>
                 {filtros.map(f => (

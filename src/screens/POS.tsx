@@ -338,6 +338,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                 <div className="search f1" style={{ minWidth: 'min(220px, 100%)' }}>
                   <Ic n="magnifying-glass" />
                   <input placeholder={'Buscar en ' + tab.toLowerCase() + '…'} value={q} onChange={e => setQ(e.target.value)} />
+                  {q && <button className="icon-btn" onClick={() => setQ('')} title="Limpiar" style={{ width: 22, height: 22, flex: '0 0 auto' }}><Ic n="x" size={12} /></button>}
                 </div>
               </div>
             </div>
@@ -353,7 +354,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                     <input
                       className="input" type="number" min="0" placeholder="$"
                       style={{ width: 100 }}
-                      value={customPrecio} onChange={e => setCustomPrecio(e.target.value)}
+                      value={customPrecio} onFocus={e => e.currentTarget.select()} onChange={e => setCustomPrecio(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && addCustomCharge()}
                     />
                     <button className="btn gold" disabled={!customNombre.trim() || !Number(customPrecio)} onClick={addCustomCharge}>
@@ -461,6 +462,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                             type="number"
                             min="0"
                             value={l.precio}
+                            onFocus={e => e.currentTarget.select()}
                             onChange={e => setLinePrecio(l.key, +e.target.value || 0)}
                             title="Precio unitario — editable si el servicio cambió de precio"
                             style={{ width: 88, padding: '4px 8px', fontSize: 12.5 }}
@@ -500,11 +502,11 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
               <div className="vc gap10" style={{ marginBottom: 10 }}>
                 <div className="field f1" style={{ minWidth: 0 }}>
                   <label style={{ fontSize: 11 }}>Descuento</label>
-                  <input className="input num" type="number" value={desc || ''} placeholder="0" onChange={e => setDesc(+e.target.value || 0)} style={{ padding: '8px 10px' }} />
+                  <input className="input num" type="number" value={desc || ''} placeholder="0" onFocus={e => e.currentTarget.select()} onChange={e => setDesc(+e.target.value || 0)} style={{ padding: '8px 10px' }} />
                 </div>
                 <div className="field f1" style={{ minWidth: 0 }}>
                   <label style={{ fontSize: 11 }}>Anticipo</label>
-                  <input className="input num" type="number" value={anticipo || ''} placeholder="0" onChange={e => setAnticipo(+e.target.value || 0)} style={{ padding: '8px 10px' }} />
+                  <input className="input num" type="number" value={anticipo || ''} placeholder="0" onFocus={e => e.currentTarget.select()} onChange={e => setAnticipo(+e.target.value || 0)} style={{ padding: '8px 10px' }} />
                 </div>
                 <div className="field f1" style={{ minWidth: 0 }}>
                   <label style={{ fontSize: 11 }}>Pago</label>
@@ -518,7 +520,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                   <div className="field f1" style={{ minWidth: 0 }}>
                     <label style={{ fontSize: 11 }}>Efectivo recibido</label>
                     <input className="input num" type="number" min="0" value={recibido} placeholder={mxn0(saldo)}
-                      onChange={e => setRecibido(e.target.value)} style={{ padding: '8px 10px' }} />
+                      onFocus={e => e.currentTarget.select()} onChange={e => setRecibido(e.target.value)} style={{ padding: '8px 10px' }} />
                   </div>
                   <div className="field f1" style={{ minWidth: 0 }}>
                     <label style={{ fontSize: 11 }}>Cambio</label>
