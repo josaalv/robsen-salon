@@ -50,6 +50,7 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
           <div className="search">
             <Ic n="magnifying-glass" />
             <input placeholder="Buscar servicio…" value={q} onChange={e => setQ(e.target.value)} />
+            {q && <button className="icon-btn" onClick={() => setQ('')} title="Limpiar" style={{ width: 22, height: 22, flex: '0 0 auto' }}><Ic n="x" size={12} /></button>}
           </div>
           <button className="btn ghost" onClick={() => setImportando(true)}>
             <Ic n="upload-simple" />Importar
