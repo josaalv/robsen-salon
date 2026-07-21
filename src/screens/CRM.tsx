@@ -1093,9 +1093,14 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
       title="¿Eliminar clienta?"
       desc={`${confirmDelete.nombre} será eliminada permanentemente del CRM.`}
       onConfirm={async () => {
+        const borrada = confirmDelete
         try {
-          await deleteClienta(confirmDelete.id)
-          setConfirmDelete(null); setPerfil(null); toast('Clienta eliminada')
+          await deleteClienta(borrada.id)
+          setConfirmDelete(null); setPerfil(null)
+          toast('Clienta eliminada', {
+            duration: 6000,
+            action: { label: 'Deshacer', onClick: () => { upsertClienta(borrada).catch(() => toast('No se pudo deshacer.')) } },
+          })
         } catch {
           toast('No se pudo eliminar la clienta. Intenta de nuevo.')
         }
