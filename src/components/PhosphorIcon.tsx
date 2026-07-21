@@ -143,6 +143,8 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   'currency-dollar': Ph.CurrencyDollar,
   'shopping-cart-simple': Ph.ShoppingCartSimple,
   'list': Ph.List,
+  'square': Ph.Square,
+  'check-square': Ph.CheckSquare,
 }
 
 interface IconProps {

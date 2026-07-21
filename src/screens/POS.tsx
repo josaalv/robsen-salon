@@ -119,6 +119,8 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   ].filter(Boolean) as string[]
   const [pago, setPago] = useState(pagoOpts[0] || 'Tarjeta')
   const [recibido, setRecibido] = useState('')   // efectivo recibido (para el cambio)
+  const [mixto, setMixto] = useState(false)      // dividir el cobro en varios métodos
+  const [split, setSplit] = useState<{ metodo: string; monto: number }[]>([])
 
   // Construye el ítem de carrito para un producto (mismo shape para el catálogo
   // y para el escáner de código de barras).
@@ -264,6 +266,9 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   const total = Math.max(0, subtotal - descMonto)
   const saldo = Math.max(0, total - anticipo)
   const cambio = (Number(recibido) || 0) - saldo   // + a favor del cliente, − falta
+  const splitAsignado = split.reduce((s, p) => s + (p.monto || 0), 0)
+  const splitFalta = saldo - splitAsignado
+  const usarMixto = mixto && split.filter(p => p.monto > 0).length >= 2
   const comision = cart.reduce((s, l) => s + (
     l.comMonto != null ? Math.round(l.comMonto * l.cant) : Math.round(l.precio * l.cant * (l.com || 0) / 100)
   ), 0)
@@ -271,13 +276,17 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   const [confirming, setConfirming] = useState(false)
   const confirmar = async () => {
     if (!cart.length || confirming) return
+    if (usarMixto && Math.abs(splitAsignado - saldo) >= 1) {
+      toast(`El desglose no cuadra con el total (${mxn(saldo)}).`); return
+    }
     const venta: Venta = {
       id: 'v' + Date.now(),
       ticket,
       fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' · ' + new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
       cliente: cliente || 'Venta de mostrador',
       clienteId: data.clientas.find(c => c.nombre === cliente)?.id || '',
-      pago,
+      pago: usarMixto ? 'Mixto' : pago,
+      pagos: usarMixto ? split.filter(p => p.monto > 0) : undefined,
       estado: anticipo > 0 && anticipo < total ? 'parcial' : 'pagada',
       desc: descMonto,
       anticipo,
@@ -528,7 +537,36 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                   </select>
                 </div>
               </div>
-              {pago === 'Efectivo' && (
+              <div style={{ marginBottom: 8 }}>
+                <button type="button" className="btn ghost sm" onClick={() => {
+                  const on = !mixto
+                  setMixto(on)
+                  if (on && split.length === 0) setSplit([{ metodo: pagoOpts[0] || 'Efectivo', monto: 0 }, { metodo: pagoOpts[1] || pagoOpts[0] || 'Tarjeta', monto: 0 }])
+                }}>
+                  <Ic n={mixto ? 'check-square' : 'square'} />Dividir pago (mixto)
+                </button>
+              </div>
+              {mixto && (
+                <div className="card" style={{ padding: 10, marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--surface)' }}>
+                  {split.map((p, i) => (
+                    <div key={i} className="vc gap6">
+                      <select className="select f1" value={p.metodo} onChange={e => setSplit(s => s.map((x, j) => j === i ? { ...x, metodo: e.target.value } : x))} style={{ padding: '6px 24px 6px 10px', fontSize: 12, minWidth: 0 }}>
+                        {pagoOpts.map(m => <option key={m}>{m}</option>)}
+                      </select>
+                      <input className="input num" type="number" min="0" value={p.monto || ''} placeholder="0" onFocus={e => e.currentTarget.select()}
+                        onChange={e => setSplit(s => s.map((x, j) => j === i ? { ...x, monto: +e.target.value || 0 } : x))} style={{ width: 96, padding: '6px 8px' }} />
+                      {split.length > 2 && <button className="btn icon ghost sm" title="Quitar" onClick={() => setSplit(s => s.filter((_, j) => j !== i))}><Ic n="x" size={12} /></button>}
+                    </div>
+                  ))}
+                  <div className="between" style={{ fontSize: 11.5 }}>
+                    <button className="btn ghost sm" onClick={() => setSplit(s => [...s, { metodo: pagoOpts[0] || 'Efectivo', monto: 0 }])}><Ic n="plus" size={12} />Método</button>
+                    <span style={{ color: Math.abs(splitFalta) < 1 ? 'var(--st-conf)' : 'var(--st-canc)', fontWeight: 600 }}>
+                      {Math.abs(splitFalta) < 1 ? 'Completo ✓' : splitFalta > 0 ? `Falta ${mxn(splitFalta)}` : `Sobra ${mxn(-splitFalta)}`}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {!mixto && pago === 'Efectivo' && (
                 <div className="vc gap10" style={{ marginBottom: 10 }}>
                   <div className="field f1" style={{ minWidth: 0 }}>
                     <label style={{ fontSize: 11 }}>Efectivo recibido</label>
