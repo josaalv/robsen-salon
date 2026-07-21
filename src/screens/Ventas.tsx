@@ -395,35 +395,35 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     l.comMonto != null ? Math.round(l.comMonto * l.cant) : Math.round(totalLinea(l) * (l.com || 0) / 100)
   ), 0)
 
-  const todayStr = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
-  const mesStr = new Date().toLocaleDateString('es-MX', { month: 'short' })
-    .replace(/^./, c => c.toUpperCase())
+  // Timestamp real de la venta (ms): de created_at, o del id ('v'+epoch) como
+  // respaldo. Base para TODOS los filtros de fecha (evita el bug del texto sin año).
+  const ventaTS = (v: Venta): number | null => {
+    if (v.createdAt) { const t = Date.parse(v.createdAt); if (!isNaN(t)) return t }
+    const m = /^v(\d{13})$/.exec(v.id || '')
+    return m ? Number(m[1]) : null
+  }
+  const hoyDate = new Date()
+  const esMismoDia = (t: number | null, d: Date) => t != null && new Date(t).toDateString() === d.toDateString()
+  const todayStr = hoyDate.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })   // para el cierre de caja del día
 
-  const hoyVentas = ventas.filter(v => v.fecha.startsWith(todayStr))
+  const hoyVentas = ventas.filter(v => esMismoDia(ventaTS(v), hoyDate))
   const totalHoy = hoyVentas.reduce((s, v) => s + totalVenta(v), 0)
   const ticketProm = hoyVentas.length ? Math.round(totalHoy / hoyVentas.length) : 0
   const comisionesHoy = hoyVentas.reduce((s, v) => s + comisionVenta(v), 0)
   const pendientes = ventas.filter(v => v.estado === 'parcial' || v.estado === 'pendiente')
 
   const periodFilter = (v: Venta) => {
-    if (filtroPeriodo === 'Hoy') return v.fecha.startsWith(todayStr)
-    if (filtroPeriodo === 'Mes') return v.fecha.includes(mesStr)
+    const t = ventaTS(v)
+    if (filtroPeriodo === 'Hoy') return esMismoDia(t, hoyDate)
+    if (filtroPeriodo === 'Mes') {
+      if (t == null) return false
+      const d = new Date(t)
+      return d.getFullYear() === hoyDate.getFullYear() && d.getMonth() === hoyDate.getMonth()
+    }
     return true
   }
 
-  // Día seleccionado (como en la agenda) → "DD mmm" para casar con v.fecha.
-  const diaStr = dia ? (() => {
-    const [y, m, d] = dia.split('-').map(Number)
-    return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
-  })() : ''
-
-  // Timestamp real de la venta (ms): de created_at, o del id ('v'+epoch) como
-  // respaldo. Es la base para el corte por rango de fechas.
-  const ventaTS = (v: Venta): number | null => {
-    if (v.createdAt) { const t = Date.parse(v.createdAt); if (!isNaN(t)) return t }
-    const m = /^v(\d{13})$/.exec(v.id || '')
-    return m ? Number(m[1]) : null
-  }
+  const diaDate = dia ? new Date(dia + 'T12:00:00') : null
   const rangoActivo = !!(desde || hasta)
   const rangoDesde = desde ? Date.parse(desde + 'T00:00:00') : -Infinity
   const rangoHasta = hasta ? Date.parse(hasta + 'T23:59:59.999') : Infinity
@@ -436,8 +436,8 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     if (rangoActivo) {
       const t = ventaTS(v)
       if (t == null || t < rangoDesde || t > rangoHasta) return false
-    } else if (dia) {
-      if (!v.fecha.startsWith(diaStr)) return false
+    } else if (dia && diaDate) {
+      if (!esMismoDia(ventaTS(v), diaDate)) return false
     } else if (!periodFilter(v)) return false
     if (filtroPago !== 'Todos' && v.pago !== filtroPago) return false
     if (q && !v.cliente.toLowerCase().includes(q.toLowerCase()) && !v.ticket.includes(q)) return false
