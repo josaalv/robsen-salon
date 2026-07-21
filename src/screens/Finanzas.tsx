@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react'
-import { CardHead, Seg, Donut, BarChart, toast } from '../components/ui'
+import React, { useState, useMemo, useRef } from 'react'
+import { CardHead, Seg, Donut, BarChart, toast, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, ventaCalc } from '../lib/helpers'
@@ -21,16 +21,20 @@ function GastoModal({ onClose, onSave }: { onClose: () => void; onSave: (g: Gast
   const [monto, setMonto] = useState('')
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
   const [categoria, setCategoria] = useState(CATS_GASTO[0])
+  const cardRef = useRef<HTMLDivElement>(null)
 
   const guardar = () => {
     const m = parseFloat(monto)
-    if (!concepto.trim() || isNaN(m) || m <= 0) return
+    if (!concepto.trim()) { toast('Escribe el concepto del gasto.'); return }
+    if (isNaN(m) || m <= 0) { toast('Ingresa un monto mayor a cero.'); return }
     onSave({ id: 'g' + Date.now(), concepto: concepto.trim(), monto: m, fecha, categoria })
   }
 
+  useModalKeys(cardRef, onClose, guardar)
+
   return (
     <div className="rb-modal-bg" onClick={onClose}>
-      <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw' }}>
+      <div ref={cardRef} className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw' }}>
         <div className="card-head">
           <div>
             <div className="eyebrow">Registrar</div>
