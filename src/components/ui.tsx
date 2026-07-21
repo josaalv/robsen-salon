@@ -256,6 +256,54 @@ export function Modal({ onClose, children, width = 560, onEnter }: { onClose: ()
   )
 }
 
+/* ---- Ordenamiento de tablas y paginación ---- */
+export type SortState = { key: string; dir: 'asc' | 'desc' } | null
+
+export function useTableSort(initial: SortState = null) {
+  const [sort, setSort] = useState<SortState>(initial)
+  // 1er clic asc, 2º desc, 3º sin orden.
+  const toggle = (key: string) => setSort(s =>
+    s && s.key === key ? (s.dir === 'asc' ? { key, dir: 'desc' } : null) : { key, dir: 'asc' })
+  return { sort, toggle }
+}
+
+// Ordena filas usando un accesor por clave (valor comparable de cada columna).
+export function sortRows<T>(rows: T[], sort: SortState, accessor: (r: T, key: string) => number | string): T[] {
+  if (!sort) return rows
+  const mul = sort.dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const va = accessor(a, sort.key), vb = accessor(b, sort.key)
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mul
+    return String(va).localeCompare(String(vb), 'es') * mul
+  })
+}
+
+// Encabezado de columna clicable con indicador de orden.
+export function SortTh({ label, k, sort, onSort, num, style }: {
+  label: React.ReactNode; k: string; sort: SortState; onSort: (k: string) => void; num?: boolean; style?: React.CSSProperties
+}) {
+  const active = sort?.key === k
+  return (
+    <th onClick={() => onSort(k)} className={num ? 'num' : ''} title="Ordenar" style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', ...style }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        {label}
+        <span style={{ opacity: active ? 0.9 : 0.25, fontSize: 10 }}>{active ? (sort!.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      </span>
+    </th>
+  )
+}
+
+export function Pager({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) {
+  if (totalPages <= 1) return null
+  return (
+    <div className="vc gap8" style={{ justifyContent: 'center', padding: '12px 0', flexWrap: 'wrap' }}>
+      <button className="btn ghost sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>‹ Anterior</button>
+      <span className="dim" style={{ fontSize: 12.5 }}>Página {page} de {totalPages}</span>
+      <button className="btn ghost sm" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>Siguiente ›</button>
+    </div>
+  )
+}
+
 export function ConfirmModal({ title, desc, onConfirm, onCancel, danger = true }: {
   title: string
   desc?: string
