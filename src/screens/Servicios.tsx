@@ -2,11 +2,14 @@ import React, { useState, useMemo, useRef } from 'react'
 import { Avatar, Switch, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { useAuth } from '../lib/auth'
 import { mxn } from '../lib/helpers'
 import type { Servicio, Estilista } from '../types'
 import * as XLSX from 'xlsx'
 
 export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => void }) {
+  const { user } = useAuth()
+  const esGestion = user?.rol === 'admin' || user?.rol === 'gerente'   // catálogo: solo admin/gerente (coincide con RLS)
   const [cat, setCat] = useState('Todos')
   const [q, setQ] = useState('')
   const [editor, setEditor] = useState<Partial<Servicio> | null>(null)
@@ -52,12 +55,16 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
             <input placeholder="Buscar servicio…" value={q} onChange={e => setQ(e.target.value)} />
             {q && <button className="icon-btn" onClick={() => setQ('')} title="Limpiar" style={{ width: 22, height: 22, flex: '0 0 auto' }}><Ic n="x" size={12} /></button>}
           </div>
-          <button className="btn ghost" onClick={() => setImportando(true)}>
-            <Ic n="upload-simple" />Importar
-          </button>
-          <button className="btn gold" onClick={() => setEditor({})}>
-            <Ic n="plus" />Nuevo servicio
-          </button>
+          {esGestion && (
+            <button className="btn ghost" onClick={() => setImportando(true)}>
+              <Ic n="upload-simple" />Importar
+            </button>
+          )}
+          {esGestion && (
+            <button className="btn gold" onClick={() => setEditor({})}>
+              <Ic n="plus" />Nuevo servicio
+            </button>
+          )}
         </div>
       </div>
 
@@ -84,8 +91,8 @@ export function ScreenServicios({ onNavigate }: { onNavigate: (r: string) => voi
             <div
               key={s.id}
               className="card card-pad"
-              style={{ display: 'flex', flexDirection: 'column', gap: 14, cursor: 'pointer', opacity: s.activo === false ? 0.55 : 1 }}
-              onClick={() => setEditor(s)}
+              style={{ display: 'flex', flexDirection: 'column', gap: 14, cursor: esGestion ? 'pointer' : 'default', opacity: s.activo === false ? 0.55 : 1 }}
+              onClick={() => esGestion && setEditor(s)}
             >
               <div className="between">
                 <span className="badge neutral">{s.cat}</span>
