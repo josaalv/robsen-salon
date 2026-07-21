@@ -215,10 +215,11 @@ export function CardHead({ title, sub, right }: { title: string; sub?: string; r
 }
 
 /* ===== Toast ===== */
-interface ToastItem { id: number; msg: string; icon?: string }
+interface ToastAction { label: string; onClick: () => void }
+interface ToastItem { id: number; msg: string; icon?: string; action?: ToastAction; duration?: number }
 let toastListeners = new Set<(t: ToastItem) => void>()
-export const toast = (msg: string) => {
-  const t: ToastItem = { id: Date.now() + Math.random(), msg }
+export const toast = (msg: string, opts?: { action?: ToastAction; duration?: number }) => {
+  const t: ToastItem = { id: Date.now() + Math.random(), msg, action: opts?.action, duration: opts?.duration }
   toastListeners.forEach(f => f(t))
 }
 export function ToastHost() {
@@ -226,17 +227,21 @@ export function ToastHost() {
   useEffect(() => {
     const handler = (t: ToastItem) => {
       setItems(x => [...x, t])
-      setTimeout(() => setItems(x => x.filter(i => i.id !== t.id)), 2800)
+      setTimeout(() => setItems(x => x.filter(i => i.id !== t.id)), t.duration || 2800)
     }
     toastListeners.add(handler)
     return () => { toastListeners.delete(handler) }
   }, [])
+  const cerrar = (id: number) => setItems(x => x.filter(i => i.id !== id))
   return (
     <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:200, display:'flex', flexDirection:'column', gap:10, alignItems:'center', pointerEvents:'none' }}>
       {items.map(t => (
-        <div key={t.id} className="card gold-edge" style={{ display:'flex', alignItems:'center', gap:11, padding:'12px 18px', boxShadow:'var(--sh-lg)', animation:'pop .25s ease' }}>
+        <div key={t.id} className="card gold-edge" style={{ display:'flex', alignItems:'center', gap:11, padding:'12px 18px', boxShadow:'var(--sh-lg)', animation:'pop .25s ease', pointerEvents: t.action ? 'auto' : 'none' }}>
           <span style={{ color:'var(--gold)' }}>✓</span>
           <span style={{ fontWeight:600, fontSize:13.5 }}>{t.msg}</span>
+          {t.action && (
+            <button className="btn ghost sm" style={{ marginLeft:6 }} onClick={() => { t.action!.onClick(); cerrar(t.id) }}>{t.action.label}</button>
+          )}
         </div>
       ))}
     </div>
