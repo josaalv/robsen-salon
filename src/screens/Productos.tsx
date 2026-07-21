@@ -2,11 +2,14 @@ import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Avatar, Seg, Switch, CardHead, toast, Modal, useTableSort, sortRows, SortTh, Pager } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { useAuth } from '../lib/auth'
 import { mxn, ventaCalc, descargarCSV } from '../lib/helpers'
 import type { Producto, Estilista } from '../types'
 import * as XLSX from 'xlsx'
 
 export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => void }) {
+  const { user } = useAuth()
+  const esGestion = user?.rol === 'admin' || user?.rol === 'gerente'   // alta/edición del catálogo: solo admin/gerente (coincide con RLS)
   const [tab, setTab] = useState('Inventario')
   const [catFiltro, setCatFiltro] = useState('Todos')
   const [editor, setEditor] = useState<Partial<Producto> | null>(null)
@@ -69,18 +72,22 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
           </div>
         </div>
         <div className="vc gap10">
-          <button className="btn ghost" onClick={() => setImportando(true)}>
-            <Ic n="upload-simple" />Importar
-          </button>
+          {esGestion && (
+            <button className="btn ghost" onClick={() => setImportando(true)}>
+              <Ic n="upload-simple" />Importar
+            </button>
+          )}
           <button className="btn ghost" onClick={() => setOrdenCompra(productos[0] || null)}>
             <Ic n="shopping-cart-simple" />Orden de compra
           </button>
           <button className="btn ghost" onClick={() => setAjuste(productos[0] || null)}>
             <Ic n="arrows-down-up" />Entrada de stock
           </button>
-          <button className="btn ghost" onClick={() => setEditor({})}>
-            <Ic n="plus" />Nuevo producto
-          </button>
+          {esGestion && (
+            <button className="btn ghost" onClick={() => setEditor({})}>
+              <Ic n="plus" />Nuevo producto
+            </button>
+          )}
           <button className="btn gold" onClick={() => {
             if (productos.length > 0) setVender(productos[0])
           }}>
@@ -210,7 +217,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
                   const stockBajo = p.stock > 0 && p.stock <= p.min
                   const agotado = p.stock === 0
                   return (
-                    <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setEditor(p)}>
+                    <tr key={p.id} style={{ cursor: esGestion ? 'pointer' : 'default' }} onClick={() => esGestion && setEditor(p)}>
                       <td style={{ fontWeight: 600 }}>{p.nombre}</td>
                       <td className="muted" style={{ fontSize: 12 }}>{p.sku}</td>
                       <td>{p.marca}</td>
