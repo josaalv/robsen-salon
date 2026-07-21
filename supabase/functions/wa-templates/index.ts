@@ -7,6 +7,16 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const GRAPH = "https://graph.facebook.com/v21.0";
 const WABA_ID = Deno.env.get("WHATSAPP_WABA_ID") || "1033375755765717";
 const LANG = "es_MX";
+const SUPA_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+// Traduce el estado de Meta al que usa la app en wa_plantillas.estado_meta.
+function metaEstado(status: string): string {
+  const s = (status || "").toUpperCase();
+  if (s === "APPROVED") return "aprobada";
+  if (s === "REJECTED" || s === "DISABLED" || s === "PAUSED") return "rechazada";
+  return "pendiente";
+}
 
 // Catálogo de plantillas en español. Variables posicionales {{1}}, {{2}}, …
 interface Tpl { name: string; category: string; body: string; example: string[]; footer?: string }
@@ -93,7 +103,33 @@ Deno.serve(async (req: Request) => {
       return json({ submitted: results }, 200);
     }
 
-    return json({ error: "action debe ser 'create' o 'list'" }, 400);
+    // sync: lee el estado real en Meta y lo refleja en wa_plantillas.estado_meta,
+    // para que el panel muestre "Aprobada" en cuanto Meta apruebe (sin tocar la BD a mano).
+    if (action === "sync") {
+      const res = await fetch(`${GRAPH}/${WABA_ID}/message_templates?fields=name,status&limit=100`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data?.data)) return json({ error: "No se pudo leer Meta", detail: data }, 400);
+      if (!SUPA_URL || !SERVICE) return json({ error: "Faltan credenciales de servicio para actualizar la BD." }, 500);
+
+      const cambios: { nombre: string; estado: string }[] = [];
+      for (const t of data.data) {
+        const estado = metaEstado(t.status);
+        cambios.push({ nombre: t.name, estado });
+        await fetch(`${SUPA_URL}/rest/v1/wa_plantillas?nombre=eq.${encodeURIComponent(t.name)}`, {
+          method: "PATCH",
+          headers: {
+            "apikey": SERVICE, "Authorization": `Bearer ${SERVICE}`,
+            "Content-Type": "application/json", "Prefer": "return=minimal",
+          },
+          body: JSON.stringify({ estado_meta: estado }),
+        });
+      }
+      return json({ sincronizados: cambios.length, cambios }, 200);
+    }
+
+    return json({ error: "action debe ser 'create', 'list' o 'sync'" }, 400);
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
