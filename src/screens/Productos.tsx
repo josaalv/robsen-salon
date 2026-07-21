@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from 'react'
-import { Avatar, Seg, Switch, CardHead, toast, Modal } from '../components/ui'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
+import { Avatar, Seg, Switch, CardHead, toast, Modal, useTableSort, sortRows, SortTh, Pager } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, ventaCalc } from '../lib/helpers'
@@ -34,7 +34,29 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   // marcas reales importadas y las nuevas persisten al guardar un producto).
   const marcasTodas = Array.from(new Set([...marcas, ...productos.map(p => p.marca).filter(Boolean)]))
     .sort((a, b) => a.localeCompare(b))
-  const listaFiltrada = catFiltro === 'Todos' ? productos : productos.filter(p => p.cat === catFiltro)
+  const listaFiltradaBase = catFiltro === 'Todos' ? productos : productos.filter(p => p.cat === catFiltro)
+  // Orden por columna + paginación.
+  const { sort, toggle } = useTableSort()
+  const prodValor = (p: Producto, key: string): number | string => {
+    switch (key) {
+      case 'nombre': return p.nombre.toLowerCase()
+      case 'sku': return (p.sku || '').toLowerCase()
+      case 'marca': return (p.marca || '').toLowerCase()
+      case 'cat': return p.cat.toLowerCase()
+      case 'costo': return p.costo
+      case 'precio': return p.precio
+      case 'stock': return p.stock
+      case 'vendidos': return p.vendidos
+      default: return 0
+    }
+  }
+  const listaFiltrada = sortRows(listaFiltradaBase, sort, prodValor)
+  const PAGE_P = 30
+  const [pageP, setPageP] = useState(1)
+  const totalPagesP = Math.max(1, Math.ceil(listaFiltrada.length / PAGE_P))
+  useEffect(() => { setPageP(1) }, [catFiltro, sort])
+  const pageIdxP = Math.min(pageP, totalPagesP) - 1
+  const pageProds = listaFiltrada.slice(pageIdxP * PAGE_P, pageIdxP * PAGE_P + PAGE_P)
 
   return (
     <div>
@@ -166,20 +188,20 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
             <table className="table">
               <thead>
                 <tr>
-                  <th>Producto</th>
-                  <th>SKU</th>
-                  <th>Marca</th>
-                  <th>Categoría</th>
+                  <SortTh label="Producto" k="nombre" sort={sort} onSort={toggle} />
+                  <SortTh label="SKU" k="sku" sort={sort} onSort={toggle} />
+                  <SortTh label="Marca" k="marca" sort={sort} onSort={toggle} />
+                  <SortTh label="Categoría" k="cat" sort={sort} onSort={toggle} />
                   <th>Uso</th>
-                  <th style={{ textAlign: 'right' }}>Costo</th>
-                  <th style={{ textAlign: 'right' }}>Precio</th>
-                  <th style={{ textAlign: 'center' }}>Stock</th>
-                  <th style={{ textAlign: 'center' }}>Vendidos</th>
+                  <SortTh label="Costo" k="costo" sort={sort} onSort={toggle} style={{ textAlign: 'right' }} />
+                  <SortTh label="Precio" k="precio" sort={sort} onSort={toggle} style={{ textAlign: 'right' }} />
+                  <SortTh label="Stock" k="stock" sort={sort} onSort={toggle} style={{ textAlign: 'center' }} />
+                  <SortTh label="Vendidos" k="vendidos" sort={sort} onSort={toggle} style={{ textAlign: 'center' }} />
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {listaFiltrada.map(p => {
+                {pageProds.map(p => {
                   const stockBajo = p.stock > 0 && p.stock <= p.min
                   const agotado = p.stock === 0
                   return (
@@ -223,6 +245,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
               </tbody>
             </table>
           </div>
+          <Pager page={Math.min(pageP, totalPagesP)} totalPages={totalPagesP} onPage={setPageP} />
         </div>
       )}
 

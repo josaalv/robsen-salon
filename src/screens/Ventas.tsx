@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Stat, Avatar, toast, Modal, ConfirmModal } from '../components/ui'
+import { Stat, Avatar, toast, Modal, ConfirmModal, useTableSort, sortRows, SortTh, Pager } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
@@ -447,6 +447,27 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return true
   })
 
+  // Orden por columna + paginación de la lista.
+  const { sort, toggle } = useTableSort()
+  const ventaValor = (v: Venta, key: string): number | string => {
+    switch (key) {
+      case 'fecha': return ventaTS(v) ?? 0
+      case 'cliente': return v.cliente.toLowerCase()
+      case 'total': return totalVenta(v)
+      case 'ticket': return v.ticket
+      case 'pago': return v.pago
+      case 'estado': return v.estado
+      default: return 0
+    }
+  }
+  const listaOrdenada = sortRows(lista, sort, ventaValor)
+  const PAGE = 25
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(listaOrdenada.length / PAGE))
+  useEffect(() => { setPage(1) }, [q, filtroTipo, filtroPeriodo, filtroPago, dia, desde, hasta, sort])
+  const pageIdx = Math.min(page, totalPages) - 1
+  const pageRows = listaOrdenada.slice(pageIdx * PAGE, pageIdx * PAGE + PAGE)
+
   // Totales por método de pago sobre la lista visible (separa efectivo/tarjeta).
   const totalesPorPago = lista.reduce((acc, v) => {
     acc[v.pago] = (acc[v.pago] || 0) + totalVenta(v)
@@ -671,12 +692,19 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
         <table className="table">
           <thead>
             <tr>
-              <th>Ticket</th><th>Fecha</th><th>Clienta</th><th>Detalle</th>
-              <th>Atendió</th><th>Pago</th><th className="num">Total</th><th>Estado</th><th></th>
+              <SortTh label="Ticket" k="ticket" sort={sort} onSort={toggle} />
+              <SortTh label="Fecha" k="fecha" sort={sort} onSort={toggle} />
+              <SortTh label="Clienta" k="cliente" sort={sort} onSort={toggle} />
+              <th>Detalle</th>
+              <th>Atendió</th>
+              <SortTh label="Pago" k="pago" sort={sort} onSort={toggle} />
+              <SortTh label="Total" k="total" sort={sort} onSort={toggle} num />
+              <SortTh label="Estado" k="estado" sort={sort} onSort={toggle} />
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {lista.map(v => {
+            {pageRows.map(v => {
               const ests = [...new Set(v.lineas.filter(l => l.est).map(l => l.est))]
                 .map(id => data.estilistas.find(e => e.id === id)).filter(Boolean) as typeof data.estilistas
               return (
@@ -725,6 +753,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
             )}
           </tbody>
         </table>
+        <Pager page={Math.min(page, totalPages)} totalPages={totalPages} onPage={setPage} />
       </div>
 
       {pos && <POSBuilder onClose={() => setPos(false)} onConfirm={registrarVenta} nextTicket={nextTicket} />}
