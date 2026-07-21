@@ -1,5 +1,47 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { mxn, mxn0 } from '../lib/helpers'
+
+/* ---- Teclado y foco para modales de alta (Esc / Enter / autofoco / trap) ---- */
+export function useModalKeys(
+  ref: React.RefObject<HTMLElement | null>,
+  onClose: () => void,
+  onEnter?: () => void,
+) {
+  // Refs para no capturar closures viejos (los handlers leen estado actual).
+  const cbs = useRef({ onClose, onEnter })
+  cbs.current = { onClose, onEnter }
+  useEffect(() => {
+    // Autofoco al primer campo del modal.
+    const box = ref.current
+    if (box) {
+      const first = box.querySelector<HTMLElement>('[data-autofocus], input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])')
+      first?.focus()
+    }
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); cbs.current.onClose(); return }
+      if (e.key === 'Enter' && cbs.current.onEnter) {
+        const t = e.target as HTMLElement
+        const tag = t.tagName
+        // No dispares al escribir en textarea, elegir en select o sobre un botón.
+        if (tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return
+        e.preventDefault(); cbs.current.onEnter()
+        return
+      }
+      if (e.key === 'Tab' && ref.current) {
+        const nodes = ref.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+        const list = Array.from(nodes).filter(n => n.offsetParent !== null)
+        if (!list.length) return
+        const firstEl = list[0], lastEl = list[list.length - 1]
+        const active = document.activeElement as HTMLElement
+        if (e.shiftKey && active === firstEl) { e.preventDefault(); lastEl.focus() }
+        else if (!e.shiftKey && active === lastEl) { e.preventDefault(); firstEl.focus() }
+      }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+}
 
 /* ---- Phosphor Icons (via npm package) ---- */
 export { PhosphorIcon as Ic } from './PhosphorIcon'
@@ -202,15 +244,12 @@ export function ToastHost() {
 }
 
 /* ---- Modal wrapper ---- */
-export function Modal({ onClose, children, width = 560 }: { onClose: () => void; children: React.ReactNode; width?: number }) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
+export function Modal({ onClose, children, width = 560, onEnter }: { onClose: () => void; children: React.ReactNode; width?: number; onEnter?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useModalKeys(ref, onClose, onEnter)   // Esc cierra, autofoco al primer campo, foco atrapado, Enter guarda (si onEnter)
   return (
     <div className="rb-modal-bg" onClick={onClose}>
-      <div className="card gold-edge rb-modal" style={{ width, maxWidth:'calc(100vw - 48px)', maxHeight:'90vh', overflowY:'auto', animation:'pop .26s cubic-bezier(.2,.8,.2,1)' }} onClick={e => e.stopPropagation()}>
+      <div ref={ref} className="card gold-edge rb-modal" style={{ width, maxWidth:'calc(100vw - 48px)', maxHeight:'90vh', overflowY:'auto', animation:'pop .26s cubic-bezier(.2,.8,.2,1)' }} onClick={e => e.stopPropagation()}>
         {children}
       </div>
     </div>

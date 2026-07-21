@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Avatar, Seg, toast } from '../components/ui'
+import { Avatar, Seg, toast, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, mxn0, resolverComision, normalizarTel } from '../lib/helpers'
@@ -305,9 +305,13 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
 
   const tipoIcon: Record<string, string> = { servicio: 'scissors', producto: 'package', adicional: 'plus' }
 
+  const posRef = useRef<HTMLDivElement>(null)
+  useModalKeys(posRef, onClose)   // Esc cierra + foco atrapado (sin Enter: el cobro es explícito)
+
   return (
     <div className="rb-modal-bg" onClick={onClose}>
       <div
+        ref={posRef}
         className="card gold-edge rb-modal"
         onClick={e => e.stopPropagation()}
         style={{ width: 980, maxWidth: '96vw', height: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}

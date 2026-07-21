@@ -447,7 +447,7 @@ function ServicioEditor({ s, estilistas, cats, anticipoPct, onSave, onDelete, on
   const anticipoMonto = anticipo ? Math.round(precio * anticipoPct / 100) : 0
 
   return (
-    <Modal onClose={onClose} width={560}>
+    <Modal onClose={onClose} width={560} onEnter={handleSave}>
       <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
         <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
           <div>

@@ -484,7 +484,7 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
   }
 
   return (
-    <Modal onClose={onClose} width={540}>
+    <Modal onClose={onClose} width={540} onEnter={handleSave}>
       <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
         {/* Header */}
         <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
