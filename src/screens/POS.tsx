@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, Seg, toast, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, mxn0, resolverComision, normalizarTel } from '../lib/helpers'
+import { mxn, mxn0, resolverComision, normalizarTel, formatTel } from '../lib/helpers'
 import type { Venta, Cita, Producto } from '../types'
 
 // Sonido de confirmación/error para el escáner. Usa Web Audio (sin archivos):
@@ -425,7 +425,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
                         <div key={c.id} className="nav-item" style={{ justifyContent: 'space-between', gap: 10 }}
                           onClick={() => { setCliente(c.nombre); setClienteQ(''); setClienteOpen(false) }}>
                           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
-                          <span className="dim num" style={{ fontSize: 11, flex: '0 0 auto' }}>{c.tel || '—'}</span>
+                          <span className="dim num" style={{ fontSize: 11, flex: '0 0 auto' }}>{c.tel ? formatTel(c.tel) : '—'}</span>
                         </div>
                       ))}
                       {clienteResultados.length === 0 && (

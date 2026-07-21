@@ -154,7 +154,7 @@ function ClientaModal({ c, onClose, onSaved }: {
                       <Avatar ini={x.ini} size="sm" />
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.nombre}</div>
-                        <div className="dim num" style={{ fontSize: 11.5 }}>{x.tel || 'sin teléfono'}{x.ultima ? ` · últ. ${x.ultima}` : ''}</div>
+                        <div className="dim num" style={{ fontSize: 11.5 }}>{x.tel ? formatTel(x.tel) : 'sin teléfono'}{x.ultima ? ` · últ. ${x.ultima}` : ''}</div>
                       </div>
                     </div>
                     <span className="badge neutral" style={{ fontSize: 10.5, flex: '0 0 auto' }}>{x.estado}</span>
@@ -735,13 +735,19 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
           </div>
           <hr className="hr" />
           <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {([['phone', 'Teléfono', c.tel || '—'], ['calendar-blank', 'Última visita', c.ultima], ['scissors', 'Servicio favorito', c.fav], ['user', 'Estilista habitual', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
+            {([['phone', 'Teléfono', c.tel ? formatTel(c.tel) : '—'], ['calendar-blank', 'Última visita', c.ultima], ['scissors', 'Servicio favorito', c.fav], ['user', 'Estilista habitual', e.nombre]] as [string, string, string][]).map(([ic, l, v]) => (
               <div key={l} className="vc gap12">
                 <span style={{ color: 'var(--gold)', width: 18 }}><Ic n={ic} /></span>
-                <div>
+                <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{l}</div>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{v}</div>
                 </div>
+                {ic === 'phone' && c.tel && (
+                  <button className="icon-btn" title="Copiar teléfono" style={{ width: 28, height: 28 }}
+                    onClick={() => { navigator.clipboard?.writeText(formatTel(c.tel)); toast('Teléfono copiado') }}>
+                    <Ic n="copy" size={14} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1207,7 +1213,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
                         </div>
                       </td>
                       <td><ClienteBadge estado={c.estado} /></td>
-                      <td className="num muted">{c.tel}</td>
+                      <td className="num muted">{formatTel(c.tel)}</td>
                       <td className="muted">
                         <span className="vc" style={{ gap: 7 }} title={visitTip}>
                           <span className="dotc" style={{ background: visitCol }} />{c.ultima}
