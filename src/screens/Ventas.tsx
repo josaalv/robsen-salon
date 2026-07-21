@@ -4,7 +4,7 @@ import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
-import { mxn, ventaCalc, descargarCSV } from '../lib/helpers'
+import { mxn, ventaCalc, descargarCSV, desglosePagos } from '../lib/helpers'
 import { POSBuilder } from './POS'
 import type { Venta, CierreCaja } from '../types'
 
@@ -64,6 +64,7 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
       ${v.anticipo > 0 ? `<div class="r"><span>Anticipo</span><span>-${mxn(v.anticipo)}</span></div>` : ''}
       <div class="r" style="font-weight:bold;font-size:15px;margin-top:6px"><span>TOTAL</span><span>${mxn(ventaCalc.total(v))}</span></div>
       <div class="r" style="margin-top:4px;font-size:11px"><span>Pago: ${v.pago}</span><span>${v.estado === 'parcial' ? 'Saldo: ' + mxn(ventaCalc.saldo(v)) : 'Pagado'}</span></div>
+      ${v.pagos && v.pagos.length ? v.pagos.map(p => `<div class="r" style="font-size:11px;color:#555"><span>· ${p.metodo}</span><span>${mxn(p.monto)}</span></div>`).join('') : ''}
       <div class="hr"></div>
       <div class="c" style="font-size:11px">¡Gracias por tu visita! 💛</div>
     </body></html>`
@@ -153,6 +154,18 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
             </span>
           </div>
 
+          {v.pagos && v.pagos.length > 0 && (
+            <div className="card" style={{ background: 'var(--surface)', padding: 14, marginBottom: 14 }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>Pago mixto</div>
+              {v.pagos.map((p, i) => (
+                <div key={i} className="between" style={{ fontSize: 12.5, marginTop: i ? 6 : 0 }}>
+                  <span className="muted">{p.metodo}</span>
+                  <span className="num" style={{ fontWeight: 600 }}>{mxn(p.monto)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {v.estado === 'parcial' && (
             <div className="card" style={{ background: 'rgba(200,161,74,0.06)', border: '1px solid var(--line)', padding: 14, marginBottom: 14 }}>
               <div className="eyebrow" style={{ marginBottom: 10 }}>Cobrar saldo pendiente · {mxn(saldo)}</div>
@@ -228,7 +241,7 @@ function CierreCajaModal({ onClose, ventas, pendientes, usuarioNombre, usuarioId
     if (key in porMetodo) porMetodo[key] += monto
     else porMetodo[key] = (porMetodo[key] || 0) + monto
   }
-  creadasHoy.forEach(v => sumar(v.pago, montoRecibidoAlCrear(v)))
+  creadasHoy.forEach(v => desglosePagos(v, montoRecibidoAlCrear(v)).forEach(p => sumar(p.metodo, p.monto)))
   saldosHoy.forEach(v => sumar(v.pago, v.saldoCobradoMonto || 0))
 
   const totalEfectivo = porMetodo.efectivo
@@ -439,7 +452,8 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     } else if (dia && diaDate) {
       if (!esMismoDia(ventaTS(v), diaDate)) return false
     } else if (!periodFilter(v)) return false
-    if (filtroPago !== 'Todos' && v.pago !== filtroPago) return false
+    if (filtroPago !== 'Todos' && v.pago !== filtroPago &&
+        !(v.pagos && v.pagos.some(p => p.metodo === filtroPago))) return false
     if (q && !v.cliente.toLowerCase().includes(q.toLowerCase()) && !v.ticket.includes(q)) return false
     if (filtroTipo === 'Con producto') return v.lineas.some(l => l.tipo === 'producto')
     if (filtroTipo === 'Solo servicio') return v.lineas.every(l => l.tipo !== 'producto')
@@ -470,7 +484,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
 
   // Totales por método de pago sobre la lista visible (separa efectivo/tarjeta).
   const totalesPorPago = lista.reduce((acc, v) => {
-    acc[v.pago] = (acc[v.pago] || 0) + totalVenta(v)
+    desglosePagos(v, totalVenta(v)).forEach(p => { acc[p.metodo] = (acc[p.metodo] || 0) + p.monto })
     return acc
   }, {} as Record<string, number>)
   const metodosPago = ['Todos', 'Efectivo', 'Tarjeta', 'Transferencia', 'Crédito']

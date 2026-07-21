@@ -188,3 +188,17 @@ export const ventaCalc = {
   },
   porTipo: (v: Venta, tipo: string) => v.lineas.filter(l => l.tipo === tipo).reduce((s, l) => s + l.precio * l.cant, 0),
 }
+
+// Reparte un `monto` de una venta entre sus métodos de pago. Si el cobro fue
+// mixto usa el desglose guardado (escalado proporcionalmente por si `monto` es
+// sólo una parte, p. ej. un anticipo); si no, todo va al método único de la venta.
+export const desglosePagos = (v: Venta, monto: number): { metodo: string; monto: number }[] => {
+  if (v.pagos && v.pagos.length) {
+    const suma = v.pagos.reduce((s, p) => s + (p.monto || 0), 0)
+    if (suma > 0 && Math.abs(suma - monto) >= 1) {
+      return v.pagos.map(p => ({ metodo: p.metodo, monto: Math.round((p.monto || 0) * monto / suma) }))
+    }
+    return v.pagos.map(p => ({ metodo: p.metodo, monto: p.monto || 0 }))
+  }
+  return [{ metodo: v.pago, monto }]
+}

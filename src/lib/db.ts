@@ -39,7 +39,7 @@ const mapVenta = (r: any, lineas: any[]): Venta => ({
   id: r.id, ticket: r.ticket, fecha: r.fecha, cliente: r.cliente,
   clienteId: r.cliente_id ?? '',
   createdAt: r.created_at ?? undefined,
-  pago: r.pago, estado: r.estado,
+  pago: r.pago, pagos: r.pagos ?? undefined, estado: r.estado,
   desc: r.descuento ?? 0,
   anticipo: r.anticipo ?? 0,
   citaId: r.cita_id ?? undefined,
@@ -373,6 +373,7 @@ export const db = {
         id: v.id, ticket: v.ticket, fecha: v.fecha, cliente: v.cliente,
         cliente_id: v.clienteId || null, pago: v.pago, estado: v.estado,
         descuento: v.desc, anticipo: v.anticipo, cita_id: v.citaId ?? null,
+        pagos: v.pagos && v.pagos.length ? v.pagos : null,
       },
       p_lineas: v.lineas.map(l => ({
         tipo: l.tipo, nombre: l.nombre, producto_id: l.productoId ?? null,

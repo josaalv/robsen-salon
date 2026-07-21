@@ -121,6 +121,7 @@ export interface Venta {
   clienteId: string
   createdAt?: string   // timestamp real de creación (ISO), para cortes por rango
   pago: string
+  pagos?: { metodo: string; monto: number }[]   // desglose si el cobro fue mixto
   estado: EstadoVenta
   desc: number
   anticipo: number
