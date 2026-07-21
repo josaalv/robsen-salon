@@ -4,7 +4,7 @@ import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
-import { mxn, ventaCalc } from '../lib/helpers'
+import { mxn, ventaCalc, descargarCSV } from '../lib/helpers'
 import { POSBuilder } from './POS'
 import type { Venta, CierreCaja } from '../types'
 
@@ -486,6 +486,37 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     ? `${desde ? fmtDia(desde) : '…'} — ${hasta ? fmtDia(hasta) : '…'}`
     : dia ? fmtDia(dia) : ''
 
+  // Exportar la lista visible a CSV (respeta filtros, día y rango).
+  const exportarVentasCSV = () => {
+    const filas: (string | number)[][] = [['Ticket', 'Fecha', 'Clienta', 'Detalle', 'Pago', 'Subtotal', 'Descuento', 'Anticipo', 'Total', 'Comisión', 'Estado']]
+    listaOrdenada.forEach(v => filas.push([
+      v.ticket, v.fecha, v.cliente, resumenItems(v), v.pago,
+      subtotalV(v), v.desc || 0, v.anticipo || 0, totalVenta(v), comisionVenta(v), v.estado,
+    ]))
+    const suf = dia || (rangoActivo ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : filtroPeriodo.toLowerCase())
+    descargarCSV(`ventas-${suf}`, filas)
+  }
+
+  // Imprimir el corte del periodo (día o rango).
+  const imprimirCorte = () => {
+    const rows = corteItems.map(([l, v]) => `<div class="r"><span>${l}</span><span>${v}</span></div>`).join('')
+    const html = `<html><head><meta charset="utf-8"><style>
+      body{font-family:sans-serif;font-size:13px;margin:0;padding:24px;max-width:420px}
+      h2{font-size:18px;margin:0 0 2px}.sub{color:#666;font-size:12px;margin-bottom:14px}
+      .tot{font-size:26px;font-weight:700;margin:6px 0 14px}
+      .r{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee}
+      </style></head><body>
+      <h2>${data.config?.nombre || 'Robsen Salón & Spa'} — Corte</h2>
+      <div class="sub">${corteLabel}</div>
+      <div class="tot">${mxn(corteTotal)}</div>
+      ${rows}
+      </body></html>`
+    const win = window.open('', '_blank', 'width=460,height=680')
+    if (!win) return
+    win.document.write(html); win.document.close()
+    win.onload = () => { win.print(); win.close() }
+  }
+
   const corteItems: [string, string, string?][] = [
     ['Tickets', String(lista.length)],
     ['Ticket promedio', mxn(cortePromedio)],
@@ -529,6 +560,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
           </div>
         </div>
         <div className="vc gap10">
+          <button className="btn ghost" onClick={exportarVentasCSV} title="Exportar la lista visible a CSV"><Ic n="download-simple" />Exportar</button>
           {user && ['admin', 'gerente', 'recepcion'].includes(user.rol) && (
             <button className="btn ghost" onClick={() => setCierreCaja(true)}><Ic n="lock-simple" />Cerrar caja del día</button>
           )}
@@ -632,9 +664,12 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{corteLabel}</div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="dim" style={{ fontSize: 11 }}>Total vendido</div>
-              <div className="num" style={{ fontWeight: 800, fontSize: 22, color: 'var(--gold)' }}>{mxn(corteTotal)}</div>
+            <div className="vc gap10">
+              <div style={{ textAlign: 'right' }}>
+                <div className="dim" style={{ fontSize: 11 }}>Total vendido</div>
+                <div className="num" style={{ fontWeight: 800, fontSize: 22, color: 'var(--gold)' }}>{mxn(corteTotal)}</div>
+              </div>
+              <button className="btn ghost sm" onClick={imprimirCorte} title="Imprimir el corte"><Ic n="printer" />Imprimir</button>
             </div>
           </div>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Avatar, Seg, Switch, CardHead, toast, Modal, useTableSort, sortRows, SortTh, Pager } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, ventaCalc } from '../lib/helpers'
+import { mxn, ventaCalc, descargarCSV } from '../lib/helpers'
 import type { Producto, Estilista } from '../types'
 import * as XLSX from 'xlsx'
 
@@ -181,6 +181,11 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
                     {c}
                   </button>
                 ))}
+                <button className="btn ghost sm" title="Exportar inventario a CSV" onClick={() => {
+                  const filas: (string | number)[][] = [['Producto', 'SKU', 'Marca', 'Categoría', 'Uso', 'Costo', 'Precio', 'Stock', 'Mínimo', 'Vendidos']]
+                  listaFiltrada.forEach(p => filas.push([p.nombre, p.sku || '', p.marca || '', p.cat, p.uso, p.costo, p.precio, p.stock, p.min, p.vendidos]))
+                  descargarCSV('inventario', filas)
+                }}><Ic n="download-simple" />Exportar</button>
               </div>
             }
           />

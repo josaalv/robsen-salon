@@ -34,6 +34,32 @@ const DIA = 86400000
 export const mxn = (n: number) => '$' + Number(n).toLocaleString('es-MX')
 export const mxn0 = (n: number) => Number(n).toLocaleString('es-MX')
 
+// Formatea un teléfono a dígitos "33 1234 5678" (10 dígitos locales) para mostrar.
+export const formatTel = (t: string): string => {
+  const d = (t || '').replace(/\D/g, '')
+  const local = d.length > 10 ? d.slice(-10) : d
+  if (local.length !== 10) return t || ''
+  return `${local.slice(0, 2)} ${local.slice(2, 6)} ${local.slice(6)}`
+}
+
+// Descarga un CSV desde filas (compatible con Excel: BOM + comillas).
+export const descargarCSV = (nombre: string, filas: (string | number)[][]): void => {
+  const esc = (v: string | number) => {
+    const s = String(v ?? '')
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = '﻿' + filas.map(f => f.map(esc).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nombre.endsWith('.csv') ? nombre : nombre + '.csv'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 // Teléfono: acepta con o sin código de país (52) y con o sin el 1 de
 // celular (521…), siempre y cuando el número local (con lada) sean 10 dígitos.
 export const normalizarTel = (t: string): string => (t || '').replace(/\D/g, '')
