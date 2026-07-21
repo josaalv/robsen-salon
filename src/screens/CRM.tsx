@@ -3,7 +3,7 @@ import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, Switch, toast, Confir
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
-import { mxn, helpers, normalizarTel as normalizarTelShared, telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
+import { mxn, helpers, normalizarTel as normalizarTelShared, telefonoValido, telefonoError, filtrarTel, formatTel, descargarCSV } from '../lib/helpers'
 import type { Clienta, EstadoClienta, FotoEntry } from '../types'
 
 function waUrl(tel: string, msg: string): string {
@@ -1059,6 +1059,16 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
     return r
   }, [q, filtro, sort, data.clientas])
 
+  const exportarClientasCSV = () => {
+    const estNom = (id: string) => data.estilistas.find(e => e.id === id)?.nombre || ''
+    const filas: (string | number)[][] = [['Nombre', 'Teléfono', 'Estado', 'Estilista habitual', 'Servicio favorito', 'Cumpleaños', 'Visitas', 'Gasto total', 'Ticket promedio', 'Última visita', 'Recibe WhatsApp']]
+    rows.forEach(c => filas.push([
+      c.nombre, formatTel(c.tel), c.estado, estNom(c.est), c.fav, c.cumple,
+      c.visitas, c.gasto, c.ticket, c.ultima, c.waOptin === false ? 'No' : 'Sí',
+    ]))
+    descargarCSV('clientas', filas)
+  }
+
   const toggleSort = (k: keyof Clienta) => setSort(s => s.k === k ? { k, dir: -s.dir } : { k, dir: 1 })
   const Caret = ({ k }: { k: keyof Clienta }) => (
     <span className="caret">{sort.k === k ? (sort.dir === 1 ? '▲' : '▼') : '↕'}</span>
@@ -1155,6 +1165,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
                     style={filtro === f ? { borderColor: 'var(--gold)', color: 'var(--gold)' } : {}}
                     onClick={() => setFiltro(f)}>{f}</button>
                 ))}
+                <button className="btn ghost sm" onClick={exportarClientasCSV} title="Exportar la lista a CSV"><Ic n="download-simple" />Exportar</button>
               </div>
             </div>
             <table className="table">
