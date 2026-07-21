@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, Switch, toast, ConfirmModal } from '../components/ui'
+import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, Switch, toast, ConfirmModal, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
@@ -124,6 +124,13 @@ function ClientaModal({ c, onClose, onSaved }: {
     doSave()
   }
 
+  const cardRef = useRef<HTMLDivElement>(null)
+  useModalKeys(
+    cardRef,
+    () => (confirmarDup ? setConfirmarDup(null) : onClose()),
+    () => (confirmarDup ? doSave() : intentarGuardar()),
+  )
+
   return (
     <div className="rb-modal-bg" onClick={onClose}>
       {confirmarDup && (
@@ -163,7 +170,7 @@ function ClientaModal({ c, onClose, onSaved }: {
           </div>
         </div>
       )}
-      <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '94vw' }}>
+      <div ref={cardRef} className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '94vw' }}>
         <div className="card-head">
           <div>
             <div className="eyebrow">{nuevo ? 'Registrar' : 'Editar'} clienta</div>

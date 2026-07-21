@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Avatar, EstadoBadge, Seg, toast, ConfirmModal } from '../components/ui'
+import React, { useState, useEffect, useRef } from 'react'
+import { Avatar, EstadoBadge, Seg, toast, ConfirmModal, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { mxn, resolverComision } from '../lib/helpers'
@@ -266,9 +266,12 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
     }
   }
 
+  const cardRef = useRef<HTMLDivElement>(null)
+  useModalKeys(cardRef, onClose, guardar)
+
   return (
     <div className="rb-modal-bg" onClick={onClose}>
-      <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '94vw' }}>
+      <div ref={cardRef} className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '94vw' }}>
         <div className="card-head">
           <div>
             <div className="eyebrow">{nuevo ? 'Agendar' : 'Editar'} cita</div>
@@ -453,9 +456,12 @@ function BloqueoModal({ onClose, onSaved }: { onClose: () => void; onSaved: (b: 
 
   const durMin = toMin(fin) - toMin(inicio)
 
+  const cardRef = useRef<HTMLDivElement>(null)
+  useModalKeys(cardRef, onClose, guardar)
+
   return (
     <div className="rb-modal-bg" onClick={onClose}>
-      <div className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: '94vw' }}>
+      <div ref={cardRef} className="card gold-edge rb-modal" onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: '94vw' }}>
         <div className="card-head">
           <div>
             <div className="eyebrow">Bloquear tiempo</div>
