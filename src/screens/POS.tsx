@@ -90,6 +90,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   const [clienteQ, setClienteQ] = useState('')
   const [clienteOpen, setClienteOpen] = useState(false)
   const [desc, setDesc] = useState(() => citaOrigen ? 0 : Number(localStorage.getItem(DRAFT_KEY + '_desc') || '0'))
+  const [descModo, setDescModo] = useState<'monto' | 'pct'>('monto')   // descuento como $ fijo o %
   const [anticipo, setAnticipo] = useState(() => citaOrigen ? (citaOrigen.ant || 0) : Number(localStorage.getItem(DRAFT_KEY + '_anticipo') || '0'))
 
   useEffect(() => {
@@ -258,7 +259,9 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
   }))
 
   const subtotal = cart.reduce((s, l) => s + l.precio * l.cant, 0)
-  const total = Math.max(0, subtotal - desc)
+  // Descuento resuelto a monto: si es %, se calcula sobre el subtotal.
+  const descMonto = descModo === 'pct' ? Math.round(subtotal * Math.min(100, desc || 0) / 100) : (desc || 0)
+  const total = Math.max(0, subtotal - descMonto)
   const saldo = Math.max(0, total - anticipo)
   const cambio = (Number(recibido) || 0) - saldo   // + a favor del cliente, − falta
   const comision = cart.reduce((s, l) => s + (
@@ -276,7 +279,7 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
       clienteId: data.clientas.find(c => c.nombre === cliente)?.id || '',
       pago,
       estado: anticipo > 0 && anticipo < total ? 'parcial' : 'pagada',
-      desc,
+      desc: descMonto,
       anticipo,
       lineas: cart.map(l => ({
         tipo: l.tipo,
@@ -505,8 +508,14 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
             <div style={{ flex: '0 0 auto', padding: '14px 20px', borderTop: '1px solid var(--line)' }}>
               <div className="vc gap10" style={{ marginBottom: 10 }}>
                 <div className="field f1" style={{ minWidth: 0 }}>
-                  <label style={{ fontSize: 11 }}>Descuento</label>
-                  <input className="input num" type="number" value={desc || ''} placeholder="0" onFocus={e => e.currentTarget.select()} onChange={e => setDesc(+e.target.value || 0)} style={{ padding: '8px 10px' }} />
+                  <label style={{ fontSize: 11 }}>Descuento{descModo === 'pct' && descMonto > 0 ? ` (−${mxn(descMonto)})` : ''}</label>
+                  <div className="vc gap6">
+                    <input className="input num f1" type="number" min="0" value={desc || ''} placeholder="0" onFocus={e => e.currentTarget.select()} onChange={e => setDesc(+e.target.value || 0)} style={{ padding: '8px 10px', minWidth: 0 }} />
+                    <button type="button" className="btn ghost sm" title="Alternar monto / porcentaje" style={{ flex: '0 0 auto', minWidth: 34, fontWeight: 700 }}
+                      onClick={() => { setDescModo(m => m === 'monto' ? 'pct' : 'monto'); setDesc(0) }}>
+                      {descModo === 'monto' ? '$' : '%'}
+                    </button>
+                  </div>
                 </div>
                 <div className="field f1" style={{ minWidth: 0 }}>
                   <label style={{ fontSize: 11 }}>Anticipo</label>
