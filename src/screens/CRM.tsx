@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, Switch, toast, ConfirmModal, useModalKeys } from '../components/ui'
+import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, Switch, toast, ConfirmModal, useModalKeys, Pager } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
@@ -1070,6 +1070,14 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   }
 
   const toggleSort = (k: keyof Clienta) => setSort(s => s.k === k ? { k, dir: -s.dir } : { k, dir: 1 })
+
+  // Paginación de la lista de clientas.
+  const PAGE_C = 30
+  const [pageC, setPageC] = useState(1)
+  const totalPagesC = Math.max(1, Math.ceil(rows.length / PAGE_C))
+  useEffect(() => { setPageC(1) }, [q, filtro, sort])
+  const pageC0 = Math.min(pageC, totalPagesC) - 1
+  const pageRows = rows.slice(pageC0 * PAGE_C, pageC0 * PAGE_C + PAGE_C)
   const Caret = ({ k }: { k: keyof Clienta }) => (
     <span className="caret">{sort.k === k ? (sort.dir === 1 ? '▲' : '▼') : '↕'}</span>
   )
@@ -1182,7 +1190,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(c => {
+                {pageRows.map(c => {
                   const e = data.estilistas.find(es => es.id === c.est) || data.estilistas[0]
                   const ins = helpers.insights(c)
                   const visitCol = ins.recompra === 'atrasada' ? 'var(--st-canc)' : ins.recompra === 'toca' ? 'var(--st-pend)' : 'var(--st-conf)'
@@ -1221,6 +1229,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
                 )}
               </tbody>
             </table>
+            <Pager page={Math.min(pageC, totalPagesC)} totalPages={totalPagesC} onPage={setPageC} />
           </div>
         </>
       )}
