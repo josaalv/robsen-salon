@@ -5,7 +5,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const WABA_ID = Deno.env.get("WHATSAPP_WABA_ID") || "1051808143962185";
+const WABA_ID = Deno.env.get("WHATSAPP_WABA_ID") || "1033375755765717";
 const LANG = "es_MX";
 
 // Catálogo de plantillas en español. Variables posicionales {{1}}, {{2}}, …
