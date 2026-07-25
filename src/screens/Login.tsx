@@ -168,7 +168,7 @@ export function ScreenLogin() {
           <div style={{ fontSize:10, letterSpacing:'.38em', textTransform:'uppercase', color:'var(--text-3)', marginTop:8 }}>
             Salón &amp; Spa · Sistema interno
           </div>
-          <div style={{ fontSize:9, color:'var(--text-3)', opacity:0.45, marginTop:4, letterSpacing:'.06em' }}>v1.03</div>
+          <div style={{ fontSize:9, color:'var(--text-3)', opacity:0.45, marginTop:4, letterSpacing:'.06em' }}>v1.057</div>
           <div style={{ marginTop:'auto' }}>
             <h2 className="display" style={{ fontSize:32, lineHeight:1.14 }}>
               El control total<br />de tu salón,<br />
