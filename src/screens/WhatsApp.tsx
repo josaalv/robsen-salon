@@ -179,6 +179,7 @@ function PanelAutomatizacion() {
   const [cargando, setCargando] = useState(true)
   const [generando, setGenerando] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  const [sincronizando, setSincronizando] = useState(false)
   const [confirmVaciar, setConfirmVaciar] = useState(false)
 
   const recargar = async () => {
@@ -270,6 +271,18 @@ function PanelAutomatizacion() {
       toast('No se pudo vaciar la cola. Intenta de nuevo.')
     }
   }
+  const sincronizar = async () => {
+    setSincronizando(true)
+    try {
+      const r = await db.sincronizarWaPlantillas()
+      await recargar()
+      toast(r?.sincronizados ? `Estado actualizado desde Meta (${r.sincronizados} plantillas).` : 'Sin cambios desde Meta.')
+    } catch {
+      toast('No se pudo consultar Meta. Revisa el token e intenta de nuevo.')
+    } finally {
+      setSincronizando(false)
+    }
+  }
   const enviarAprobados = async () => {
     setEnviando(true)
     try {
@@ -344,6 +357,9 @@ function PanelAutomatizacion() {
       {/* Estado de plantillas */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <span className="dim" style={{ fontSize: 12 }}>Plantillas: <b>{aprobadasN}/{plantillas.length || 6}</b> aprobadas por Meta</span>
+        <button className="btn ghost sm" disabled={sincronizando} onClick={sincronizar} title="Consulta a Meta el estado real de aprobación">
+          <Ic n={sincronizando ? 'spinner' : 'arrows-clockwise'} size={13} />{sincronizando ? 'Consultando…' : 'Sincronizar con Meta'}
+        </button>
         {plantillas.map(p => {
           const e = EST_META[p.estadoMeta] || EST_META.borrador
           return <span key={p.id} className="badge" style={{ fontSize: 10.5, color: e.color, borderColor: e.color }}>{FLUJO_LABEL[p.flujo || ''] || p.nombre} · {e.label}</span>

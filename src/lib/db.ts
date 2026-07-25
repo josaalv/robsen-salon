@@ -668,6 +668,13 @@ export const db = {
     if (error) throw new Error(error.message)
     return data as { procesados: number }
   },
+  // Lee el estado real de las plantillas en Meta y lo refleja en wa_plantillas.
+  async sincronizarWaPlantillas(): Promise<{ sincronizados: number }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('wa-templates', { body: { action: 'sync' } })
+    if (error) throw new Error(error.message)
+    return (data as { sincronizados: number }) ?? { sincronizados: 0 }
+  },
   async updateWaMensaje(id: string, patch: Partial<WaMensaje>): Promise<void> {
     if (!supabase) return
     const row: Record<string, unknown> = {}

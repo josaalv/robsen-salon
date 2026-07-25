@@ -100,6 +100,21 @@ function AppShell() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // Al enfocar un campo numérico, seleccionar todo su contenido para poder
+  // sobrescribirlo de golpe (sin tener que borrar el valor previo). Global,
+  // así todos los formularios se comportan igual que el POS.
+  useEffect(() => {
+    const handler = (e: FocusEvent) => {
+      const t = e.target as HTMLElement
+      if (t instanceof HTMLInputElement && t.type === 'number') {
+        // requestAnimationFrame: deja que el navegador coloque el cursor primero
+        requestAnimationFrame(() => { try { t.select() } catch { /* noop */ } })
+      }
+    }
+    document.addEventListener('focusin', handler)
+    return () => document.removeEventListener('focusin', handler)
+  }, [])
+
   const searchResults = useMemo(() => {
     if (!searchQ.trim() || searchQ.length < 2) return []
     const q = searchQ.toLowerCase()
@@ -178,7 +193,7 @@ function AppShell() {
             ? <img src={logo} alt={data.config?.nombre || 'Robsen'} className="brand-logo-img" />
             : <div className="logo">{data.config?.nombre || 'Robsen'}</div>}
           <div className="sub">Salón &amp; Spa · Interno</div>
-          <div style={{ fontSize:10, color:'var(--text-3)', opacity:0.5, marginTop:2, letterSpacing:'.04em' }}>v1.03</div>
+          <div style={{ fontSize:10, color:'var(--text-3)', opacity:0.5, marginTop:2, letterSpacing:'.04em' }}>v1.057</div>
           {!hasSupabase && (
             <div style={{ fontSize:10, color:'var(--st-canc)', marginTop:2 }}>⚠ Sin BD</div>
           )}
