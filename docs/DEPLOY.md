@@ -7,8 +7,17 @@ Cada `push` a `main` dispara `.github/workflows/deploy.yml`:
 1. `npm ci` (o `npm install`) instala dependencias.
 2. `npm run build` compila el frontend (`tsc && vite build`), inyectando
    `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` desde los secrets del repo.
-3. `SamKirkland/FTP-Deploy-Action` sube el contenido de `./dist/` por FTP a
-   Hostinger, reemplazando lo que había.
+3. `lftp mirror --reverse` sube el contenido de `./dist/` por FTP a Hostinger,
+   reemplazando lo que había.
+
+**Nota histórica:** hasta julio de 2026 este paso usaba
+`SamKirkland/FTP-Deploy-Action`. Tras rotar la contraseña FTP se detectó que
+ese conector, con las mismas credenciales, reportaba deploys "exitosos" pero
+aterrizaba en un directorio distinto al que realmente sirve el sitio (el
+propio conector marcaba "Server Files: 0" en cada intento, y un archivo de
+prueba subido por él nunca aparecía en producción). Un diagnóstico con
+`lftp` usando las mismas credenciales sí conectó al directorio correcto —
+por eso se reemplazó el conector por `lftp` directo.
 
 No hay paso manual. Si el build pasa y el FTP no falla, en 1-2 minutos el
 cambio está en `https://robseninterno.com`.
@@ -22,7 +31,6 @@ cambio está en `https://robseninterno.com`.
 | `HOSTINGER_FTP_SERVER` | Host FTP de Hostinger |
 | `HOSTINGER_FTP_USERNAME` | Usuario FTP (cuenta scoped a `public_html`) |
 | `HOSTINGER_FTP_PASSWORD` | Contraseña FTP |
-| `HOSTINGER_FTP_SERVER_DIR` (opcional) | Carpeta destino; por defecto `/` porque la cuenta FTP ya aterriza en `public_html` |
 | `SUPABASE_DB_URL` | Solo para el workflow de backups (`backup-db.yml`), no para el deploy |
 
 ## Cómo hacer un deploy
