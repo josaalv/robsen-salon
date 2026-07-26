@@ -16,13 +16,15 @@ jobs:
           FTP_USER: ${{ secrets.HOSTINGER_FTP_USERNAME }}
           FTP_PASS: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
         run: |
+          OPTS="set ssl:verify-certificate no; set ftp:ssl-allow no;"
+
           echo "=== pwd al conectar ==="
-          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" -e "pwd; bye" 2>&1
+          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" -e "$OPTS pwd; bye" 2>&1 || true
 
           echo ""
           echo "=== ls de la raíz ==="
-          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" -e "ls -la; bye" 2>&1
+          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" -e "$OPTS ls -la; bye" 2>&1 || true
 
           echo ""
           echo "=== árbol recursivo (2 niveles) desde la raíz ==="
-          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" -e "find -d 2 . ; bye" 2>&1 || true
+          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" -e "$OPTS find -d 2 . ; bye" 2>&1 || true
