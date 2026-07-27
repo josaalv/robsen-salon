@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react'
-import { Stat, CardHead, EstadoBadge, BarChart, Seg, toast } from '../components/ui'
+import React, { useState, useEffect, useMemo } from 'react'
+import { Stat, CardHead, EstadoBadge, Avatar, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { db } from '../lib/db'
 import { mxn, ventaCalc } from '../lib/helpers'
 import type { Usuario } from '../types'
 
@@ -10,9 +11,23 @@ const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio'
 const MESES_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const DIAS_SHORT_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 
+function fmtDur(min: number): string {
+  if (min < 60) return `${min} min`
+  const h = Math.floor(min / 60), m = min % 60
+  return m ? `${h}h ${m}min` : `${h}h`
+}
+
 export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) => void; user: Usuario }) {
   const { data } = useStore()
-  const [periodo, setPeriodo] = useState('Semana')
+
+  // Pendientes de WhatsApp (por aprobar + listos para enviar) — carga aparte,
+  // igual que el panel de WhatsApp; no forma parte del store principal.
+  const [waPendientes, setWaPendientes] = useState(0)
+  useEffect(() => {
+    db.getWaMensajes().then(cola => {
+      setWaPendientes(cola.filter(m => m.estado === 'pendiente_aprobacion' || m.estado === 'aprobado').length)
+    })
+  }, [])
 
   const hoy = new Date()
   const fechaStr = `${DIAS_ES[hoy.getDay()]} · ${hoy.getDate()} de ${MESES_ES[hoy.getMonth()]}, ${hoy.getFullYear()}`
@@ -40,32 +55,23 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
     return { d: DIAS_SHORT_ES[d.getDay()], v: total }
   }), [data.ventas, hoy.toDateString()])
 
-  const totalSemana = semanaData.reduce((s, d) => s + d.v, 0)
-  const mejorDia = semanaData.length > 0 ? semanaData.reduce((a, b) => b.v > a.v ? b : a) : null
-
-  // Mes actual real
+  // Ticket promedio del mes (queda como promedio por transacción, no como
+  // total de periodo — es información operativa, no un reporte financiero).
   const mesActualStr = MESES_SHORT[hoy.getMonth()].toLowerCase()
   const ventasMesArr = data.ventas.filter(v => v.fecha.toLowerCase().includes(mesActualStr))
   const totalMes = ventasMesArr.reduce((s, v) => s + ventaCalc.total(v), 0)
   const ticketProm = ventasMesArr.length ? Math.round(totalMes / ventasMesArr.length) : 0
 
-  // Mes anterior (comparativo)
-  const mesPasadoIdx = (hoy.getMonth() + 11) % 12
-  const mesPasadoStr = MESES_SHORT[mesPasadoIdx].toLowerCase()
-  const ventasMesPasadoArr = data.ventas.filter(v => v.fecha.toLowerCase().includes(mesPasadoStr))
-  const totalMesPasado = ventasMesPasadoArr.reduce((s, v) => s + ventaCalc.total(v), 0)
-  const cambioPct = totalMesPasado > 0 ? Math.round((totalMes - totalMesPasado) / totalMesPasado * 100) : null
-  const cambioDir: 'up' | 'down' | undefined = cambioPct != null ? (cambioPct >= 0 ? 'up' : 'down') : undefined
-
-  const mesData = useMemo(() => {
-    const acc: Record<number, number> = {}
-    ventasMesArr.forEach(v => {
-      const day = parseInt(v.fecha.split(' ')[0])
-      if (!isNaN(day)) acc[day] = (acc[day] || 0) + ventaCalc.total(v)
-    })
-    const dias = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()
-    return Array.from({ length: dias }, (_, i) => ({ d: String(i + 1), v: acc[i + 1] || 0 }))
-  }, [data.ventas, hoy.getMonth()])
+  // Citas de hoy por estilista — vista operativa del día.
+  const citasPorEstilista = useMemo(() => {
+    return data.estilistas
+      .map(e => {
+        const citas = citasHoy.filter(c => c.est === e.id)
+        return { est: e, n: citas.length, min: citas.reduce((s, c) => s + (c.dur || 0), 0) }
+      })
+      .filter(x => x.n > 0)
+      .sort((a, b) => b.n - a.n)
+  }, [data.estilistas, citasHoy])
 
   // Servicios más vendidos (real)
   const servMasVendidos = useMemo(() => {
@@ -79,8 +85,6 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
     })
     return Object.entries(acc).map(([srv, d]) => ({ srv, ...d })).sort((a, b) => b.ingreso - a.ingreso).slice(0, 5)
   }, [data.ventas])
-
-  const chartData = periodo === 'Semana' ? semanaData : mesData
 
   // — Clientas —
   const nuevas = data.clientas.filter(c => c.estado === 'Nueva').length
@@ -133,16 +137,16 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
         </div>
       </div>
 
-      {/* KPIs principales */}
+      {/* KPIs principales — enfocados en el día, no en periodos de venta */}
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <Stat icon={<Ic n="currency-circle-dollar" />} label="Ventas de hoy"      value={mxn(totalHoy)}   spark={semanaData.map(d => d.v)} />
-        <Stat icon={<Ic n="calendar-check" />}         label="Ventas de la semana" value={mxn(totalSemana)} spark={semanaData.map(d => d.v)} />
-        <Stat icon={<Ic n="chart-line-up" />}          label="Ventas del mes"      value={mxn(totalMes)}   spark={mesData.slice(-6).map(d => d.v)} delta={cambioPct != null ? `${Math.abs(cambioPct)}% vs ${MESES_SHORT[mesPasadoIdx]}` : undefined} deltaDir={cambioDir} />
-        <Stat icon={<Ic n="receipt" />}                label="Ticket promedio"     value={mxn(ticketProm)} spark={semanaData.map(d => d.v)} />
+        <Stat icon={<Ic n="currency-circle-dollar" />} label="Ventas de hoy"    value={mxn(totalHoy)}    spark={semanaData.map(d => d.v)} />
+        <Stat icon={<Ic n="receipt" />}                label="Ticket promedio" value={mxn(ticketProm)}  spark={semanaData.map(d => d.v)} />
+        <Stat icon={<Ic n="calendar-check" />}         label="Citas de hoy"    value={String(citasHoy.length)} />
+        <Stat icon={<Ic n="whatsapp-logo" />}          label="Pendientes de WhatsApp" value={String(waPendientes)} />
       </div>
 
       {/* KPIs secundarios */}
-      <div className="grid mt18" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
+      <div className="grid mt18" style={{ gridTemplateColumns: 'repeat(5,1fr)' }}>
         <div className="card card-pad vc gap16">
           <div className="ico" style={{ width:44,height:44,borderRadius:12,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(147,181,140,0.12)',border:'1px solid rgba(147,181,140,0.28)',color:'var(--st-conf)' }}>
             <Ic n="check-circle" />
@@ -179,34 +183,40 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
             <span className="v">{nuevas} <span style={{ color:'var(--text-3)',fontSize:15 }}>/ {recurrentes}</span></span>
           </div>
         </div>
+        <div className="card card-pad vc gap16">
+          <div className="ico" style={{ width:44,height:44,borderRadius:12,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(187,106,106,0.12)',border:'1px solid rgba(187,106,106,0.28)',color:'var(--st-canc)' }}>
+            <Ic n="package" />
+          </div>
+          <div className="kpi-mini">
+            <span className="l">Stock bajo</span>
+            <span className="v">{stockBajo.length}</span>
+          </div>
+        </div>
       </div>
 
-      {/* Gráfica + próximas citas */}
+      {/* Citas del día por estilista + próximas citas */}
       <div className="grid mt18" style={{ gridTemplateColumns: '1.55fr 1fr' }}>
         <div className="card">
-          <CardHead
-            title={periodo === 'Semana' ? 'Ventas de la semana' : 'Ventas del mes'}
-            sub={periodo === 'Semana' ? 'Últimos 7 días' : 'Mes actual'}
-            right={<Seg opts={['Semana', 'Mes']} value={periodo} onChange={setPeriodo} />}
-          />
-          <div className="card-pad" style={{ paddingTop: 14 }}>
-            <div className="vc gap24" style={{ marginBottom: 6 }}>
-              <div className="kpi-mini">
-                <span className="l">Total</span>
-                <span className="v gold-text">{mxn(periodo === 'Semana' ? totalSemana : totalMes)}</span>
-              </div>
-              {periodo === 'Semana' && mejorDia && (
-                <div className="kpi-mini">
-                  <span className="l">Mejor día</span>
-                  <span className="v">{mejorDia.d}</span>
+          <CardHead title="Citas de hoy por estilista" sub="Carga de trabajo del día" />
+          <div className="card-pad" style={{ paddingTop: 12 }}>
+            {citasPorEstilista.length > 0 ? citasPorEstilista.map(({ est, n, min }, i) => {
+              const max = citasPorEstilista[0]?.n || 1
+              return (
+                <div key={est.id} style={{ padding:'11px 0', borderBottom: i < citasPorEstilista.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
+                  <div className="between" style={{ marginBottom: 8 }}>
+                    <div className="vc gap12">
+                      <Avatar ini={est.ini} color={est.color} size="sm" />
+                      <span style={{ fontWeight:600, fontSize:13.5 }}>{est.nombre}</span>
+                    </div>
+                    <div className="vc gap12">
+                      <span className="badge neutral">{n} cita{n > 1 ? 's' : ''}</span>
+                      <span className="num" style={{ fontWeight:600, minWidth:64, textAlign:'right', color:'var(--text-3)', fontSize:12.5 }}>{fmtDur(min)}</span>
+                    </div>
+                  </div>
+                  <div className="bar"><span style={{ width: (n / max * 100) + '%', background: est.color }} /></div>
                 </div>
-              )}
-              <div className="kpi-mini">
-                <span className="l">Citas hoy</span>
-                <span className="v">{citasHoy.length}</span>
-              </div>
-            </div>
-            <BarChart data={chartData} h={210} highlightLast={false} />
+              )
+            }) : <div className="dim" style={{ fontSize: 12.5 }}>Sin citas asignadas hoy todavía.</div>}
           </div>
         </div>
 
