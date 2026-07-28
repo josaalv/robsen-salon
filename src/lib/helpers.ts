@@ -173,6 +173,15 @@ export const helpers = {
   },
 }
 
+// Timestamp real de una venta (ms): de created_at, o del id ('v'+epoch) como
+// respaldo. Base para filtros de fecha reales — evita el bug de comparar
+// solo el texto "DD Mon" sin año.
+export const ventaTS = (v: Venta): number | null => {
+  if (v.createdAt) { const t = Date.parse(v.createdAt); if (!isNaN(t)) return t }
+  const m = /^v(\d{13})$/.exec(v.id || '')
+  return m ? Number(m[1]) : null
+}
+
 export const ventaCalc = {
   subtotal: (v: Venta) => v.lineas.reduce((s, l) => s + l.precio * l.cant, 0),
   total: (v: Venta) => ventaCalc.subtotal(v) - (v.desc || 0),

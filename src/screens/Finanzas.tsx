@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react'
 import { CardHead, Seg, Donut, BarChart, toast, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, ventaCalc } from '../lib/helpers'
+import { mxn, ventaCalc, ventaTS, desglosePagos } from '../lib/helpers'
 import type { Gasto } from '../types'
 
 const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -70,33 +70,36 @@ function GastoModal({ onClose, onSave }: { onClose: () => void; onSave: (g: Gast
   )
 }
 
-function parseFecha(s: string): Date {
-  const dateStr = s.split(' · ')[0].trim()
-  const [dd, mon] = dateStr.split(' ')
-  const m = MESES_ES.findIndex(x => x.toLowerCase() === mon?.toLowerCase())
-  const year = HOY.getFullYear()
-  const d = new Date(year, m < 0 ? HOY.getMonth() : m, parseInt(dd) || 1)
-  if (d > HOY) d.setFullYear(year - 1)
-  return d
-}
-
 export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void }) {
   const { data, addGasto, deleteGasto } = useStore()
   const [periodo, setPeriodo] = useState('Mes')
   const [showGastoModal, setShowGastoModal] = useState(false)
 
-  // Filter ventas by selected period
+  // Rango de fechas real (calendario) — cuando está activo, manda sobre el
+  // selector de Semana/Mes/Año.
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  const rangoActivo = !!(desde || hasta)
+  const rangoDesde = desde ? Date.parse(desde + 'T00:00:00') : -Infinity
+  const rangoHasta = hasta ? Date.parse(hasta + 'T23:59:59.999') : Infinity
+  const limpiarRango = () => { setDesde(''); setHasta('') }
+
+  // Filter ventas by rango real o por periodo — basado en el timestamp real
+  // de la venta (created_at), no en el texto "DD Mon" sin año.
   const ventasFiltradas = useMemo(() => {
     return data.ventas.filter(v => {
-      const d = parseFecha(v.fecha)
+      const t = ventaTS(v)
+      if (rangoActivo) return t != null && t >= rangoDesde && t <= rangoHasta
+      if (t == null) return false
+      const d = new Date(t)
       if (periodo === 'Semana') {
-        const diff = (HOY.getTime() - d.getTime()) / 86400000
+        const diff = (HOY.getTime() - t) / 86400000
         return diff >= 0 && diff < 7
       }
-      if (periodo === 'Mes') return d.getMonth() === HOY.getMonth()
-      return true
+      if (periodo === 'Mes') return d.getMonth() === HOY.getMonth() && d.getFullYear() === HOY.getFullYear()
+      return d.getFullYear() === HOY.getFullYear()
     })
-  }, [data.ventas, periodo])
+  }, [data.ventas, periodo, rangoActivo, rangoDesde, rangoHasta])
 
   // Real KPIs from filtered ventas
   const ingServicio  = ventasFiltradas.reduce((s, v) => s + ventaCalc.porTipo(v, 'servicio'),  0)
@@ -109,11 +112,30 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
   const gastosFiltrados = useMemo(() => {
     return (data.gastos || []).filter(g => {
       const d = new Date(g.fecha + 'T12:00:00')
-      if (periodo === 'Semana') return (HOY.getTime() - d.getTime()) / 86400000 < 7
+      const t = d.getTime()
+      if (rangoActivo) return t >= rangoDesde && t <= rangoHasta
+      if (periodo === 'Semana') return (HOY.getTime() - t) / 86400000 < 7
       if (periodo === 'Mes') return d.getMonth() === HOY.getMonth() && d.getFullYear() === HOY.getFullYear()
       return d.getFullYear() === HOY.getFullYear()
     })
-  }, [data.gastos, periodo])
+  }, [data.gastos, periodo, rangoActivo, rangoDesde, rangoHasta])
+
+  // Ingresos por método de pago (tarjeta/efectivo/otros) — reparte ventas
+  // mixtas proporcionalmente entre sus métodos, igual que en el corte de Ventas.
+  const porMetodoPago = useMemo(() => {
+    const acc: Record<string, number> = {}
+    ventasFiltradas.forEach(v => {
+      desglosePagos(v, ventaCalc.total(v)).forEach(p => {
+        acc[p.metodo] = (acc[p.metodo] || 0) + p.monto
+      })
+    })
+    return acc
+  }, [ventasFiltradas])
+  const ingEfectivo = porMetodoPago['Efectivo'] || 0
+  const ingTarjeta = porMetodoPago['Tarjeta'] || 0
+  const ingOtrosMetodos = Object.entries(porMetodoPago)
+    .filter(([m]) => m !== 'Efectivo' && m !== 'Tarjeta')
+    .reduce((s, [, v]) => s + v, 0)
 
   const gastos       = gastosFiltrados.reduce((s, g) => s + g.monto, 0)
   const utilidad     = Math.max(0, ingTotal - gastos - comReal)
@@ -159,10 +181,46 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
 
   // Bar chart — grouped by day (semana), week (mes), month (año)
   const barData = useMemo(() => {
+    // Rango de calendario activo: agrupa por día si cabe (≤31 días),
+    // si no por mes — evita una gráfica ilegible en rangos largos.
+    if (rangoActivo && isFinite(rangoDesde) && isFinite(rangoHasta)) {
+      const spanDias = (rangoHasta - rangoDesde) / 86400000
+      if (spanDias <= 31) {
+        const dias = Math.max(1, Math.round(spanDias) + 1)
+        const acc: Record<string, number> = {}
+        ventasFiltradas.forEach(v => {
+          const t = ventaTS(v); if (t == null) return
+          const d = new Date(t)
+          acc[d.toDateString()] = (acc[d.toDateString()] || 0) + ventaCalc.total(v)
+        })
+        return Array.from({ length: dias }, (_, i) => {
+          const d = new Date(rangoDesde); d.setDate(d.getDate() + i)
+          return { d: String(d.getDate()) + ' ' + MESES_ES[d.getMonth()], v: acc[d.toDateString()] || 0 }
+        })
+      }
+      const acc: Record<string, number> = {}
+      ventasFiltradas.forEach(v => {
+        const t = ventaTS(v); if (t == null) return
+        const d = new Date(t)
+        const key = `${d.getFullYear()}-${d.getMonth()}`
+        acc[key] = (acc[key] || 0) + ventaCalc.total(v)
+      })
+      const meses: { d: string; v: number }[] = []
+      const cursor = new Date(rangoDesde); cursor.setDate(1)
+      const fin = new Date(rangoHasta)
+      while (cursor <= fin) {
+        const key = `${cursor.getFullYear()}-${cursor.getMonth()}`
+        meses.push({ d: MESES_ES[cursor.getMonth()], v: acc[key] || 0 })
+        cursor.setMonth(cursor.getMonth() + 1)
+      }
+      return meses
+    }
+
     if (periodo === 'Año') {
       const acc: Record<number, number> = {}
       data.ventas.forEach(v => {
-        const d = parseFecha(v.fecha)
+        const t = ventaTS(v); if (t == null) return
+        const d = new Date(t)
         if (d.getFullYear() === HOY.getFullYear()) {
           acc[d.getMonth()] = (acc[d.getMonth()] || 0) + ventaCalc.total(v)
         }
@@ -172,7 +230,8 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
 
     const acc: Record<string, number> = {}
     ventasFiltradas.forEach(v => {
-      const d = parseFecha(v.fecha)
+      const t = ventaTS(v); if (t == null) return
+      const d = new Date(t)
       const key = `${d.getMonth()}-${d.getDate()}`
       acc[key] = (acc[key] || 0) + ventaCalc.total(v)
     })
@@ -194,21 +253,34 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
       }
       return { d: `Sem ${wi + 1}`, v: total }
     })
-  }, [ventasFiltradas, periodo, data.ventas])
+  }, [ventasFiltradas, periodo, data.ventas, rangoActivo, rangoDesde, rangoHasta])
 
   const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-  const periodoLabel = periodo === 'Semana' ? 'Últimos 7 días' : periodo === 'Mes' ? `${MESES_LARGO[HOY.getMonth()]} ${HOY.getFullYear()}` : `Año ${HOY.getFullYear()}`
+  const fmtDia = (iso: string) => { const [y,m,d] = iso.split('-'); return `${d} ${MESES_ES[+m-1]} ${y}` }
+  const periodoLabel = rangoActivo
+    ? `${desde ? fmtDia(desde) : '…'} — ${hasta ? fmtDia(hasta) : '…'}`
+    : periodo === 'Semana' ? 'Últimos 7 días' : periodo === 'Mes' ? `${MESES_LARGO[HOY.getMonth()]} ${HOY.getFullYear()}` : `Año ${HOY.getFullYear()}`
 
   return (
     <div>
       {/* Header */}
-      <div className="between" style={{ marginBottom: 24 }}>
+      <div className="between" style={{ marginBottom: 24, flexWrap: 'wrap', gap: 14 }}>
         <div>
           <h1 className="display" style={{ fontSize: 26, margin: 0 }}>Finanzas</h1>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Reportes de ingresos, costos y utilidad · {periodoLabel}</div>
         </div>
-        <div className="vc gap12">
-          <Seg opts={['Semana', 'Mes', 'Año']} value={periodo} onChange={setPeriodo} />
+        <div className="vc gap12" style={{ flexWrap: 'wrap' }}>
+          <Seg opts={['Semana', 'Mes', 'Año']} value={periodo} onChange={p => { setPeriodo(p); limpiarRango() }} />
+          <div className="vc gap8">
+            <input type="date" className="input" value={desde} title="Desde"
+              onChange={e => setDesde(e.target.value)} style={{ padding: '7px 10px', fontSize: 12.5, width: 140 }} />
+            <span className="dim" style={{ fontSize: 12 }}>—</span>
+            <input type="date" className="input" value={hasta} title="Hasta"
+              onChange={e => setHasta(e.target.value)} style={{ padding: '7px 10px', fontSize: 12.5, width: 140 }} />
+            {rangoActivo && (
+              <button className="icon-btn" title="Quitar rango" onClick={limpiarRango}><Ic n="x" size={14} /></button>
+            )}
+          </div>
           <button className="btn ghost" onClick={() => {
             const encabezado = 'Ticket,Fecha,Cliente,Tipo,Pago,Subtotal,Descuento,Anticipo,Total,Estado'
             const filas = ventasFiltradas.map(v => {
@@ -221,7 +293,8 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
             const fecha = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})
             const a = document.createElement('a')
             a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
-            a.download = `finanzas-${periodo.toLowerCase()}-${fecha.replace(/\s/g,'-')}.csv`
+            const suf = rangoActivo ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : periodo.toLowerCase()
+            a.download = `finanzas-${suf}-${fecha.replace(/\s/g,'-')}.csv`
             a.click()
             toast(`Reporte exportado · ${ventasFiltradas.length} ventas`)
           }}><Ic n="export" />Exportar CSV</button>
@@ -271,6 +344,41 @@ export function ScreenFinanzas({ onNavigate }: { onNavigate: (r: string) => void
             <div className="num" style={{ fontWeight: 700, fontSize: 18, color: item.color }}>{mxn(item.val)}</div>
           </div>
         ))}
+      </div>
+
+      {/* Row 2.5: Ingresos por método de pago */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <CardHead title="Ingresos por método de pago" sub="Tarjeta vs. efectivo · reparte ventas con pago mixto" />
+        <div className="card-pad" style={{ paddingTop: 12 }}>
+          {ingTotal > 0 ? (
+            <div className="grid" style={{ gridTemplateColumns: ingOtrosMetodos > 0 ? 'repeat(3,1fr)' : 'repeat(2,1fr)', gap: 14 }}>
+              {[
+                { label: 'Efectivo', val: ingEfectivo, ic: 'hand-coins', color: 'var(--st-conf)' },
+                { label: 'Tarjeta',  val: ingTarjeta,  ic: 'credit-card', color: 'var(--gold)' },
+                ...(ingOtrosMetodos > 0 ? [{ label: 'Otros métodos', val: ingOtrosMetodos, ic: 'arrows-down-up', color: '#8FB2D8' }] : []),
+              ].map(m => {
+                const pct = Math.round(m.val / ingTotal * 100)
+                return (
+                  <div key={m.label} className="card" style={{ padding: 16 }}>
+                    <div className="vc gap10" style={{ marginBottom: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid var(--line-soft)', color: m.color, flex: '0 0 36px' }}>
+                        <Ic n={m.ic} />
+                      </div>
+                      <span style={{ fontWeight: 600, fontSize: 13.5 }}>{m.label}</span>
+                    </div>
+                    <div className="between" style={{ marginBottom: 8 }}>
+                      <span className="num" style={{ fontWeight: 700, fontSize: 20, color: m.color }}>{mxn(m.val)}</span>
+                      <span className="muted" style={{ fontSize: 12.5 }}>{pct}%</span>
+                    </div>
+                    <div className="bar"><span style={{ width: pct + '%', background: m.color }} /></div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="dim" style={{ fontSize: 12.5 }}>Sin ventas en el periodo seleccionado.</div>
+          )}
+        </div>
       </div>
 
       {/* Row 3: Donut + Mezcla */}

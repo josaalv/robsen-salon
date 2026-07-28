@@ -1014,7 +1014,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
               <div />
               {visibles.map(e => (
                 <div key={e.id} className="vc gap8" style={{ padding: '14px 12px', borderLeft: '1px solid var(--line-soft)' }}>
-                  <Avatar ini={e.ini} color={e.color} size="sm" />
+                  <Avatar ini={e.ini} color={e.color} size="sm" src={e.foto} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 12.5 }}>{e.nombre.split(' ')[0]}</div>
                     <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>{e.rol}</div>

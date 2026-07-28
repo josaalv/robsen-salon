@@ -205,7 +205,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
                 <div key={est.id} style={{ padding:'11px 0', borderBottom: i < citasPorEstilista.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
                   <div className="between" style={{ marginBottom: 8 }}>
                     <div className="vc gap12">
-                      <Avatar ini={est.ini} color={est.color} size="sm" />
+                      <Avatar ini={est.ini} color={est.color} size="sm" src={est.foto} />
                       <span style={{ fontWeight:600, fontSize:13.5 }}>{est.nombre}</span>
                     </div>
                     <div className="vc gap12">
