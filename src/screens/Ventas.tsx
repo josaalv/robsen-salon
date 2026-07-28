@@ -4,7 +4,7 @@ import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
-import { mxn, ventaCalc, descargarCSV, desglosePagos } from '../lib/helpers'
+import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS } from '../lib/helpers'
 import { POSBuilder } from './POS'
 import type { Venta, CierreCaja } from '../types'
 
@@ -106,7 +106,7 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
                     <span className={'badge ' + bc} style={{ fontSize: 10, padding: '2px 7px' }}>{l.tipo}</span>
                     {estilista && (
                       <span className="vc gap4">
-                        <Avatar ini={estilista.ini} color={estilista.color} size="sm" />
+                        <Avatar ini={estilista.ini} color={estilista.color} size="sm" src={estilista.foto} />
                         {estilista.nombre.split(' ')[0]}
                       </span>
                     )}
@@ -408,13 +408,6 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     l.comMonto != null ? Math.round(l.comMonto * l.cant) : Math.round(totalLinea(l) * (l.com || 0) / 100)
   ), 0)
 
-  // Timestamp real de la venta (ms): de created_at, o del id ('v'+epoch) como
-  // respaldo. Base para TODOS los filtros de fecha (evita el bug del texto sin año).
-  const ventaTS = (v: Venta): number | null => {
-    if (v.createdAt) { const t = Date.parse(v.createdAt); if (!isNaN(t)) return t }
-    const m = /^v(\d{13})$/.exec(v.id || '')
-    return m ? Number(m[1]) : null
-  }
   const hoyDate = new Date()
   const esMismoDia = (t: number | null, d: Date) => t != null && new Date(t).toDateString() === d.toDateString()
   const todayStr = hoyDate.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })   // para el cierre de caja del día
@@ -766,7 +759,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                     <div className="vc" style={{ marginLeft: 2 }}>
                       {ests.map((e, i) => (
                         <div key={i} title={e.nombre} style={{ marginLeft: i ? -8 : 0 }}>
-                          <Avatar ini={e.ini} color={e.color} size="sm" />
+                          <Avatar ini={e.ini} color={e.color} size="sm" src={e.foto} />
                         </div>
                       ))}
                       {!ests.length && <span className="dim">—</span>}
