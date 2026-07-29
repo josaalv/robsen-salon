@@ -68,6 +68,8 @@ const mapConfig = (r: any): SalonConfig => ({
   permisos: r.permisos || {},
   logo: r.logo ?? undefined,
   notifs: r.notifs,
+  waModoPrueba: r.wa_modo_prueba ?? true,
+  waTestTel: r.wa_test_tel ?? undefined,
 })
 
 const toConfigRow = (c: SalonConfig) => ({
@@ -79,6 +81,8 @@ const toConfigRow = (c: SalonConfig) => ({
   comisiones: c.comisiones, escala_comisiones: c.escalaComisiones || [], notifs: c.notifs,
   permisos: c.permisos ?? {},
   logo: c.logo ?? null,
+  wa_modo_prueba: c.waModoPrueba,
+  wa_test_tel: c.waTestTel ?? null,
 })
 
 // Mapper explícito para clientas — evita enviar columnas desconocidas

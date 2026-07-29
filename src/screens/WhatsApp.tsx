@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { Avatar, CardHead, toast, Modal } from '../components/ui'
+import { Avatar, CardHead, Switch, toast, Modal } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
-import { mxn } from '../lib/helpers'
+import { mxn, filtrarTel, telefonoValido } from '../lib/helpers'
 import type { Clienta, WaMensaje, WaPlantilla } from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -172,8 +173,67 @@ const FLUJO_LABEL: Record<string, string> = {
   cumpleanos: 'Cumpleaños', bienvenida: 'Bienvenida', reactivacion: 'Reactivación',
 }
 
+// Modo prueba: mientras está activo, el envío real (cron cada 30 min y el
+// botón "Enviar aprobados") solo entrega a waTestTel — cualquier otro
+// mensaje se queda en la cola sin salir. Es la manera de dejar todo el
+// flujo conectado y probarlo de punta a punta sin riesgo de que le llegue
+// algo a una clienta real. Solo el admin puede verlo y cambiarlo.
+function ModoPrueba() {
+  const { data, updateConfig } = useStore()
+  const cfg = data.config
+  const [tel, setTel] = useState(cfg.waTestTel || '')
+  const [guardando, setGuardando] = useState(false)
+
+  const toggle = async () => {
+    try { await updateConfig({ waModoPrueba: !cfg.waModoPrueba }) }
+    catch { toast('No se pudo guardar el cambio. Intenta de nuevo.') }
+  }
+  const guardarTel = async () => {
+    if (tel && !telefonoValido(tel)) { toast('Teléfono inválido.'); return }
+    setGuardando(true)
+    try { await updateConfig({ waTestTel: tel || undefined }); toast('Teléfono de prueba actualizado.') }
+    catch { toast('No se pudo guardar. Intenta de nuevo.') }
+    finally { setGuardando(false) }
+  }
+
+  return (
+    <div
+      className="card card-pad"
+      style={{ display: 'flex', flexDirection: 'column', gap: 10, borderColor: cfg.waModoPrueba ? 'var(--gold)' : undefined }}
+    >
+      <div className="between" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <div className="vc gap8">
+          <Switch on={cfg.waModoPrueba} onClick={toggle} />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>Modo prueba</div>
+            <div className="dim" style={{ fontSize: 11.5 }}>
+              {cfg.waModoPrueba
+                ? 'Activo: el envío real solo llega al teléfono de prueba, sin importar qué haya en la cola.'
+                : 'Apagado: el envío real llega a cualquier clienta que califique. Úsalo solo cuando ya probaste todo.'}
+            </div>
+          </div>
+        </div>
+        <div className="vc gap8">
+          <input
+            className="input sm"
+            style={{ width: 160 }}
+            placeholder="Tel. de prueba"
+            value={tel}
+            onChange={e => setTel(filtrarTel(e.target.value))}
+          />
+          <button className="btn ghost sm" disabled={guardando || tel === (cfg.waTestTel || '')} onClick={guardarTel}>
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PanelAutomatizacion() {
   const { data } = useStore()
+  const { user } = useAuth()
+  const esAdmin = user?.rol === 'admin'
   const [plantillas, setPlantillas] = useState<WaPlantilla[]>([])
   const [cola, setCola] = useState<WaMensaje[]>([])
   const [cargando, setCargando] = useState(true)
@@ -322,7 +382,9 @@ function PanelAutomatizacion() {
   }
 
   return (
-    <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {esAdmin && <ModoPrueba />}
+      <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div className="between" style={{ flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div className="eyebrow" style={{ marginBottom: 2 }}>Automatización</div>
@@ -401,6 +463,7 @@ function PanelAutomatizacion() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

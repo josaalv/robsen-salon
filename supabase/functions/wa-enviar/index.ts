@@ -89,11 +89,28 @@ Deno.serve(async (_req: Request) => {
     if (!Array.isArray(pend)) return json({ error: "No se pudo leer la cola", detail: pend }, 500);
     const nowMs = Date.now();
     // deno-lint-ignore no-explicit-any
-    const listos = pend.filter((m: any) => !m.programado_para || new Date(m.programado_para).getTime() <= nowMs);
+    let listos = pend.filter((m: any) => !m.programado_para || new Date(m.programado_para).getTime() <= nowMs);
+
+    // Modo prueba: mientras esté activo, este es el único filtro que
+    // realmente importa — sin importar cómo haya llegado un mensaje a la
+    // cola (cron, botón "Generar cola", inserción manual), solo se entrega
+    // si el teléfono coincide con wa_test_tel. Lo que no matchea se queda
+    // en 'aprobado' sin tocarse (no se envía ni se marca como fallido).
+    const cfgRes = await rest(`config?id=eq.main&select=wa_modo_prueba,wa_test_tel`);
+    const cfgRows = await cfgRes.json();
+    const cfg = Array.isArray(cfgRows) ? cfgRows[0] : null;
+    let enEspera = 0;
+    if (cfg?.wa_modo_prueba) {
+      const test10 = normTel(String(cfg.wa_test_tel || "")).slice(-10);
+      const antes = listos.length;
+      // deno-lint-ignore no-explicit-any
+      listos = listos.filter((m: any) => normTel(m.tel).slice(-10) === test10);
+      enEspera = antes - listos.length;
+    }
 
     const results = [];
     for (const m of listos) results.push(await enviarUno(token, m));
-    return json({ procesados: results.length, results }, 200);
+    return json({ procesados: results.length, en_espera_modo_prueba: enEspera, results }, 200);
   } catch (e) {
     return json({ error: String(e) }, 500);
   }

@@ -191,6 +191,8 @@ export const defaultConfig: SalonConfig = {
     citas: true, recordatorios: true, anticipos: true,
     stock: true, inactivas: false, cumples: true,
   },
+
+  waModoPrueba: true,
 }
 
 export const defaultData: RBData = {

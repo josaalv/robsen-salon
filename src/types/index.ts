@@ -345,6 +345,12 @@ export interface SalonConfig {
     inactivas: boolean
     cumples: boolean
   }
+
+  // Modo prueba de WhatsApp: mientras está activo, el envío real (cron y
+  // manual) solo entrega mensajes dirigidos a waTestTel, sin importar qué
+  // más haya en la cola. Se apaga para lanzar el envío a todas las clientas.
+  waModoPrueba: boolean
+  waTestTel?: string
 }
 
 export interface RBData {
