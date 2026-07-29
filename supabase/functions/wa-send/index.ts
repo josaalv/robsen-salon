@@ -5,7 +5,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const PHONE_NUMBER_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "1191037344100256";
+const PHONE_NUMBER_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "1252418747952067";
 
 function json(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj, null, 2), {
