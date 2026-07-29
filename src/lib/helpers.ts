@@ -1,5 +1,11 @@
 import type { Venta, SalonConfig, Rol } from '../types'
 
+// Fecha de hoy en formato YYYY-MM-DD, en zona horaria LOCAL del navegador —
+// a diferencia de `new Date().toISOString().split('T')[0]` (UTC), que en
+// México (UTC-6) ya marca el día siguiente entre las 6pm y medianoche.
+export const fechaLocalIso = (d: Date = new Date()): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 // ─── Permisos de módulos por rol ─────────────────────────────────────────────
 // Fuente única de verdad para "qué módulos ve cada rol". El admin siempre tiene
 // acceso total. Para el resto, si el administrador configuró permisos a medida

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { fechaLocalIso } from './helpers'
 import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja, WaMensaje, WaPlantilla } from '../types'
 
 const BUCKET = 'media'
@@ -328,11 +329,15 @@ export const db = {
   // — Citas —
   async getCitas(): Promise<{ hoy: Cita[]; futuras: Cita[] }> {
     if (!supabase) return { hoy: [], futuras: [] }
-    const today = new Date().toISOString().split('T')[0]
+    const today = fechaLocalIso()
     const { data } = await supabase.from('citas').select('*')
     const all = (data ?? []).map(mapCita)
+    // Sin el "|| !c.fecha" del filtro anterior: una cita sin fecha real ya
+    // no cuenta como "hoy" para siempre — ese hueco es justo lo que hacía
+    // que citas de días anteriores (ya 'done'/'canc') se siguieran mostrando
+    // como pendientes de hoy indefinidamente.
     return {
-      hoy:    all.filter(c => !c.fecha || c.fecha === today),
+      hoy:    all.filter(c => c.fecha === today),
       futuras: all.filter(c => c.fecha && c.fecha > today),
     }
   },
