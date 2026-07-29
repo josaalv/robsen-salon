@@ -148,9 +148,6 @@ function saveContactados(s: Set<string>) {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 // ─── Panel de automatización (cola + aprobación) ────────────────────────────
-const renderPlantilla = (cuerpo: string, vars: string[]) =>
-  cuerpo.replace(/\{\{(\d+)\}\}/g, (_m, n) => vars[Number(n) - 1] ?? '')
-
 const EST_META: Record<string, { label: string; color: string }> = {
   aprobada:  { label: 'Aprobada', color: 'var(--st-conf)' },
   pendiente: { label: 'En revisión', color: 'var(--st-pend)' },
@@ -237,7 +234,6 @@ function PanelAutomatizacion() {
   const [plantillas, setPlantillas] = useState<WaPlantilla[]>([])
   const [cola, setCola] = useState<WaMensaje[]>([])
   const [cargando, setCargando] = useState(true)
-  const [generando, setGenerando] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
   const [confirmVaciar, setConfirmVaciar] = useState(false)
@@ -253,63 +249,6 @@ function PanelAutomatizacion() {
     plantillas.forEach(p => { if (p.flujo) m[p.flujo] = p })
     return m
   }, [plantillas])
-
-  const clByNombre = (nombre: string) => data.clientas.find(c => c.nombre === nombre)
-  const estNombre = (id: string) => data.estilistas.find(e => e.id === id)?.nombre.split(' ')[0] || 'tu estilista'
-  const nom1 = (n: string) => n.split(' ')[0]
-
-  const generar = async () => {
-    setGenerando(true)
-    try {
-      const hoy = new Date()
-      const man = new Date(hoy); man.setDate(hoy.getDate() + 1)
-      const manStr = `${man.getFullYear()}-${String(man.getMonth() + 1).padStart(2, '0')}-${String(man.getDate()).padStart(2, '0')}`
-      // Evita duplicar lo ya encolado (por clienta + flujo + cita).
-      const yaEncolado = new Set(
-        cola.filter(m => m.estado !== 'cancelado' && m.estado !== 'fallido')
-          .map(m => `${m.clientaId || ''}|${m.flujo}|${m.citaId || ''}`))
-      const nuevos: Omit<WaMensaje, 'id' | 'createdAt'>[] = []
-
-      const encolar = (flujo: string, cl: Clienta | undefined, tel: string, vars: string[], requiere: boolean, citaId?: string) => {
-        const tpl = tplPorFlujo[flujo]
-        if (!tpl || !tel) return
-        if (cl && cl.waOptin === false) return           // respeta el opt-out
-        const key = `${cl?.id || ''}|${flujo}|${citaId || ''}`
-        if (yaEncolado.has(key)) return
-        yaEncolado.add(key)
-        nuevos.push({
-          clientaId: cl?.id, tel, flujo, plantilla: tpl.nombre,
-          variables: vars.reduce((o, v, i) => { o[String(i + 1)] = v; return o }, {} as Record<string, string | number>),
-          cuerpo: renderPlantilla(tpl.cuerpo, vars),
-          estado: requiere ? 'pendiente_aprobacion' : 'aprobado',
-          requiereAprobacion: requiere, citaId, creadoPor: 'sistema',
-        })
-      }
-
-      // Recordatorios 24h (rutinario → automático)
-      data.citasFuturas.filter(c => c.fecha === manStr).forEach(c => {
-        const cl = clByNombre(c.cl)
-        encolar('recordatorio_24h', cl, cl?.tel || '', [nom1(c.cl), c.srv, c.h, estNombre(c.est)], false, c.id)
-      })
-      // Cumpleaños de hoy (rutinario → automático)
-      data.clientas.filter(c => diasCumple(c.cumple) === 0).forEach(c => {
-        encolar('cumpleanos', c, c.tel, [nom1(c.nombre)], false)
-      })
-      // Reactivación de inactivas (sensible → requiere aprobación)
-      data.clientas.filter(c => c.estado === 'Inactiva' || diasDesde(c.ultima) > c.ciclo * 7 * 1.5).forEach(c => {
-        encolar('reactivacion', c, c.tel, [nom1(c.nombre), String(diasDesde(c.ultima)), c.fav || 'servicio'], true)
-      })
-
-      if (nuevos.length === 0) { toast('No hay mensajes nuevos por encolar ahora mismo.'); return }
-      await db.insertWaMensajes(nuevos)
-      await recargar()
-      toast(`${nuevos.length} mensaje${nuevos.length > 1 ? 's' : ''} en la cola.`)
-    } catch {
-      toast('No se pudo generar la cola. Intenta de nuevo.')
-    } finally {
-      setGenerando(false)
-    }
-  }
 
   const setEstado = async (m: WaMensaje, estado: WaMensaje['estado']) => {
     setCola(prev => prev.map(x => x.id === m.id ? { ...x, estado } : x))
@@ -399,9 +338,6 @@ function PanelAutomatizacion() {
               <Ic n={enviando ? 'spinner' : 'paper-plane-tilt'} />{enviando ? 'Enviando…' : `Enviar aprobados (${listos.length})`}
             </button>
           )}
-          <button className="btn ghost sm" disabled={generando} onClick={generar}>
-            <Ic n={generando ? 'spinner' : 'arrows-clockwise'} />{generando ? 'Generando…' : 'Generar cola de hoy'}
-          </button>
           {borrables > 0 && (
             <button
               className="btn ghost sm"
