@@ -129,7 +129,29 @@ Deno.serve(async (req: Request) => {
       return json({ sincronizados: cambios.length, cambios }, 200);
     }
 
-    return json({ error: "action debe ser 'create', 'list' o 'sync'" }, 400);
+    // phones: lista los números de teléfono reales registrados bajo el WABA,
+    // con su ID, número mostrado y estado — para resolver de una vez cuál ID
+    // corresponde a cuál número (en vez de confiar en capturas de pantalla).
+    if (action === "phones") {
+      const res = await fetch(`${GRAPH}/${WABA_ID}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,platform_type,throughput`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      return json(await res.json(), res.ok ? 200 : 400);
+    }
+
+    // phone-info: consulta directo un phone_number_id específico (no depende
+    // del WABA configurado) — para resolver a qué número/cuenta pertenece
+    // realmente un ID dado.
+    if (action === "phone-info") {
+      const id = String(body.id || "");
+      if (!id) return json({ error: "Falta 'id' (phone_number_id a consultar)" }, 400);
+      const res = await fetch(`${GRAPH}/${id}?fields=id,display_phone_number,verified_name,quality_rating,platform_type,code_verification_status`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      return json(await res.json(), res.ok ? 200 : 400);
+    }
+
+    return json({ error: "action debe ser 'create', 'list', 'sync', 'phones' o 'phone-info'" }, 400);
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
