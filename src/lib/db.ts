@@ -684,6 +684,23 @@ export const db = {
     if (error) throw new Error(error.message)
     return (data as { sincronizados: number }) ?? { sincronizados: 0 }
   },
+  // Manda texto libre a una clienta desde la bandeja de conversaciones —
+  // solo funciona dentro de la ventana de 24h de servicio al cliente.
+  async responderWa(tel: string, texto: string): Promise<{ ok: boolean }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('wa-responder', { body: { tel, texto } })
+    if (error) {
+      // wa-responder manda un mensaje de error específico (ventana de 24h
+      // cerrada, sin mensajes entrantes) en el cuerpo de la respuesta — el
+      // cliente de Supabase no lo expone en `error.message` para respuestas
+      // no-2xx, hay que leerlo del Response crudo.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctx = (error as any)?.context
+      const body = await ctx?.json?.().catch(() => null)
+      throw new Error(body?.error || error.message)
+    }
+    return data as { ok: boolean }
+  },
   async updateWaMensaje(id: string, patch: Partial<WaMensaje>): Promise<void> {
     if (!supabase) return
     const row: Record<string, unknown> = {}
