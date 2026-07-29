@@ -1,11 +1,19 @@
 // wa-templates — administra las plantillas de WhatsApp en Meta.
 //   { "action": "create" }  -> somete el catálogo a aprobación de Meta
 //   { "action": "list" }    -> lista las plantillas y su estado actual
-// Lee el token del secreto WHATSAPP_TOKEN. WABA ID configurable por env.
+// Lee el token del secreto WHATSAPP_TOKEN.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const WABA_ID = Deno.env.get("WHATSAPP_WABA_ID") || "1033375755765717";
+// WABA real que posee el número en producción (+52 1 33 1175 1393). El WABA
+// "1033375755765717" es solo el de pruebas (número de test de Meta) — nunca
+// tuvo el número real ni debe usarse para enviar/aprobar plantillas.
+// Fijo en código (no en secreto): el secreto WHATSAPP_WABA_ID en Supabase
+// quedó configurado con el WABA de pruebas por error y hacía que 'list',
+// 'sync' y 'create' operaran sobre la cuenta equivocada sin dar ningún
+// error — mismo patrón que el incidente de deploy (config apuntando a un
+// lugar distinto del real sin ninguna señal de fallo).
+const WABA_ID = "2057500331515195";
 const LANG = "es_MX";
 const SUPA_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
