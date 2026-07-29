@@ -56,13 +56,33 @@ Deno.serve(async (req: Request) => {
         // 2b) Respuestas entrantes de las clientas.
         for (const msg of (value.messages ?? [])) {
           const from = String(msg.from ?? "");
-          const texto = msg.text?.body ?? msg.button?.text ?? "";
           if (!from) continue;
-          // Interpreta CONFIRMO / BAJA.
-          await rest(`rpc/wa_inbound`, {
-            method: "POST",
-            body: JSON.stringify({ p_from: from, p_texto: texto }),
-          });
+
+          // Clic en botón de confirmar/cancelar cita (mensaje interactivo,
+          // id fijo del tipo "confirmar_<citaId>" / "cancelar_<citaId>").
+          // Se resuelve por id, no por texto — evita que "Cancelar cita" se
+          // confunda con CANCELAR de baja de WhatsApp (son cosas distintas).
+          const btn = msg.interactive?.button_reply;
+          const btnMatch = btn?.id ? /^(confirmar|cancelar)_(.+)$/.exec(String(btn.id)) : null;
+          if (btnMatch) {
+            const [, accion, citaId] = btnMatch;
+            await rest(`citas?id=eq.${encodeURIComponent(citaId)}`, {
+              method: "PATCH", headers: { "Prefer": "return=minimal" },
+              body: JSON.stringify({ estado: accion === "confirmar" ? "conf" : "canc" }),
+            });
+          }
+
+          const texto = msg.text?.body ?? msg.button?.text ?? btn?.title ?? "";
+          // Interpreta CONFIRMO / BAJA en texto libre (flujo original). Se
+          // omite si ya se resolvió por botón de cita arriba, para que un
+          // botón "Cancelar cita" no dispare además la baja de WhatsApp
+          // (que usa la misma palabra CANCELAR con otro significado).
+          if (!btnMatch) {
+            await rest(`rpc/wa_inbound`, {
+              method: "POST",
+              body: JSON.stringify({ p_from: from, p_texto: texto }),
+            });
+          }
           // Registra la respuesta en la bitácora.
           await rest(`wa_mensajes`, {
             method: "POST", headers: { "Prefer": "return=minimal" },
