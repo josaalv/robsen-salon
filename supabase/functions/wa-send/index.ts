@@ -47,7 +47,16 @@ Deno.serve(async (req: Request) => {
           messaging_product: "whatsapp",
           to,
           type: "template",
-          template: { name: body.template || "hello_world", language: { code: body.lang || "en_US" } },
+          // vars: ["Ana", "Corte", ...] — parámetros posicionales {{1}}, {{2}}…
+          // del body de la plantilla. Sin esto solo se pueden mandar
+          // plantillas sin variables (como hello_world).
+          template: {
+            name: body.template || "hello_world",
+            language: { code: body.lang || "en_US" },
+            ...(Array.isArray(body.vars) && body.vars.length
+              ? { components: [{ type: "body", parameters: body.vars.map((v: unknown) => ({ type: "text", text: String(v) })) }] }
+              : {}),
+          },
         };
 
     const res = await fetch(`${GRAPH}/${PHONE_NUMBER_ID}/messages`, {
