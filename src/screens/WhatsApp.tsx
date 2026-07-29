@@ -41,7 +41,14 @@ const CAT_SEC: Record<string, string> = {
 interface Item {
   id: string; nombre: string; tel: string; ini: string
   contexto: string; sub?: string; urgencia: 'alta'|'media'|'baja'; msg: string
+  automatico?: WaMensaje
 }
+
+// Secciones con equivalente automático (manana→recordatorio_24h,
+// cumples→cumpleanos, inactivas→reactivacion): si ya existe un wa_mensajes
+// para esa clienta/cita, se muestra su estado real en vez de dejar que el
+// admin le escriba a ciegas por encima de lo que el sistema ya hizo.
+const AUTO_CONTACTADO: WaMensaje['estado'][] = ['enviado', 'entregado', 'leido', 'respondido']
 
 const URGCOLOR = { alta:'var(--st-canc)', media:'var(--st-pend)', baja:'var(--text-3)' }
 
@@ -227,22 +234,19 @@ function ModoPrueba() {
   )
 }
 
-function PanelAutomatizacion() {
+interface PanelAutomatizacionProps {
+  plantillas: WaPlantilla[]; cola: WaMensaje[]; cargando: boolean
+  setCola: React.Dispatch<React.SetStateAction<WaMensaje[]>>
+  recargar: () => Promise<void>
+}
+
+function PanelAutomatizacion({ plantillas, cola, cargando, setCola, recargar }: PanelAutomatizacionProps) {
   const { data } = useStore()
   const { user } = useAuth()
   const esAdmin = user?.rol === 'admin'
-  const [plantillas, setPlantillas] = useState<WaPlantilla[]>([])
-  const [cola, setCola] = useState<WaMensaje[]>([])
-  const [cargando, setCargando] = useState(true)
   const [enviando, setEnviando] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
   const [confirmVaciar, setConfirmVaciar] = useState(false)
-
-  const recargar = async () => {
-    const [p, c] = await Promise.all([db.getWaPlantillas(), db.getWaMensajes()])
-    setPlantillas(p); setCola(c)
-  }
-  useEffect(() => { recargar().finally(() => setCargando(false)) }, [])
 
   const tplPorFlujo = useMemo(() => {
     const m: Record<string, WaPlantilla> = {}
@@ -405,13 +409,38 @@ function PanelAutomatizacion() {
 }
 
 export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:string)=>void }) {
-  const { data } = useStore()
+  const { data, loadFromSupabase } = useStore()
   const [sec, setSec] = useState('hoy_pend')
   const [contactados, setContactados] = useState<Set<string>>(loadContactados)
   const [selItem, setSelItem] = useState<Item|null>(null)
   const [msgEdit, setMsgEdit] = useState('')
   const [showNueva, setShowNueva] = useState(false)
   const [soloNoContactados, setSoloNoContactados] = useState(false)
+
+  // Cola de WhatsApp automático — vive aquí (no dentro de PanelAutomatizacion)
+  // para poder cruzarla contra las tarjetas de contacto manual de abajo:
+  // si el sistema ya le mandó un recordatorio/cumpleaños/reactivación a
+  // alguien, se muestra ese estado real en vez de dejar que el admin le
+  // escriba por encima sin saberlo.
+  const [plantillas, setPlantillas] = useState<WaPlantilla[]>([])
+  const [cola, setCola] = useState<WaMensaje[]>([])
+  const [cargandoCola, setCargandoCola] = useState(true)
+
+  const recargarCola = async () => {
+    const [p, c] = await Promise.all([db.getWaPlantillas(), db.getWaMensajes()])
+    setPlantillas(p); setCola(c)
+  }
+  useEffect(() => { recargarCola().finally(() => setCargandoCola(false)) }, [])
+
+  // Refresco periódico: los cambios que hace el webhook del lado del
+  // servidor (confirmar/cancelar por botón de WhatsApp, entregado/leído)
+  // no llegan solos a una pantalla ya abierta — no hay Supabase Realtime
+  // wireado (sería un cambio de arquitectura mucho más grande). Mientras
+  // esta pantalla esté montada, se refresca sola cada 45s.
+  useEffect(() => {
+    const id = setInterval(() => { recargarCola(); loadFromSupabase() }, 45000)
+    return () => clearInterval(id)
+  }, [])
 
   // ─── Build all section items ───────────────────────────────────────────────
   const hoy = new Date()
@@ -422,6 +451,13 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
     const salon = data.config.nombre || 'el salón'
     const clByNombre = (nombre: string) => data.clientas.find(c => c.nombre === nombre)
     const estNombre = (id: string) => data.estilistas.find(e => e.id === id)?.nombre.split(' ')[0] || 'tu estilista'
+    // Mensaje automático más reciente (no cancelado) para una clienta+flujo,
+    // o una cita+flujo puntual cuando se pasa citaId.
+    const automaticoDe = (flujo: string, clientaId?: string, citaId?: string): WaMensaje | undefined =>
+      cola
+        .filter(m => m.flujo === flujo && m.estado !== 'cancelado'
+          && (citaId ? m.citaId === citaId : m.clientaId === clientaId))
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0]
 
     const hoy_pend: Item[] = data.hoy.filter(c => c.estado === 'pend').map(c => {
       const cl = clByNombre(c.cl)
@@ -443,7 +479,8 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
       const cl = clByNombre(c.cl)
       return { id:c.id, nombre:c.cl, tel:cl?.tel||'', ini:cl?.ini||c.cl[0], urgencia:'media',
         contexto:`${c.srv} · mañana ${c.h}`, sub:estNombre(c.est),
-        msg:`Hola ${c.cl.split(' ')[0]} 💛 Te recordamos tu cita de *${c.srv}* mañana a las *${c.h}* con ${estNombre(c.est)}. ¡Te esperamos! ✨` }
+        msg:`Hola ${c.cl.split(' ')[0]} 💛 Te recordamos tu cita de *${c.srv}* mañana a las *${c.h}* con ${estNombre(c.est)}. ¡Te esperamos! ✨`,
+        automatico: automaticoDe('recordatorio_24h', undefined, c.id) }
     })
 
     const post_visita: Item[] = data.clientas.filter(c => { const d=diasDesde(c.ultima); return d>=1&&d<=3 }).map(c => ({
@@ -480,7 +517,8 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
           contexto: d===0?'¡Hoy es su cumpleaños!':`Cumpleaños en ${d} días`, sub:c.cumple,
           msg: d===0
             ? `¡Feliz cumpleaños ${c.nombre.split(' ')[0]}! 🎂🎉 Todo el equipo de ${salon} te desea un día increíble. ¡Eres muy especial para nosotras! 💛`
-            : `Hola ${c.nombre.split(' ')[0]} 💛 Estamos a nada de tu cumpleaños 🎂 Tenemos una sorpresa especial para ti en ${salon}. ¡Ven a celebrar! ✨` }
+            : `Hola ${c.nombre.split(' ')[0]} 💛 Estamos a nada de tu cumpleaños 🎂 Tenemos una sorpresa especial para ti en ${salon}. ¡Ven a celebrar! ✨`,
+          automatico: automaticoDe('cumpleanos', c.id) }
       })
 
     const nuevas: Item[] = data.clientas.filter(c=>c.visitas===1&&diasDesde(c.ultima)<=14).map(c=>({
@@ -494,13 +532,20 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
       .map(c=>({ id:c.id+'_ina', nombre:c.nombre, tel:c.tel, ini:c.ini,
         urgencia: diasDesde(c.ultima)>120?'alta':'media' as 'alta'|'media',
         contexto:`Sin visita hace ${diasDesde(c.ultima)} días`, sub:c.fav,
-        msg:`Hola ${c.nombre.split(' ')[0]} 💛 ¡Te extrañamos en ${salon}! Llevamos tiempo sin verte. ¿Cuándo nos visitas? Tenemos algo especial cuando regreses ✨`
+        msg:`Hola ${c.nombre.split(' ')[0]} 💛 ¡Te extrañamos en ${salon}! Llevamos tiempo sin verte. ¿Cuándo nos visitas? Tenemos algo especial cuando regreses ✨`,
+        automatico: automaticoDe('reactivacion', c.id)
       }))
 
     return { hoy_pend, cobros, manana, post_visita, mechas, color, tratamiento, unas, cortes, maquillaje, cumples, nuevas, inactivas }
-  }, [data])
+  }, [data, cola])
 
-  const items = (todos[sec] || []).filter(i => soloNoContactados ? !contactados.has(i.id) : true)
+  // "Contactado" real: para las secciones con equivalente automático, un
+  // envío ya entregado/leído/respondido cuenta como contacto hecho aunque
+  // nadie lo haya marcado a mano — es la señal más confiable de las dos.
+  const efectivo = (item: Item) => contactados.has(item.id)
+    || (!!item.automatico && AUTO_CONTACTADO.includes(item.automatico.estado))
+
+  const items = (todos[sec] || []).filter(i => soloNoContactados ? !efectivo(i) : true)
 
   const marcar = (id: string) => setContactados(prev => {
     const next = new Set(prev)
@@ -529,7 +574,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       {showNueva && <NuevaPlantillaModal onClose={()=>setShowNueva(false)} />}
 
-      <PanelAutomatizacion />
+      <PanelAutomatizacion plantillas={plantillas} cola={cola} cargando={cargandoCola} setCola={setCola} recargar={recargarCola} />
 
       {/* KPI row */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
@@ -600,8 +645,9 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
           ) : (
             <div>
               {items.map((item,i)=>{
-                const done = contactados.has(item.id)
+                const done = efectivo(item)
                 const active = selItem?.id===item.id
+                const est = item.automatico ? EST_MSG[item.automatico.estado] : undefined
                 return (
                   <div
                     key={item.id}
@@ -631,6 +677,13 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r:str
                         {item.contexto}
                         {item.sub && <span style={{ marginLeft:8, opacity:.6 }}>· {item.sub}</span>}
                       </div>
+                      {est && (
+                        <div style={{ marginTop:4 }}>
+                          <span className="badge" style={{ fontSize:10, color:est.color, borderColor:est.color }}>
+                            Automático · {est.label}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Actions */}
