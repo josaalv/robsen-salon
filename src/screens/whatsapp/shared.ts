@@ -65,15 +65,6 @@ export const SECS = [
   { id:'inactivas',   label:'Inactivas +60 días',   icon:'user-minus',     group:'FIDELIZACIÓN' },
 ]
 
-export const WA_CONTACTADOS_KEY = 'rb_wa_contactados'
-
-export function loadContactados(): Set<string> {
-  try { return new Set(JSON.parse(localStorage.getItem(WA_CONTACTADOS_KEY) || '[]')) } catch { return new Set() }
-}
-export function saveContactados(s: Set<string>) {
-  localStorage.setItem(WA_CONTACTADOS_KEY, JSON.stringify([...s]))
-}
-
 export const EST_META: Record<string, { label: string; color: string }> = {
   aprobada:  { label: 'Aprobada', color: 'var(--st-conf)' },
   pendiente: { label: 'En revisión', color: 'var(--st-pend)' },

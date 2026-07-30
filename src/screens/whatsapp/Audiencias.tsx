@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Avatar, CardHead, Modal, toast } from '../../components/ui'
 import { PhosphorIcon as Ic } from '../../components/PhosphorIcon'
 import { useStore } from '../../data/store'
+import { useAuth } from '../../lib/auth'
 import { db } from '../../lib/db'
 import { mxn, descargarCSV, helpers } from '../../lib/helpers'
-import type { Clienta, WaMensaje } from '../../types'
-import { Item, AUTO_CONTACTADO, CAT_SEC, EST_MSG, SECS, URGCOLOR, loadContactados, saveContactados, waUrl } from './shared'
+import type { Clienta, WaMensaje, WaPlantilla } from '../../types'
+import { Item, AUTO_CONTACTADO, CAT_SEC, EST_MSG, SECS, URGCOLOR, norm10, waUrl } from './shared'
+import { PanelAutomatizacion } from './Automatizacion'
 
 // ─── Nueva plantilla modal ─────────────────────────────────────────────────────
 const VARS_VALIDAS = ['{nombre}', '{servicio}', '{fecha}', '{hora}', '{estilista}', '{dias}']
@@ -82,16 +84,31 @@ function NuevaPlantillaModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () => Promise<void> }) {
+interface AudienciasProps {
+  plantillas: WaPlantilla[]; cola: WaMensaje[]; cargando: boolean
+  setCola: React.Dispatch<React.SetStateAction<WaMensaje[]>>
+  recargar: () => Promise<void>
+  onAbrirConversacion: (tel: string) => void
+}
+
+export function Audiencias({ plantillas, cola, cargando, setCola, recargar, onAbrirConversacion }: AudienciasProps) {
   const { data } = useStore()
+  const { user } = useAuth()
   const [sec, setSec] = useState('hoy_pend')
-  const [contactados, setContactados] = useState<Set<string>>(loadContactados)
   const [selItem, setSelItem] = useState<Item|null>(null)
   const [msgEdit, setMsgEdit] = useState('')
   const [showNueva, setShowNueva] = useState(false)
   const [soloNoContactados, setSoloNoContactados] = useState(false)
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [enviandoLote, setEnviandoLote] = useState(false)
+
+  // "Contactado" real y compartido — vive en wa_contactos_manual, no en
+  // localStorage: cualquier empleada ve el mismo estado, y queda quién lo
+  // marcó y cuándo. Se recarga junto con la cola para no quedar desfasado.
+  const [contactadosMap, setContactadosMap] = useState<Record<string, { por: string; at: string }>>({})
+  const [confirmLimpiar, setConfirmLimpiar] = useState(false)
+  const cargarContactados = () => db.getContactosManual().then(setContactadosMap)
+  useEffect(() => { cargarContactados() }, [])
 
   // ─── Build all section items ───────────────────────────────────────────────
   const hoy = new Date()
@@ -103,7 +120,9 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
     const clByNombre = (nombre: string) => data.clientas.find(c => c.nombre === nombre)
     const estNombre = (id: string) => data.estilistas.find(e => e.id === id)?.nombre.split(' ')[0] || 'tu estilista'
     // Mensaje automático más reciente (no cancelado) para una clienta+flujo,
-    // o una cita+flujo puntual cuando se pasa citaId.
+    // o una cita+flujo puntual cuando se pasa citaId. Este cruce es lo que
+    // conecta cada audiencia con lo que el sistema de automatización ya hizo
+    // por ese contacto — antes solo 3 de 13 secciones lo usaban.
     const automaticoDe = (flujo: string, clientaId?: string, citaId?: string): WaMensaje | undefined =>
       cola
         .filter(m => m.flujo === flujo && m.estado !== 'cancelado'
@@ -114,13 +133,16 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
       const cl = clByNombre(c.cl)
       return { id:c.id, nombre:c.cl, tel:cl?.tel||'', ini:cl?.ini||c.cl[0], urgencia:'alta',
         contexto:`${c.srv} · ${c.h}`, sub:estNombre(c.est),
-        msg:`Hola ${c.cl.split(' ')[0]} 💛 Te confirmamos tu cita de *${c.srv}* hoy a las *${c.h}* con ${estNombre(c.est)}. Responde *CONFIRMO* para apartar tu lugar ✅` }
+        msg:`Hola ${c.cl.split(' ')[0]} 💛 Te confirmamos tu cita de *${c.srv}* hoy a las *${c.h}* con ${estNombre(c.est)}. Responde *CONFIRMO* para apartar tu lugar ✅`,
+        automatico: automaticoDe('confirmacion', undefined, c.id) }
     })
 
     const cobros: Item[] = data.ventas.filter(v => v.estado==='parcial'||v.estado==='pendiente').map(v => {
       const saldo = Math.max(0, v.lineas.reduce((s,l)=>s+l.precio*l.cant,0) - (v.desc||0) - (v.anticipo||0))
       const cl = data.clientas.find(c=>c.id===v.clienteId)
       const srv = v.lineas.find(l=>l.tipo==='servicio')?.nombre || 'tu servicio'
+      // Sin flujo automático de cobranza — se deja honestamente manual, sin
+      // inventar un cruce que no existe en el backend.
       return { id:v.id, nombre:v.cliente, tel:cl?.tel||'', ini:cl?.ini||v.cliente[0], urgencia:'alta',
         contexto:`Saldo pendiente · ${mxn(saldo)}`, sub:v.ticket,
         msg:`Hola ${v.cliente.split(' ')[0]} 💛 Quedó un saldo de *${mxn(saldo)}* pendiente por tu ${srv}. ¿Puedes pasarlo hoy? Te mandamos datos para transferencia 🙏` }
@@ -138,8 +160,8 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
       const d = helpers.diasDesde(c.ultima)
       return { id:c.id+'_pv', nombre:c.nombre, tel:c.tel, ini:c.ini, urgencia:'media' as const,
         contexto:`Visitó hace ${d} día${d>1?'s':''}`, sub:c.fav,
-        msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un placer tenerte en ${salon}. ¿Cómo quedaste con tu ${c.fav}? Tu opinión nos importa mucho 😊`
-      }
+        msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un placer tenerte en ${salon}. ¿Cómo quedaste con tu ${c.fav}? Tu opinión nos importa mucho 😊`,
+        automatico: automaticoDe('post_visita', c.id) }
     })
 
     const react = (catSec: string, buildMsg: (c:Clienta)=>string): Item[] =>
@@ -151,7 +173,8 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
         return { id:`${c.id}_r_${catSec}`, nombre:c.nombre, tel:c.tel, ini:c.ini,
           urgencia: dias>c.ciclo*7*1.2?'alta':'media' as 'alta'|'media',
           contexto:`${c.fav} · hace ${dias} días`, sub:`Ciclo ${c.ciclo} sem`,
-          msg: buildMsg(c) }
+          msg: buildMsg(c),
+          automatico: automaticoDe('reactivacion', c.id) }
       })
 
     const mechas      = react('mechas',      c=>`Hola ${c.nombre.split(' ')[0]} ✨ Ya casi es hora de dar mantenimiento a tu ${c.fav}. ¿Agendamos en las próximas semanas? Te esperamos en ${salon} 💇‍♀️`)
@@ -178,8 +201,8 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
       const d = helpers.diasDesde(c.ultima)
       return { id:c.id+'_nva', nombre:c.nombre, tel:c.tel, ini:c.ini, urgencia:'media' as const,
         contexto:`Primera visita · hace ${d} días`, sub:c.fav,
-        msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un gusto que nos visitaras en ${salon}. ¿Cómo quedaste con tu ${c.fav}? ¡Esperamos verte pronto! 😊`
-      }
+        msg:`Hola ${c.nombre.split(' ')[0]} 💛 Fue un gusto que nos visitaras en ${salon}. ¿Cómo quedaste con tu ${c.fav}? ¡Esperamos verte pronto! 😊`,
+        automatico: automaticoDe('bienvenida', c.id) }
     })
 
     const inactivas: Item[] = data.clientas
@@ -197,20 +220,24 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
     return { hoy_pend, cobros, manana, post_visita, mechas, color, tratamiento, unas, cortes, maquillaje, cumples, nuevas, inactivas }
   }, [data, cola]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // "Contactado" real: para las secciones con equivalente automático, un
-  // envío ya entregado/leído/respondido cuenta como contacto hecho aunque
-  // nadie lo haya marcado a mano — es la señal más confiable de las dos.
-  const efectivo = (item: Item) => contactados.has(item.id)
+  // "Contactado" real: un envío automático ya entregado/leído/respondido
+  // cuenta como contacto hecho, igual que una marca manual compartida.
+  const efectivo = (item: Item) => !!contactadosMap[item.id]
     || (!!item.automatico && AUTO_CONTACTADO.includes(item.automatico.estado))
 
   const items = (todos[sec] || []).filter(i => soloNoContactados ? !efectivo(i) : true)
 
-  const marcar = (id: string) => setContactados(prev => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
-    saveContactados(next)
-    return next
-  })
+  const marcar = async (id: string) => {
+    const yaMarcado = !!contactadosMap[id]
+    setContactadosMap(prev => { const next = { ...prev }; if (yaMarcado) delete next[id]; else next[id] = { por: user?.nombre || 'staff', at: new Date().toISOString() }; return next })
+    try {
+      if (yaMarcado) await db.desmarcarContactosManual([id])
+      else await db.marcarContactosManual([id], user?.nombre || 'staff')
+    } catch {
+      toast('No se pudo guardar. Intenta de nuevo.')
+      cargarContactados()
+    }
+  }
 
   const cambiarSec = (id: string) => { setSec(id); setSelItem(null); setSel(new Set()) }
   const selectItem = (item: Item) => { setSelItem(item); setMsgEdit(item.msg) }
@@ -224,13 +251,16 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
   const seleccionarTodos = () => setSel(new Set(items.map(i => i.id)))
   const seleccionarNinguno = () => setSel(new Set())
 
-  const marcarLoteContactadas = () => {
-    const next = new Set(contactados)
-    sel.forEach(id => next.add(id))
-    saveContactados(next)
-    setContactados(next)
-    toast(`${sel.size} marcada${sel.size>1?'s':''} como contactada${sel.size>1?'s':''}.`)
-    setSel(new Set())
+  const marcarLoteContactadas = async () => {
+    const ids = [...sel]
+    try {
+      await db.marcarContactosManual(ids, user?.nombre || 'staff')
+      await cargarContactados()
+      toast(`${ids.length} marcada${ids.length>1?'s':''} como contactada${ids.length>1?'s':''}.`)
+      setSel(new Set())
+    } catch {
+      toast('No se pudo guardar. Intenta de nuevo.')
+    }
   }
 
   const enviarLote = async () => {
@@ -246,7 +276,7 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
         }
       }))
       await recargar()
-      toast(`${elegidas.length} mensaje${elegidas.length>1?'s':''} agregado${elegidas.length>1?'s':''} a la cola de aprobación (pestaña Automatización).`)
+      toast(`${elegidas.length} mensaje${elegidas.length>1?'s':''} agregado${elegidas.length>1?'s':''} a la cola de aprobación (arriba, en Automatización).`)
       setSel(new Set())
     } catch {
       toast('No se pudo encolar el envío en lote. Intenta de nuevo.')
@@ -259,6 +289,26 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
     const filas: (string|number)[][] = [['Nombre','Teléfono','Contexto','Urgencia']]
     items.forEach(i => filas.push([i.nombre, i.tel, i.contexto, i.urgencia]))
     descargarCSV(`seguimiento_${sec}`, filas)
+  }
+
+  const totalContactadosManual = Object.keys(contactadosMap).length
+  const limpiarTodo = async () => {
+    try {
+      await db.limpiarContactosManual()
+      setContactadosMap({})
+      setConfirmLimpiar(false)
+      toast('Marcas de contacto manual borradas.')
+    } catch {
+      toast('No se pudo limpiar. Intenta de nuevo.')
+    }
+  }
+
+  // ¿Ya existe un hilo de conversación real con este contacto? (la clienta
+  // ya respondió algo alguna vez) — si sí, tiene más sentido mandarla a la
+  // conversación completa que dejarla solo con el editor de un mensaje suelto.
+  const tieneHilo = (tel: string) => {
+    const t10 = norm10(tel)
+    return !!t10 && cola.some(m => m.creadoPor === 'clienta' && norm10(m.tel) === t10)
   }
 
   // KPIs
@@ -278,6 +328,8 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       {showNueva && <NuevaPlantillaModal onClose={()=>setShowNueva(false)} />}
+
+      <PanelAutomatizacion plantillas={plantillas} cola={cola} cargando={cargando} setCola={setCola} recargar={recargar} />
 
       {/* KPI row */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
@@ -329,7 +381,7 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
             </div>
             <div className="vc gap8">
               <span className="dim" style={{ fontSize:12 }}>{items.length} pendientes</span>
-              <button className="btn ghost sm" onClick={exportarCSV} title="Exportar este segmento a CSV">
+              <button className="btn ghost sm" onClick={exportarCSV} title="Exportar esta audiencia a CSV">
                 <Ic n="download-simple" size={13}/>CSV
               </button>
               <button
@@ -369,7 +421,7 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
             <div className="card-pad" style={{ textAlign:'center', padding:'40px 0', color:'var(--text-4)' }}>
               <Ic n="check-circle" size={32} style={{ display:'block', margin:'0 auto 10px', color:'var(--st-conf)', opacity:.6 }}/>
               <div style={{ fontWeight:600, fontSize:13.5 }}>Todo al día</div>
-              <div style={{ fontSize:12.5, marginTop:4 }}>Sin pendientes en esta sección</div>
+              <div style={{ fontSize:12.5, marginTop:4 }}>Sin pendientes en esta audiencia</div>
             </div>
           ) : (
             <div>
@@ -377,6 +429,7 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
                 const done = efectivo(item)
                 const active = selItem?.id===item.id
                 const est = item.automatico ? EST_MSG[item.automatico.estado] : undefined
+                const marcaManual = contactadosMap[item.id]
                 return (
                   <div
                     key={item.id}
@@ -415,13 +468,19 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
                         {item.contexto}
                         {item.sub && <span style={{ marginLeft:8, opacity:.6 }}>· {item.sub}</span>}
                       </div>
-                      {est && (
+                      {est ? (
                         <div style={{ marginTop:4 }}>
                           <span className="badge" style={{ fontSize:10, color:est.color, borderColor:est.color }}>
                             Automático · {est.label}
                           </span>
                         </div>
-                      )}
+                      ) : marcaManual ? (
+                        <div style={{ marginTop:4 }}>
+                          <span className="badge" style={{ fontSize:10, color:'var(--text-3)' }}>
+                            Contactada por {marcaManual.por || 'staff'}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Actions */}
@@ -469,6 +528,11 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
                     : <div style={{ fontSize:11, color:'var(--text-4)' }}>Sin teléfono</div>}
                 </div>
               </div>
+              {selItem.tel && tieneHilo(selItem.tel) && (
+                <button className="btn ghost sm" onClick={()=>onAbrirConversacion(selItem.tel)}>
+                  <Ic n="chats-circle" size={14}/>Ver conversación completa
+                </button>
+              )}
               <textarea
                 className="input"
                 rows={5}
@@ -537,9 +601,15 @@ export function Segmentos({ cola, recargar }: { cola: WaMensaje[]; recargar: () 
             </div>
           </div>
 
-          {contactados.size>0 && (
-            <button className="btn ghost sm" style={{ justifyContent:'center' }} onClick={()=>{ const s=new Set<string>(); saveContactados(s); setContactados(s) }}>
-              <Ic n="arrow-counter-clockwise" size={13}/>Limpiar {contactados.size} marcado{contactados.size!==1?'s':''}
+          {totalContactadosManual>0 && (
+            <button
+              className="btn ghost sm"
+              style={{ justifyContent:'center', color: confirmLimpiar ? 'var(--st-canc)' : undefined }}
+              onClick={()=> confirmLimpiar ? limpiarTodo() : setConfirmLimpiar(true)}
+              onMouseLeave={()=>setConfirmLimpiar(false)}
+            >
+              <Ic n="arrow-counter-clockwise" size={13}/>
+              {confirmLimpiar ? '¿Confirmar borrar todas las marcas?' : `Limpiar ${totalContactadosManual} marcado${totalContactadosManual!==1?'s':''}`}
             </button>
           )}
         </div>

@@ -145,6 +145,13 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   'list': Ph.List,
   'square': Ph.Square,
   'check-square': Ph.CheckSquare,
+  'paper-plane-tilt': Ph.PaperPlaneTilt,
+  'chat-circle-text': Ph.ChatCircleText,
+  'chats-circle': Ph.ChatsCircle,
+  'shield-check': Ph.ShieldCheck,
+  'download-simple': Ph.DownloadSimple,
+  'caret-up': Ph.CaretUp,
+  'caret-down': Ph.CaretDown,
 }
 
 interface IconProps {

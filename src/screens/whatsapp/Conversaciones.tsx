@@ -16,7 +16,7 @@ interface Hilo {
   ultimo: WaMensaje; ventanaAbierta: boolean
 }
 
-export function Conversaciones({ cola, recargar }: { cola: WaMensaje[]; recargar: () => Promise<void> }) {
+export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[]; recargar: () => Promise<void>; openTel?: string | null }) {
   const { data } = useStore()
   const [selTel, setSelTel] = useState<string | null>(null)
   const [texto, setTexto] = useState('')
@@ -45,6 +45,10 @@ export function Conversaciones({ cola, recargar }: { cola: WaMensaje[]; recargar
   }, [cola, data.clientas])
 
   useEffect(() => { if (!selTel && hilos[0]) setSelTel(hilos[0].tel10) }, [hilos.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Llegada desde Audiencias: preselecciona el hilo de ese contacto en vez
+  // de dejar el primero de la lista.
+  useEffect(() => { if (openTel) setSelTel(norm10(openTel)) }, [openTel])
 
   const hilo = hilos.find(h => h.tel10 === selTel) || null
 

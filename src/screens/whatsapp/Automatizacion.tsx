@@ -71,6 +71,10 @@ interface PanelAutomatizacionProps {
   recargar: () => Promise<void>
 }
 
+// Franja de automatización: vive arriba de Audiencias (no es su propia
+// pestaña). El detalle completo (por aprobar/listos/enviados + badges de
+// plantillas) queda colapsado por default, pero se auto-abre si hay algo
+// por aprobar — lo accionable nunca queda escondido detrás de un clic extra.
 export function PanelAutomatizacion({ plantillas, cola, cargando, setCola, recargar }: PanelAutomatizacionProps) {
   const { data } = useStore()
   const { user } = useAuth()
@@ -78,6 +82,7 @@ export function PanelAutomatizacion({ plantillas, cola, cargando, setCola, recar
   const [enviando, setEnviando] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
   const [confirmVaciar, setConfirmVaciar] = useState(false)
+  const [detalleManual, setDetalleManual] = useState(false)
 
   const setEstado = async (m: WaMensaje, estado: WaMensaje['estado']) => {
     setCola(prev => prev.map(x => x.id === m.id ? { ...x, estado } : x))
@@ -129,6 +134,7 @@ export function PanelAutomatizacion({ plantillas, cola, cargando, setCola, recar
   const enviados   = cola.filter(m => ['enviando', 'enviado', 'entregado', 'leido', 'respondido'].includes(m.estado))
   const borrables  = cola.filter(m => ['borrador', 'pendiente_aprobacion', 'aprobado', 'fallido'].includes(m.estado)).length
   const aprobadasN = plantillas.filter(p => p.estadoMeta === 'aprobada').length
+  const detalleVisible = detalleManual || porAprobar.length > 0
 
   const nombreDe = (m: WaMensaje) => data.clientas.find(c => c.id === m.clientaId)?.nombre || m.tel
 
@@ -181,52 +187,63 @@ export function PanelAutomatizacion({ plantillas, cola, cargando, setCola, recar
         </div>
       </div>
 
-      {/* Estado de plantillas */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+      {/* Estado de plantillas (resumen compacto, siempre visible) */}
+      <div className="between" style={{ flexWrap: 'wrap', gap: 8 }}>
         <span className="dim" style={{ fontSize: 12 }}>Plantillas: <b>{aprobadasN}/{plantillas.length || 6}</b> aprobadas por Meta</span>
-        <button className="btn ghost sm" disabled={sincronizando} onClick={sincronizar} title="Consulta a Meta el estado real de aprobación">
-          <Ic n={sincronizando ? 'spinner' : 'arrows-clockwise'} size={13} />{sincronizando ? 'Consultando…' : 'Sincronizar con Meta'}
+        <button className="btn ghost sm" onClick={() => setDetalleManual(v => !v)}>
+          <Ic n={detalleVisible ? 'caret-up' : 'caret-down'} size={13} />
+          {detalleVisible ? 'Ocultar detalle' : 'Ver detalle de la cola'}
         </button>
-        {plantillas.map(p => {
-          const e = EST_META[p.estadoMeta] || EST_META.borrador
-          return <span key={p.id} className="badge" style={{ fontSize: 10.5, color: e.color, borderColor: e.color }}>{FLUJO_LABEL[p.flujo || ''] || p.nombre} · {e.label}</span>
-        })}
       </div>
-      {aprobadasN < (plantillas.length || 6) && (
-        <div className="dim" style={{ fontSize: 11.5, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 12px' }}>
-          El envío real se activa cuando Meta apruebe las plantillas (en revisión). Mientras tanto puedes generar y aprobar la cola.
-        </div>
-      )}
 
-      {cargando ? (
-        <div className="dim center" style={{ padding: 20, fontSize: 13 }}>Cargando…</div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div className="eyebrow">Por aprobar ({porAprobar.length})</div>
-            {porAprobar.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Nada pendiente.</div>}
-            {porAprobar.map(m => (
-              <Fila key={m.id} m={m} acciones={<>
-                <button className="btn gold sm" onClick={() => setEstado(m, 'aprobado')}><Ic n="check" />Aprobar</button>
-                <button className="btn ghost sm" onClick={() => setEstado(m, 'cancelado')}>Descartar</button>
-              </>} />
-            ))}
+      {detalleVisible && (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <button className="btn ghost sm" disabled={sincronizando} onClick={sincronizar} title="Consulta a Meta el estado real de aprobación">
+              <Ic n={sincronizando ? 'spinner' : 'arrows-clockwise'} size={13} />{sincronizando ? 'Consultando…' : 'Sincronizar con Meta'}
+            </button>
+            {plantillas.map(p => {
+              const e = EST_META[p.estadoMeta] || EST_META.borrador
+              return <span key={p.id} className="badge" style={{ fontSize: 10.5, color: e.color, borderColor: e.color }}>{FLUJO_LABEL[p.flujo || ''] || p.nombre} · {e.label}</span>
+            })}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div className="eyebrow">Listos para enviar ({listos.length})</div>
-            {listos.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Nada listo.</div>}
-            {listos.map(m => (
-              <Fila key={m.id} m={m} acciones={
-                <button className="btn ghost sm" onClick={() => setEstado(m, 'cancelado')}>Cancelar</button>
-              } />
-            ))}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div className="eyebrow">Enviados ({enviados.length})</div>
-            {enviados.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Aún nada enviado.</div>}
-            {enviados.map(m => <Fila key={m.id} m={m} />)}
-          </div>
-        </div>
+          {aprobadasN < (plantillas.length || 6) && (
+            <div className="dim" style={{ fontSize: 11.5, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 12px' }}>
+              El envío real se activa cuando Meta apruebe las plantillas (en revisión). Mientras tanto puedes generar y aprobar la cola.
+            </div>
+          )}
+
+          {cargando ? (
+            <div className="dim center" style={{ padding: 20, fontSize: 13 }}>Cargando…</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="eyebrow">Por aprobar ({porAprobar.length})</div>
+                {porAprobar.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Nada pendiente.</div>}
+                {porAprobar.map(m => (
+                  <Fila key={m.id} m={m} acciones={<>
+                    <button className="btn gold sm" onClick={() => setEstado(m, 'aprobado')}><Ic n="check" />Aprobar</button>
+                    <button className="btn ghost sm" onClick={() => setEstado(m, 'cancelado')}>Descartar</button>
+                  </>} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="eyebrow">Listos para enviar ({listos.length})</div>
+                {listos.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Nada listo.</div>}
+                {listos.map(m => (
+                  <Fila key={m.id} m={m} acciones={
+                    <button className="btn ghost sm" onClick={() => setEstado(m, 'cancelado')}>Cancelar</button>
+                  } />
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="eyebrow">Enviados ({enviados.length})</div>
+                {enviados.length === 0 && <div className="dim" style={{ fontSize: 12 }}>Aún nada enviado.</div>}
+                {enviados.map(m => <Fila key={m.id} m={m} />)}
+              </div>
+            </div>
+          )}
+        </>
       )}
       </div>
     </div>

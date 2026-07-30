@@ -4,19 +4,24 @@ import { useStore } from '../../data/store'
 import { db } from '../../lib/db'
 import type { WaMensaje, WaPlantilla } from '../../types'
 import { Resumen } from './Resumen'
-import { PanelAutomatizacion } from './Automatizacion'
-import { Segmentos } from './Segmentos'
+import { Audiencias } from './Audiencias'
 import { Conversaciones } from './Conversaciones'
 
-const TABS = ['Resumen', 'Automatización', 'Segmentos', 'Conversaciones']
+const TABS = ['Resumen', 'Audiencias', 'Conversaciones']
 
 export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
   const { loadFromSupabase } = useStore()
   const [vista, setVista] = useState('Resumen')
+  // Cuando Audiencias manda a ver una conversación real, guarda el teléfono
+  // aquí para que Conversaciones la preseleccione al montar — así "audiencia"
+  // y "conversación" son la misma vista de un contacto, no dos mundos.
+  const [telAbierto, setTelAbierto] = useState<string | null>(null)
+
+  const abrirConversacion = (tel: string) => { setTelAbierto(tel); setVista('Conversaciones') }
 
   // Cola de WhatsApp automático — vive aquí (no dentro de cada pestaña) para
-  // que Resumen, Automatización, Segmentos y Conversaciones compartan la
-  // misma fuente de verdad sin recargarla cada una por su lado.
+  // que Resumen, Audiencias y Conversaciones compartan la misma fuente de
+  // verdad sin recargarla cada una por su lado.
   const [plantillas, setPlantillas] = useState<WaPlantilla[]>([])
   const [cola, setCola] = useState<WaMensaje[]>([])
   const [cargandoCola, setCargandoCola] = useState(true)
@@ -42,11 +47,13 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r: st
       <Seg opts={TABS} value={vista} onChange={setVista} />
 
       {vista === 'Resumen' && <Resumen cola={cola} plantillas={plantillas} />}
-      {vista === 'Automatización' && (
-        <PanelAutomatizacion plantillas={plantillas} cola={cola} cargando={cargandoCola} setCola={setCola} recargar={recargarCola} />
+      {vista === 'Audiencias' && (
+        <Audiencias
+          plantillas={plantillas} cola={cola} cargando={cargandoCola} setCola={setCola}
+          recargar={recargarCola} onAbrirConversacion={abrirConversacion}
+        />
       )}
-      {vista === 'Segmentos' && <Segmentos cola={cola} recargar={recargarCola} />}
-      {vista === 'Conversaciones' && <Conversaciones cola={cola} recargar={recargarCola} />}
+      {vista === 'Conversaciones' && <Conversaciones cola={cola} recargar={recargarCola} openTel={telAbierto} />}
     </div>
   )
 }

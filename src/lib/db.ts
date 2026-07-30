@@ -713,6 +713,33 @@ export const db = {
     if (error) { console.error('[db.updateWaMensaje]', error.message); throw new Error(error.message) }
   },
 
+  // ─── WhatsApp: "contactado" manual compartido (reemplaza localStorage) ────
+  async getContactosManual(): Promise<Record<string, { por: string; at: string }>> {
+    if (!supabase) return {}
+    const { data, error } = await supabase.from('wa_contactos_manual').select('item_id,contactado_por,contactado_at')
+    if (error) { console.error('[db.getContactosManual]', error.message); return {} }
+    const out: Record<string, { por: string; at: string }> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of (data ?? []) as any[]) out[r.item_id] = { por: r.contactado_por || '', at: r.contactado_at }
+    return out
+  },
+  async marcarContactosManual(ids: string[], por: string): Promise<void> {
+    if (!supabase || ids.length === 0) return
+    const rows = ids.map(item_id => ({ item_id, contactado_por: por, contactado_at: new Date().toISOString() }))
+    const { error } = await supabase.from('wa_contactos_manual').upsert(rows, { onConflict: 'item_id' })
+    if (error) { console.error('[db.marcarContactosManual]', error.message); throw new Error(error.message) }
+  },
+  async desmarcarContactosManual(ids: string[]): Promise<void> {
+    if (!supabase || ids.length === 0) return
+    const { error } = await supabase.from('wa_contactos_manual').delete().in('item_id', ids)
+    if (error) { console.error('[db.desmarcarContactosManual]', error.message); throw new Error(error.message) }
+  },
+  async limpiarContactosManual(): Promise<void> {
+    if (!supabase) return
+    const { error } = await supabase.from('wa_contactos_manual').delete().neq('item_id', '')
+    if (error) { console.error('[db.limpiarContactosManual]', error.message); throw new Error(error.message) }
+  },
+
   // ─── Carga completa desde Supabase ────────────────────────────────────────
   async loadAll() {
     if (!supabase) return null
