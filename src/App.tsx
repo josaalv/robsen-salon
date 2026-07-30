@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import { PhosphorIcon as Ic } from './components/PhosphorIcon'
 import { Avatar, ToastHost, toast } from './components/ui'
 import { useStore } from './data/store'
+import { db } from './lib/db'
 import { usuarios, roles } from './data/mockData'
 import { rolPuede } from './lib/helpers'
 import { hasSupabase } from './lib/supabase'
@@ -38,7 +39,7 @@ const NAV: NavGroup[] = [
   ]},
   { grupo: 'Gestión', items: [
     { id:'finanzas',  label:'Finanzas',             icon:'chart-line-up',        title:'Finanzas',              sub:'Reportes e ingresos' },
-    { id:'whatsapp',  label:'Seguimiento',          icon:'whatsapp-logo',        title:'Seguimiento',           sub:'Mensajes y recordatorios', badge:3 },
+    { id:'whatsapp',  label:'Seguimiento',          icon:'whatsapp-logo',        title:'Seguimiento',           sub:'Mensajes y recordatorios' },
   ]},
   { grupo: 'Sistema', items: [
     { id:'ajustes',   label:'Ajustes',              icon:'gear-six',             title:'Ajustes',               sub:'Configuración y permisos' },
@@ -63,6 +64,19 @@ function AppShell() {
   const searchRef = useRef<HTMLDivElement>(null)
   const logo = data.config?.logo || ''
   const [Screen, setScreen] = useState<React.ComponentType<any> | null>(null)
+
+  // Badge de "Seguimiento": mensajes de WhatsApp esperando aprobación —
+  // carga aparte (no es parte del store principal) y se refresca sola
+  // mientras la app esté abierta, igual que la pantalla de Seguimiento.
+  const [waPend, setWaPend] = useState(0)
+  useEffect(() => {
+    const cargar = () => db.getWaMensajes().then(cola => {
+      setWaPend(cola.filter(m => m.estado === 'pendiente_aprobacion').length)
+    }).catch(() => {})
+    cargar()
+    const id = setInterval(cargar, 60000)
+    return () => clearInterval(id)
+  }, [])
 
   // Sincronizar desde Supabase al iniciar
   useEffect(() => {
@@ -150,7 +164,7 @@ function AppShell() {
           case 'productos': mod = await import('./screens/Productos'); setScreen(() => mod.ScreenProductos); break
           case 'empleados': mod = await import('./screens/Empleados'); setScreen(() => mod.ScreenEmpleados); break
           case 'finanzas':  mod = await import('./screens/Finanzas');  setScreen(() => mod.ScreenFinanzas);  break
-          case 'whatsapp':  mod = await import('./screens/WhatsApp');  setScreen(() => mod.ScreenWhatsApp);  break
+          case 'whatsapp':  mod = await import('./screens/whatsapp'); setScreen(() => mod.ScreenWhatsApp);  break
           case 'ajustes':   mod = await import('./screens/Ajustes');   setScreen(() => mod.ScreenAjustes);   break
           case 'booking':   mod = await import('./screens/Booking');   setScreen(() => mod.ScreenBooking);   break
           default: setScreen(null)
@@ -205,13 +219,16 @@ function AppShell() {
             return (
               <React.Fragment key={g.grupo}>
                 <div className="nav-label">{g.grupo}</div>
-                {items.map(it => (
-                  <div key={it.id} className={'nav-item' + (effRoute === it.id ? ' active' : '')} onClick={() => setRoute(it.id)}>
-                    <Ic n={it.icon} />{it.label}
-                    {it.badge && <span className="badge-dot">{it.badge}</span>}
-                    {it.id === 'booking' && <Ic n="arrow-up-right" />}
-                  </div>
-                ))}
+                {items.map(it => {
+                  const badge = it.id === 'whatsapp' ? waPend : it.badge
+                  return (
+                    <div key={it.id} className={'nav-item' + (effRoute === it.id ? ' active' : '')} onClick={() => setRoute(it.id)}>
+                      <Ic n={it.icon} />{it.label}
+                      {!!badge && <span className="badge-dot">{badge}</span>}
+                      {it.id === 'booking' && <Ic n="arrow-up-right" />}
+                    </div>
+                  )
+                })}
               </React.Fragment>
             )
           })}
