@@ -165,6 +165,9 @@ export interface Producto {
   // porcentaje o un monto fijo por unidad. Si falta, se usa la global.
   comValor?: number
   comTipo?: 'porcentaje' | 'monto'
+  foto?: string
+  notas?: string
+  proveedor?: string
 }
 
 export interface Movimiento {

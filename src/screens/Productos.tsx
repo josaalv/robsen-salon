@@ -3,6 +3,7 @@ import { Avatar, Seg, Switch, CardHead, toast, Modal, useTableSort, sortRows, So
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
+import { db } from '../lib/db'
 import { mxn, ventaCalc, descargarCSV } from '../lib/helpers'
 import type { Producto, Estilista } from '../types'
 import * as XLSX from 'xlsx'
@@ -17,6 +18,9 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   const [ajuste, setAjuste] = useState<Producto | null>(null)
   const [ordenCompra, setOrdenCompra] = useState<Producto | null>(null)
   const [importando, setImportando] = useState(false)
+  const [selProds, setSelProds] = useState<Set<string>>(new Set())
+  const [minLote, setMinLote] = useState('')
+  const [aplicandoLote, setAplicandoLote] = useState(false)
 
   const { data, upsertProducto, deleteProducto, venderProducto, ajustarStock } = useStore()
   const { productos, movimientos, transacciones, clientas, estilistas, marcas } = data
@@ -36,6 +40,8 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   // Marcas: las semilla más las que ya usan los productos (así aparecen las
   // marcas reales importadas y las nuevas persisten al guardar un producto).
   const marcasTodas = Array.from(new Set([...marcas, ...productos.map(p => p.marca).filter(Boolean)]))
+    .sort((a, b) => a.localeCompare(b))
+  const proveedoresTodos = Array.from(new Set(productos.map(p => p.proveedor).filter((x): x is string => !!x)))
     .sort((a, b) => a.localeCompare(b))
   const listaFiltradaBase = catFiltro === 'Todos' ? productos : productos.filter(p => p.cat === catFiltro)
   // Orden por columna + paginación.
@@ -57,9 +63,35 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
   const PAGE_P = 30
   const [pageP, setPageP] = useState(1)
   const totalPagesP = Math.max(1, Math.ceil(listaFiltrada.length / PAGE_P))
-  useEffect(() => { setPageP(1) }, [catFiltro, sort])
+  useEffect(() => { setPageP(1); setSelProds(new Set()) }, [catFiltro, sort])
+
+  const toggleSelProd = (id: string) => setSelProds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
   const pageIdxP = Math.min(pageP, totalPagesP) - 1
   const pageProds = listaFiltrada.slice(pageIdxP * PAGE_P, pageIdxP * PAGE_P + PAGE_P)
+
+  const seleccionarTodosPagina = () => setSelProds(new Set(pageProds.map(p => p.id)))
+  const seleccionarNingunoPagina = () => setSelProds(new Set())
+
+  const aplicarMinimoLote = async () => {
+    const val = Number(minLote)
+    if (!Number.isFinite(val) || val < 0) { toast('Ingresa un mínimo válido.'); return }
+    setAplicandoLote(true)
+    try {
+      const elegidos = productos.filter(p => selProds.has(p.id))
+      await Promise.all(elegidos.map(p => upsertProducto({ ...p, min: val })))
+      toast(`Mínimo actualizado en ${elegidos.length} producto${elegidos.length !== 1 ? 's' : ''}.`)
+      setSelProds(new Set())
+      setMinLote('')
+    } catch {
+      toast('No se pudo actualizar el mínimo en lote. Intenta de nuevo.')
+    } finally {
+      setAplicandoLote(false)
+    }
+  }
 
   return (
     <div>
@@ -150,10 +182,21 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
           <button className="btn sm line" onClick={() => {
             const lista = [...agotados, ...bajos]
             const fecha = new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' })
-            const lineas = lista.map(p =>
-              `${p.nombre.padEnd(35)} Stock: ${p.stock}  Mínimo: ${p.min}  Pedir: ${Math.max(p.min * 2 - p.stock, 1)} uds.  Costo: ${mxn(p.costo)}`
-            )
-            const texto = [`LISTA DE PEDIDO — ${data.config.nombre}`, `Generada: ${fecha}`, ``, ...lineas].join('\n')
+            // Agrupado por proveedor — así la lista ya sale lista para mandarle
+            // a cada proveedor por separado, en vez de una lista plana mezclada.
+            const porProveedor = new Map<string, Producto[]>()
+            lista.forEach(p => {
+              const key = p.proveedor?.trim() || 'Sin proveedor asignado'
+              if (!porProveedor.has(key)) porProveedor.set(key, [])
+              porProveedor.get(key)!.push(p)
+            })
+            const bloques = [...porProveedor.entries()].map(([proveedor, prods]) => [
+              `── ${proveedor} ──`,
+              ...prods.map(p =>
+                `${p.nombre.padEnd(35)} Stock: ${p.stock}  Mínimo: ${p.min}  Pedir: ${Math.max(p.min * 2 - p.stock, 1)} uds.  Costo: ${mxn(p.costo)}`
+              ),
+            ].join('\n'))
+            const texto = [`LISTA DE PEDIDO — ${data.config.nombre}`, `Generada: ${fecha}`, ``, ...bloques].join('\n\n')
             const a = document.createElement('a')
             a.href = URL.createObjectURL(new Blob([texto], { type: 'text/plain' }))
             a.download = `pedido-${fecha.replace(/\s/g,'-')}.txt`
@@ -196,10 +239,39 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
               </div>
             }
           />
+
+          {esGestion && selProds.size > 0 && (
+            <div className="between" style={{ padding: '10px 20px', borderBottom: '1px solid var(--line-soft)', background: 'var(--surface-2)', flexWrap: 'wrap', gap: 10 }}>
+              <span className="dim" style={{ fontSize: 12.5 }}>{selProds.size} seleccionado{selProds.size !== 1 ? 's' : ''}</span>
+              <div className="vc gap8">
+                <input
+                  className="input sm" type="number" min={0} style={{ width: 100 }}
+                  placeholder="Mínimo" value={minLote} onChange={e => setMinLote(e.target.value)}
+                />
+                <button className="btn gold sm" disabled={aplicandoLote || minLote === ''} onClick={aplicarMinimoLote}>
+                  <Ic n={aplicandoLote ? 'spinner' : 'check'} size={13} />
+                  {aplicandoLote ? 'Aplicando…' : `Aplicar mínimo a ${selProds.size}`}
+                </button>
+                <button className="btn ghost sm" onClick={seleccionarNingunoPagina}>Cancelar</button>
+              </div>
+            </div>
+          )}
+
           <div style={{ overflowX: 'auto' }}>
             <table className="table">
               <thead>
                 <tr>
+                  {esGestion && (
+                    <th style={{ width: 30 }}>
+                      <input
+                        type="checkbox"
+                        checked={pageProds.length > 0 && pageProds.every(p => selProds.has(p.id))}
+                        onChange={() => (pageProds.every(p => selProds.has(p.id)) ? seleccionarNingunoPagina() : seleccionarTodosPagina())}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
+                  )}
+                  <th style={{ width: 44 }}></th>
                   <SortTh label="Producto" k="nombre" sort={sort} onSort={toggle} />
                   <SortTh label="SKU" k="sku" sort={sort} onSort={toggle} />
                   <SortTh label="Marca" k="marca" sort={sort} onSort={toggle} />
@@ -218,6 +290,19 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
                   const agotado = p.stock === 0
                   return (
                     <tr key={p.id} style={{ cursor: esGestion ? 'pointer' : 'default' }} onClick={() => esGestion && setEditor(p)}>
+                      {esGestion && (
+                        <td onClick={e => e.stopPropagation()}>
+                          <input type="checkbox" checked={selProds.has(p.id)} onChange={() => toggleSelProd(p.id)} style={{ cursor: 'pointer' }} />
+                        </td>
+                      )}
+                      <td>
+                        {p.foto
+                          ? <img src={p.foto} alt={p.nombre} style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover' }} />
+                          : <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-4)' }}>
+                              <Ic n="package" size={16} />
+                            </div>
+                        }
+                      </td>
                       <td style={{ fontWeight: 600 }}>{p.nombre}</td>
                       <td className="muted" style={{ fontSize: 12 }}>{p.sku}</td>
                       <td>{p.marca}</td>
@@ -371,6 +456,7 @@ export function ScreenProductos({ onNavigate }: { onNavigate: (r: string) => voi
           p={editor}
           marcas={marcasTodas}
           cats={rawCats}
+          proveedores={proveedoresTodos}
           onSave={async prod => {
             try {
               await upsertProducto(prod)
@@ -477,12 +563,13 @@ interface ProductoEditorProps {
   p: Partial<Producto>
   marcas: string[]
   cats: string[]
+  proveedores: string[]
   onSave: (prod: Partial<Producto> & { id: string }) => void
   onDelete: (id: string) => void
   onClose: () => void
 }
 
-function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: ProductoEditorProps) {
+function ProductoEditor({ p, marcas, cats, proveedores, onSave, onDelete, onClose }: ProductoEditorProps) {
   const nuevo = !p.id
   const [nombre, setNombre] = useState(p.nombre ?? '')
   const [sku, setSku] = useState(p.sku ?? '')
@@ -495,9 +582,29 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
   const [precio, setPrecio] = useState(p.precio ?? 0)
   const [stock, setStock] = useState(p.stock ?? 0)
   const [min, setMin] = useState(p.min ?? 3)
+  const [proveedor, setProveedor] = useState(p.proveedor ?? '')
+  const [notas, setNotas] = useState(p.notas ?? '')
+  const [foto, setFoto] = useState(p.foto ?? '')
+  const [uploading, setUploading] = useState(false)
+  const fotoRef = useRef<HTMLInputElement>(null)
   // Comisión propia del producto: 'default' usa la global; si no, % o monto fijo.
   const [comModo, setComModo] = useState<'default' | 'porcentaje' | 'monto'>(p.comValor != null ? (p.comTipo === 'monto' ? 'monto' : 'porcentaje') : 'default')
   const [comValor, setComValor] = useState(p.comValor ?? 0)
+
+  const onFotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const id = p.id ?? ('p' + Date.now())
+      const url = await db.uploadMedia(`productos/${id}`, file)
+      if (url) setFoto(url)
+      else toast('Error al subir la imagen')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
 
   const handleSave = () => {
     if (!nombre.trim()) { toast('El nombre es requerido'); return }
@@ -515,6 +622,9 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
       vendidos: p.vendidos ?? 0,
       comValor: comModo === 'default' ? undefined : comValor,
       comTipo: comModo === 'default' ? undefined : comModo,
+      proveedor: proveedor.trim() || undefined,
+      notas: notas.trim() || undefined,
+      foto: foto || undefined,
     })
   }
 
@@ -538,6 +648,26 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
 
         {/* Body */}
         <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Foto */}
+          <div className="field">
+            <label className="label">Foto del producto</label>
+            <div className="vc gap12">
+              {foto
+                ? <img src={foto} alt={nombre} style={{ width: 64, height: 64, borderRadius: 10, objectFit: 'cover', border: '2px solid var(--line)' }} />
+                : <div style={{ width: 64, height: 64, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-4)' }}>
+                    <Ic n="package" size={26} />
+                  </div>
+              }
+              <div className="vc gap8">
+                <input ref={fotoRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={onFotoFile} />
+                <button className="btn ghost sm" disabled={uploading} onClick={() => fotoRef.current?.click()}>
+                  <Ic n="camera" />{uploading ? 'Subiendo…' : foto ? 'Cambiar foto' : 'Subir foto'}
+                </button>
+                {foto && <button className="btn ghost sm" style={{ color: 'var(--st-canc)' }} onClick={() => setFoto('')}><Ic n="trash" /></button>}
+              </div>
+            </div>
+          </div>
+
           {/* Nombre + SKU */}
           <div className="grid" style={{ gridTemplateColumns: '2fr 1fr', gap: 14 }}>
             <div>
@@ -592,6 +722,21 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
                 />
               )}
             </div>
+          </div>
+
+          {/* Proveedor */}
+          <div>
+            <label className="label">Proveedor</label>
+            <input
+              className="input"
+              list="proveedores-datalist"
+              value={proveedor}
+              onChange={e => setProveedor(e.target.value)}
+              placeholder="Ej. Distribuidora Belleza SA"
+            />
+            <datalist id="proveedores-datalist">
+              {proveedores.map(pr => <option key={pr} value={pr} />)}
+            </datalist>
           </div>
 
           {/* Uso */}
@@ -656,6 +801,9 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
                 value={min}
                 onChange={e => setMin(Number(e.target.value))}
               />
+              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                {p.vendidos ? `${p.vendidos} vendidas en total — úsalo de referencia, no se autocalcula.` : 'Aún sin ventas registradas.'}
+              </div>
             </div>
           </div>
 
@@ -705,6 +853,19 @@ function ProductoEditor({ p, marcas, cats, onSave, onDelete, onClose }: Producto
               </div>
             </div>
           )}
+
+          {/* Notas */}
+          <div className="field">
+            <label className="label">Notas internas</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={notas}
+              onChange={e => setNotas(e.target.value)}
+              placeholder="Ej. Se vende rápido en temporada de bodas · descontinuado por el proveedor · alergia frecuente a esta marca…"
+              style={{ resize: 'vertical', lineHeight: 1.6 }}
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -934,7 +1095,7 @@ interface OrdenCompraProps {
 
 function OrdenCompraModal({ productos, sel: initialSel, onRecibido, onClose }: OrdenCompraProps) {
   const [sel, setSel] = useState<Producto>(initialSel)
-  const [proveedor, setProveedor] = useState('')
+  const [proveedor, setProveedor] = useState(initialSel.proveedor ?? '')
   const [cant, setCant] = useState(Math.max(1, sel.min * 2 - sel.stock))
   const [precioUnit, setPrecioUnit] = useState(sel.costo)
   const [recibido, setRecibido] = useState(false)
@@ -956,7 +1117,7 @@ function OrdenCompraModal({ productos, sel: initialSel, onRecibido, onClose }: O
             <label className="label">Producto</label>
             <select className="input" value={sel.id} onChange={e => {
               const found = productos.find(p => p.id === e.target.value)
-              if (found) { setSel(found); setCant(Math.max(1, found.min * 2 - found.stock)); setPrecioUnit(found.costo) }
+              if (found) { setSel(found); setCant(Math.max(1, found.min * 2 - found.stock)); setPrecioUnit(found.costo); setProveedor(found.proveedor ?? '') }
             }}>
               {productos.map(p => <option key={p.id} value={p.id}>{p.nombre} (stock: {p.stock})</option>)}
             </select>
