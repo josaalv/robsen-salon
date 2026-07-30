@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { fechaLocalIso } from './helpers'
 import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja, WaMensaje, WaPlantilla } from '../types'
 
 const BUCKET = 'media'
@@ -68,6 +69,8 @@ const mapConfig = (r: any): SalonConfig => ({
   permisos: r.permisos || {},
   logo: r.logo ?? undefined,
   notifs: r.notifs,
+  waModoPrueba: r.wa_modo_prueba ?? true,
+  waTestTel: r.wa_test_tel ?? undefined,
 })
 
 const toConfigRow = (c: SalonConfig) => ({
@@ -79,6 +82,8 @@ const toConfigRow = (c: SalonConfig) => ({
   comisiones: c.comisiones, escala_comisiones: c.escalaComisiones || [], notifs: c.notifs,
   permisos: c.permisos ?? {},
   logo: c.logo ?? null,
+  wa_modo_prueba: c.waModoPrueba,
+  wa_test_tel: c.waTestTel ?? null,
 })
 
 // Mapper explícito para clientas — evita enviar columnas desconocidas
@@ -324,11 +329,15 @@ export const db = {
   // — Citas —
   async getCitas(): Promise<{ hoy: Cita[]; futuras: Cita[] }> {
     if (!supabase) return { hoy: [], futuras: [] }
-    const today = new Date().toISOString().split('T')[0]
+    const today = fechaLocalIso()
     const { data } = await supabase.from('citas').select('*')
     const all = (data ?? []).map(mapCita)
+    // Sin el "|| !c.fecha" del filtro anterior: una cita sin fecha real ya
+    // no cuenta como "hoy" para siempre — ese hueco es justo lo que hacía
+    // que citas de días anteriores (ya 'done'/'canc') se siguieran mostrando
+    // como pendientes de hoy indefinidamente.
     return {
-      hoy:    all.filter(c => !c.fecha || c.fecha === today),
+      hoy:    all.filter(c => c.fecha === today),
       futuras: all.filter(c => c.fecha && c.fecha > today),
     }
   },
@@ -675,6 +684,23 @@ export const db = {
     if (error) throw new Error(error.message)
     return (data as { sincronizados: number }) ?? { sincronizados: 0 }
   },
+  // Manda texto libre a una clienta desde la bandeja de conversaciones —
+  // solo funciona dentro de la ventana de 24h de servicio al cliente.
+  async responderWa(tel: string, texto: string): Promise<{ ok: boolean }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('wa-responder', { body: { tel, texto } })
+    if (error) {
+      // wa-responder manda un mensaje de error específico (ventana de 24h
+      // cerrada, sin mensajes entrantes) en el cuerpo de la respuesta — el
+      // cliente de Supabase no lo expone en `error.message` para respuestas
+      // no-2xx, hay que leerlo del Response crudo.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctx = (error as any)?.context
+      const body = await ctx?.json?.().catch(() => null)
+      throw new Error(body?.error || error.message)
+    }
+    return data as { ok: boolean }
+  },
   async updateWaMensaje(id: string, patch: Partial<WaMensaje>): Promise<void> {
     if (!supabase) return
     const row: Record<string, unknown> = {}
@@ -685,6 +711,33 @@ export const db = {
     row.updated_at = new Date().toISOString()
     const { error } = await supabase.from('wa_mensajes').update(row).eq('id', id)
     if (error) { console.error('[db.updateWaMensaje]', error.message); throw new Error(error.message) }
+  },
+
+  // ─── WhatsApp: "contactado" manual compartido (reemplaza localStorage) ────
+  async getContactosManual(): Promise<Record<string, { por: string; at: string }>> {
+    if (!supabase) return {}
+    const { data, error } = await supabase.from('wa_contactos_manual').select('item_id,contactado_por,contactado_at')
+    if (error) { console.error('[db.getContactosManual]', error.message); return {} }
+    const out: Record<string, { por: string; at: string }> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of (data ?? []) as any[]) out[r.item_id] = { por: r.contactado_por || '', at: r.contactado_at }
+    return out
+  },
+  async marcarContactosManual(ids: string[], por: string): Promise<void> {
+    if (!supabase || ids.length === 0) return
+    const rows = ids.map(item_id => ({ item_id, contactado_por: por, contactado_at: new Date().toISOString() }))
+    const { error } = await supabase.from('wa_contactos_manual').upsert(rows, { onConflict: 'item_id' })
+    if (error) { console.error('[db.marcarContactosManual]', error.message); throw new Error(error.message) }
+  },
+  async desmarcarContactosManual(ids: string[]): Promise<void> {
+    if (!supabase || ids.length === 0) return
+    const { error } = await supabase.from('wa_contactos_manual').delete().in('item_id', ids)
+    if (error) { console.error('[db.desmarcarContactosManual]', error.message); throw new Error(error.message) }
+  },
+  async limpiarContactosManual(): Promise<void> {
+    if (!supabase) return
+    const { error } = await supabase.from('wa_contactos_manual').delete().neq('item_id', '')
+    if (error) { console.error('[db.limpiarContactosManual]', error.message); throw new Error(error.message) }
   },
 
   // ─── Carga completa desde Supabase ────────────────────────────────────────

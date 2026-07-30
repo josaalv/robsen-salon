@@ -56,13 +56,52 @@ Deno.serve(async (req: Request) => {
         // 2b) Respuestas entrantes de las clientas.
         for (const msg of (value.messages ?? [])) {
           const from = String(msg.from ?? "");
-          const texto = msg.text?.body ?? msg.button?.text ?? "";
           if (!from) continue;
-          // Interpreta CONFIRMO / BAJA.
-          await rest(`rpc/wa_inbound`, {
-            method: "POST",
-            body: JSON.stringify({ p_from: from, p_texto: texto }),
-          });
+
+          // Clic en botón de confirmar/cancelar cita (mensaje interactivo de
+          // prueba, id fijo del tipo "confirmar_<citaId>" / "cancelar_<citaId>",
+          // solo funciona dentro de la ventana de 24h de servicio al cliente).
+          // Se resuelve por id, no por texto — evita que "Cancelar cita" se
+          // confunda con CANCELAR de baja de WhatsApp (son cosas distintas).
+          const btn = msg.interactive?.button_reply;
+          const btnMatch = btn?.id ? /^(confirmar|cancelar)_(.+)$/.exec(String(btn.id)) : null;
+          if (btnMatch) {
+            const [, accion, citaId] = btnMatch;
+            await rest(`citas?id=eq.${encodeURIComponent(citaId)}`, {
+              method: "PATCH", headers: { "Prefer": "return=minimal" },
+              body: JSON.stringify({ estado: accion === "confirmar" ? "conf" : "canc" }),
+            });
+          }
+
+          // Clic en botón de una PLANTILLA aprobada (recordatorio_24h real,
+          // fuera de la ventana de 24h). El payload ahí es fijo — el mismo
+          // texto para cualquiera que la reciba — así que se resuelve la
+          // cita por teléfono + recordatorio_24h más reciente (RPC
+          // wa_resolver_boton_plantilla), no por un id embebido.
+          const btnPlantilla = msg.button?.text as string | undefined;
+          // true en cuanto se identifica como clic de botón de plantilla,
+          // haya o no encontrado una cita que actualizar — es un botón
+          // estructurado, nunca debe interpretarse además como texto libre.
+          const resueltoPorPlantilla = btnPlantilla === "Confirmar" || btnPlantilla === "Cancelar";
+          if (resueltoPorPlantilla) {
+            const accion = btnPlantilla === "Confirmar" ? "confirmar" : "cancelar";
+            await rest(`rpc/wa_resolver_boton_plantilla`, {
+              method: "POST",
+              body: JSON.stringify({ p_from: from, p_accion: accion }),
+            });
+          }
+
+          const texto = msg.text?.body ?? msg.button?.text ?? btn?.title ?? "";
+          // Interpreta CONFIRMO / BAJA en texto libre (flujo original). Se
+          // omite si ya se resolvió por botón (de cita o de plantilla)
+          // arriba, para que "Cancelar" no dispare además la baja de
+          // WhatsApp (que usa la misma palabra con otro significado).
+          if (!btnMatch && !resueltoPorPlantilla) {
+            await rest(`rpc/wa_inbound`, {
+              method: "POST",
+              body: JSON.stringify({ p_from: from, p_texto: texto }),
+            });
+          }
           // Registra la respuesta en la bitácora.
           await rest(`wa_mensajes`, {
             method: "POST", headers: { "Prefer": "return=minimal" },

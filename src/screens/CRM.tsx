@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Avatar, EstadoBadge, ClienteBadge, CardHead, Seg, Switch, toast, ConfirmModal, useModalKeys, Pager } from '../components/ui'
+import { Avatar, EstadoBadge, ClienteBadge, Switch, toast, ConfirmModal, useModalKeys, Pager } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
@@ -722,7 +722,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
             <Avatar ini={c.ini} size="lg" />
             <h2 className="display" style={{ fontSize: 23, margin: '14px 0 6px' }}>{c.nombre}</h2>
             <ClienteBadge estado={c.estado} />
-            <div className="vc gap8 mt14" style={{ justifyContent: 'center' }}>
+            <div className="vc gap8 mt14" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
               <button className="btn gold sm" onClick={() => onNavigate('agenda')}><Ic n="calendar-plus" />Agendar</button>
               <button
                 className="btn sm"
@@ -730,6 +730,9 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
                 onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 `)}
               >
                 <Ic n="whatsapp-logo" />Mensaje
+              </button>
+              <button className="btn ghost sm" onClick={() => onNavigate('whatsapp')} title="Ver historial y automatización de WhatsApp de esta clienta">
+                <Ic n="chats-circle" />Ver en Seguimiento
               </button>
             </div>
           </div>
@@ -844,143 +847,6 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
   )
 }
 
-// ─── Vista de retención ──────────────────────────────────────────────────────
-function CRMRetencion({ onPerfil }: { onPerfil: (c: Clienta) => void }) {
-  const { data } = useStore()
-
-  const recompra = data.clientas.map(c => ({ c, i: helpers.insights(c) }))
-    .filter(x => x.i.recompra !== 'aldia')
-    .sort((a, b) => b.i.dias - a.i.dias)
-
-  const riesgo = data.clientas.map(c => ({ c, i: helpers.insights(c) }))
-    .filter(x => x.i.riesgo !== 'sana')
-    .sort((a, b) => (a.i.riesgo === 'fuga' ? 0 : 1) - (b.i.riesgo === 'fuga' ? 0 : 1) || b.i.dias - a.i.dias)
-
-  const cumples = data.clientas.map(c => ({ c, i: helpers.insights(c) }))
-    .filter(x => x.i.cumpleDias <= 30)
-    .sort((a, b) => a.i.cumpleDias - b.i.cumpleDias)
-
-  return (
-    <div>
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 18 }}>
-        <div className="card card-pad vc gap16">
-          <div className="ico" style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(206,156,182,0.12)', border: '1px solid rgba(206,156,182,0.30)', color: 'var(--st-pay)' }}>
-            <Ic n="arrows-clockwise" />
-          </div>
-          <div className="kpi-mini"><span className="l">Por reagendar</span><span className="v">{recompra.length}</span></div>
-        </div>
-        <div className="card card-pad vc gap16">
-          <div className="ico" style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(199,123,123,0.12)', border: '1px solid rgba(199,123,123,0.28)', color: 'var(--st-canc)' }}>
-            <Ic n="warning-circle" />
-          </div>
-          <div className="kpi-mini"><span className="l">En riesgo de fuga</span><span className="v">{riesgo.length}</span></div>
-        </div>
-        <div className="card card-pad vc gap16">
-          <div className="ico" style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(200,161,74,0.10)', border: '1px solid var(--line)', color: 'var(--gold)' }}>
-            <Ic n="gift" />
-          </div>
-          <div className="kpi-mini"><span className="l">Cumpleaños (30 días)</span><span className="v">{cumples.length}</span></div>
-        </div>
-      </div>
-
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
-        <div className="card" style={{ gridColumn: '1 / -1' }}>
-          <CardHead title="Le toca volver · recompra" sub="Según el ciclo de cada servicio"
-            right={<span className="badge pay"><span className="d" />{recompra.length} clientas</span>} />
-          {recompra.length > 0 ? (
-            <table className="table" style={{ marginTop: 6 }}>
-              <thead><tr><th>Clienta</th><th>Servicio habitual</th><th>Última visita</th><th>Sugerida</th><th>Estado</th><th></th></tr></thead>
-              <tbody>
-                {recompra.map(({ c, i }) => (
-                  <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => onPerfil(c)}>
-                    <td><div className="cell-name"><Avatar ini={c.ini} size="sm" /><div className="nm">{c.nombre}</div></div></td>
-                    <td className="muted">{c.fav} · cada {c.ciclo} sem</td>
-                    <td className="muted">hace {i.dias} días</td>
-                    <td className="muted">{i.proxStr}</td>
-                    <td>
-                      {i.recompra === 'atrasada'
-                        ? <span className="badge canc"><span className="d" />Atrasada</span>
-                        : <span className="badge pend"><span className="d" />Le toca</span>}
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                      <button
-                        className="btn sm"
-                        style={{ background: '#25D366', color: '#fff', border: 'none' }}
-                        onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 En ${data.config.nombre} llevamos tiempo sin verte. Tu ${c.fav} te espera — ¿agendamos? 🗓`)}
-                      >
-                        <Ic n="whatsapp-logo" />Reagendar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="card-pad" style={{ textAlign: 'center', color: 'var(--text-4)', padding: '28px 0' }}>
-              <Ic n="check-circle" size={28} style={{ display: 'block', margin: '0 auto 8px', color: 'var(--st-conf)' }} />
-              Todas las clientas al día
-            </div>
-          )}
-        </div>
-
-        <div className="card">
-          <CardHead title="Riesgo de fuga" sub="Clientas que podrías estar perdiendo" />
-          <div className="card-pad" style={{ paddingTop: 8 }}>
-            {riesgo.length > 0 ? riesgo.map(({ c, i }) => (
-              <div key={c.id} className="list-item" style={{ padding: '13px 0', cursor: 'pointer' }} onClick={() => onPerfil(c)}>
-                <Avatar ini={c.ini} size="sm" />
-                <div className="f1" style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{c.nombre}</div>
-                  <div className="vc gap8" style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 3 }}>
-                    {i.riesgo === 'fuga'
-                      ? <span className="badge canc"><span className="d" />En fuga</span>
-                      : <span className="badge pend"><span className="d" />En riesgo</span>}
-                    <span>Sin venir hace {i.dias} días</span>
-                  </div>
-                </div>
-              </div>
-            )) : (
-              <div style={{ textAlign: 'center', color: 'var(--text-4)', padding: '20px 0', fontSize: 13 }}>Sin clientas en riesgo</div>
-            )}
-            {riesgo.length > 0 && (
-              <div className="dim mt14" style={{ fontSize: 11.5, textAlign: 'center', lineHeight: 1.5 }}>
-                Toca el nombre de cada clienta y usa el botón <b>Mensaje</b> para contactarla por WhatsApp.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="card">
-          <CardHead title="Próximos cumpleaños" sub="Detalle especial = clienta feliz" />
-          <div className="card-pad" style={{ paddingTop: 8 }}>
-            {cumples.map(({ c, i }) => (
-              <div key={c.id} className="list-item" style={{ padding: '13px 0' }}>
-                <div style={{ width: 38, height: 38, flex: '0 0 38px', borderRadius: 10, background: 'rgba(200,161,74,0.10)', border: '1px solid var(--line)', color: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ic n="gift" />
-                </div>
-                <div className="f1" style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{c.nombre}</div>
-                  <div className="dim" style={{ fontSize: 11.5, marginTop: 2 }}>
-                    {c.cumple} · {i.cumpleDias === 0 ? '¡hoy!' : 'en ' + i.cumpleDias + ' días'}
-                  </div>
-                </div>
-                <button
-                className="btn sm"
-                style={{ background: '#25D366', color: '#fff', border: 'none' }}
-                onClick={() => abrirWA(c.tel, `¡Feliz cumpleaños ${c.nombre.split(' ')[0]}! 🎂 Todo el equipo de ${data.config.nombre} te desea un día increíble. Tienes un regalo especial esperándote 🎁`)}
-              >
-                <Ic n="whatsapp-logo" />Felicitar
-              </button>
-              </div>
-            ))}
-            {!cumples.length && <div className="dim center" style={{ padding: 24 }}>Sin cumpleaños en los próximos 30 días</div>}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Pantalla principal CRM ─────────────────────────────────────────────────
 export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   const { data, deleteClienta, upsertClienta } = useStore()
@@ -989,7 +855,6 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   const [sort, setSort] = useState<{ k: keyof Clienta; dir: number }>({ k: 'ultima', dir: -1 })
   const [perfil, setPerfil] = useState<Clienta | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Clienta | null>(null)
-  const [vista, setVista] = useState('Clientas')
   const [editCl, setEditCl] = useState<Partial<Clienta> | null>(null)
   const csvRef = useRef<HTMLInputElement>(null)
 
@@ -1140,15 +1005,13 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
           </div>
         </div>
         <div className="vc gap12">
-          <Seg opts={['Clientas', 'Retención']} value={vista} onChange={setVista} />
           <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvImport} />
           <button className="btn ghost" onClick={() => csvRef.current?.click()}><Ic n="upload-simple" />Importar CSV</button>
           <button className="btn gold" onClick={() => setEditCl({})}><Ic n="plus" />Nueva clienta</button>
         </div>
       </div>
 
-      {vista === 'Retención' ? <CRMRetencion onPerfil={setPerfil} /> : (
-        <>
+      <>
           {/* Mini KPIs calculados */}
           <div className="grid" style={{ gridTemplateColumns: 'repeat(5,1fr)', marginBottom: 18 }}>
             {([
@@ -1242,8 +1105,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
             </table>
             <Pager page={Math.min(pageC, totalPagesC)} totalPages={totalPagesC} onPage={setPageC} />
           </div>
-        </>
-      )}
+      </>
 
       {editCl !== null && (
         <ClientaModal c={editCl} onClose={() => setEditCl(null)} onSaved={() => setEditCl(null)} />

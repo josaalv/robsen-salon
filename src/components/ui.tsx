@@ -129,7 +129,7 @@ export function Sparkline({ data, color = '#C8A14A', w = 86, h = 34 }: { data: n
 }
 
 /* ---- Bar chart ---- */
-export function BarChart({ data, h = 200, highlightLast }: { data: { d: string; v: number }[]; h?: number; highlightLast?: boolean }) {
+export function BarChart({ data, h = 200, highlightLast, fmt = mxn0 }: { data: { d: string; v: number }[]; h?: number; highlightLast?: boolean; fmt?: (n: number) => string }) {
   const max = Math.max(...data.map(d => d.v))
   return (
     <div style={{ display:'flex', alignItems:'flex-end', gap:14, height:h, padding:'8px 2px 0' }}>
@@ -138,7 +138,7 @@ export function BarChart({ data, h = 200, highlightLast }: { data: { d: string; 
         const hot = highlightLast && i === data.length - 1
         return (
           <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:8, height:'100%', justifyContent:'flex-end' }}>
-            <div className="num" style={{ fontSize:11, color: hot ? 'var(--gold)' : 'var(--text-3)', fontWeight:600 }}>{mxn0(d.v)}</div>
+            <div className="num" style={{ fontSize:11, color: hot ? 'var(--gold)' : 'var(--text-3)', fontWeight:600 }}>{fmt(d.v)}</div>
             <div style={{
               width:'100%', maxWidth:46, height:pct+'%', borderRadius:'7px 7px 3px 3px',
               background: hot ? 'var(--gold-grad)' : 'linear-gradient(180deg, #3a2f1f, #221c14)',
@@ -154,7 +154,7 @@ export function BarChart({ data, h = 200, highlightLast }: { data: { d: string; 
 }
 
 /* ---- Donut chart ---- */
-export function Donut({ data, size = 168, thick = 22 }: { data: { cat: string; v: number; c: string }[]; size?: number; thick?: number }) {
+export function Donut({ data, size = 168, thick = 22, fmt = mxn }: { data: { cat: string; v: number; c: string }[]; size?: number; thick?: number; fmt?: (n: number) => string }) {
   const total = data.reduce((s, d) => s + d.v, 0)
   const r = (size - thick) / 2, c = 2 * Math.PI * r
   let acc = 0
@@ -174,13 +174,13 @@ export function Donut({ data, size = 168, thick = 22 }: { data: { cat: string; v
           })}
         </g>
         <text x="50%" y="46%" textAnchor="middle" fill="var(--text-3)" fontSize="11" fontFamily="var(--sans)" style={{ textTransform:'uppercase', letterSpacing:'.08em' }}>Total</text>
-        <text x="50%" y="58%" textAnchor="middle" fill="var(--text)" fontSize="20" fontFamily="var(--serif)" fontWeight="600">{mxn0(total)}</text>
+        <text x="50%" y="58%" textAnchor="middle" fill="var(--text)" fontSize="20" fontFamily="var(--serif)" fontWeight="600">{fmt(total)}</text>
       </svg>
       <div style={{ display:'flex', flexDirection:'column', gap:11, flex:1 }}>
         {data.map((d, i) => (
           <div key={i} className="legend between">
             <span className="vc"><span className="k" style={{ background:d.c }}></span>{d.cat}</span>
-            <span className="num" style={{ color:'var(--text)', fontWeight:600 }}>{mxn(d.v)}</span>
+            <span className="num" style={{ color:'var(--text)', fontWeight:600 }}>{fmt(d.v)}</span>
           </div>
         ))}
       </div>

@@ -1,11 +1,19 @@
 // wa-templates — administra las plantillas de WhatsApp en Meta.
 //   { "action": "create" }  -> somete el catálogo a aprobación de Meta
 //   { "action": "list" }    -> lista las plantillas y su estado actual
-// Lee el token del secreto WHATSAPP_TOKEN. WABA ID configurable por env.
+// Lee el token del secreto WHATSAPP_TOKEN.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const WABA_ID = Deno.env.get("WHATSAPP_WABA_ID") || "1033375755765717";
+// WABA real que posee el número en producción (+52 1 33 1175 1393). El WABA
+// "1033375755765717" es solo el de pruebas (número de test de Meta) — nunca
+// tuvo el número real ni debe usarse para enviar/aprobar plantillas.
+// Fijo en código (no en secreto): el secreto WHATSAPP_WABA_ID en Supabase
+// quedó configurado con el WABA de pruebas por error y hacía que 'list',
+// 'sync' y 'create' operaran sobre la cuenta equivocada sin dar ningún
+// error — mismo patrón que el incidente de deploy (config apuntando a un
+// lugar distinto del real sin ninguna señal de fallo).
+const WABA_ID = "2057500331515195";
 const LANG = "es_MX";
 const SUPA_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -19,7 +27,7 @@ function metaEstado(status: string): string {
 }
 
 // Catálogo de plantillas en español. Variables posicionales {{1}}, {{2}}, …
-interface Tpl { name: string; category: string; body: string; example: string[]; footer?: string }
+interface Tpl { name: string; category: string; body: string; example: string[]; footer?: string; buttons?: string[] }
 const CATALOGO: Tpl[] = [
   {
     name: "confirmacion_cita",
@@ -34,6 +42,10 @@ const CATALOGO: Tpl[] = [
     body: "¡Hola {{1}}! Te recordamos tu cita de {{2}} mañana a las {{3}} con {{4}}. Responde CONFIRMO para confirmar tu asistencia. ✨",
     example: ["Ana", "Tinte", "11:30 am", "Renata"],
     footer: "Robsen Salón & Spa",
+    // Botones de respuesta rápida: en una plantilla aprobada el payload es
+    // fijo (mismo texto para cualquiera que la reciba) — wa-webhook resuelve
+    // a qué cita corresponde por teléfono + recencia, no por un id embebido.
+    buttons: ["Confirmar", "Cancelar"],
   },
   {
     name: "post_visita",
@@ -69,15 +81,22 @@ function json(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj, null, 2), { status, headers: { "Content-Type": "application/json" } });
 }
 
-async function createTemplate(token: string, t: Tpl) {
+function buildComponents(t: Tpl): unknown[] {
   const components: unknown[] = [
     { type: "BODY", text: t.body, example: { body_text: [t.example] } },
   ];
   if (t.footer) components.push({ type: "FOOTER", text: t.footer });
+  if (t.buttons?.length) {
+    components.push({ type: "BUTTONS", buttons: t.buttons.map(b => ({ type: "QUICK_REPLY", text: b })) });
+  }
+  return components;
+}
+
+async function createTemplate(token: string, t: Tpl) {
   const res = await fetch(`${GRAPH}/${WABA_ID}/message_templates`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: t.name, language: LANG, category: t.category, components }),
+    body: JSON.stringify({ name: t.name, language: LANG, category: t.category, components: buildComponents(t) }),
   });
   const data = await res.json();
   return { name: t.name, ok: res.ok, status: res.status, data };
@@ -151,7 +170,29 @@ Deno.serve(async (req: Request) => {
       return json(await res.json(), res.ok ? 200 : 400);
     }
 
-    return json({ error: "action debe ser 'create', 'list', 'sync', 'phones' o 'phone-info'" }, 400);
+    // edit: reenvía a Meta el catálogo (componentes actualizados, ej. botones
+    // nuevos) para una plantilla YA aprobada, sin cambiar su nombre/id — Meta
+    // la vuelve a poner en revisión conservando el historial.
+    if (action === "edit") {
+      const name = String(body.name || "");
+      const t = CATALOGO.find(c => c.name === name);
+      if (!t) return json({ error: `No hay plantilla '${name}' en el catálogo` }, 400);
+      const listRes = await fetch(`${GRAPH}/${WABA_ID}/message_templates?name=${encodeURIComponent(name)}&fields=id`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const listData = await listRes.json();
+      const id = listData?.data?.[0]?.id;
+      if (!id) return json({ error: `No se encontró '${name}' en el WABA`, detail: listData }, 404);
+      const res = await fetch(`${GRAPH}/${id}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ category: t.category, components: buildComponents(t) }),
+      });
+      const data = await res.json();
+      return json({ id, ok: res.ok, data }, res.ok ? 200 : 400);
+    }
+
+    return json({ error: "action debe ser 'create', 'list', 'sync', 'phones', 'phone-info' o 'edit'" }, 400);
   } catch (e) {
     return json({ error: String(e) }, 500);
   }

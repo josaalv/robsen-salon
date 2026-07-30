@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, EstadoBadge, Seg, toast, ConfirmModal, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
-import { mxn, resolverComision } from '../lib/helpers'
+import { mxn, resolverComision, fechaLocalIso } from '../lib/helpers'
 import type { Cita, CitaServicio, EstadoCita, Bloqueo, Venta } from '../types'
 import { db } from '../lib/db'
 import { POSBuilder } from './POS'
@@ -39,7 +39,7 @@ function top(hhmm: string, start: number): number {
 }
 
 function dateToIso(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return fechaLocalIso(d)
 }
 
 // Un bloque agendable: un tramo de tiempo de un empleado. Una cita con varios
@@ -220,7 +220,11 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
       servicios: serviciosCita,
       est: primary.est, h: primary.h, dur: durTotal,
       estado, total: precioTotal, ant: antFinal,
-      ...(isToday ? {} : { fecha: selectedDate }),
+      // Siempre con fecha real (nunca se omite para "hoy"): guardar sin
+      // fecha hacía que getCitas() la tratara como "hoy" para siempre, sin
+      // importar cuántos días pasaran — citas de días anteriores ya
+      // cerradas ('done'/'canc') se seguían mostrando como pendientes hoy.
+      fecha: selectedDate,
     }
     setSaving(true)
     try {
