@@ -140,17 +140,33 @@ export const applyEscala = (totalVentas: number, escala: EscalaTramo[]): number 
   return comision
 }
 
-const parseDate = (s: string): Date => {
-  const p = s.split(' ')
-  return new Date(+p[2], MES[p[1]], +p[0])
+// null cuando `s` no trae un "DD Mon YYYY" completo (ej. clienta sin
+// ninguna visita registrada — pasa con frecuencia real en la base: cientos
+// de clientas tienen `ultima` vacío). Antes esto producía Invalid Date y
+// arrastraba NaN silencioso a diasDesde/insights (recompra y riesgo nunca
+// se activaban para esas clientas, sin ningún error visible).
+const parseDate = (s: string): Date | null => {
+  const p = (s || '').split(' ')
+  if (p.length < 3) return null
+  const mes = MES[p[1]], dia = +p[0], anio = +p[2]
+  if (mes === undefined || !dia || !anio) return null
+  const d = new Date(anio, mes, dia)
+  return isNaN(d.getTime()) ? null : d
 }
 const fmtDate = (dt: Date) => dt.getDate() + ' ' + MESN[dt.getMonth()] + ' ' + dt.getFullYear()
 
+// Sin fecha real = se trata como "muy atrasada" (999 días), no como error —
+// mismo criterio que ya usaba el filtrado manual de WhatsApp.tsx.
+const SIN_FECHA_DIAS = 999
+
 export const helpers = {
   HOY,
-  diasDesde: (s: string) => Math.round((HOY.getTime() - parseDate(s).getTime()) / DIA),
+  diasDesde: (s: string) => {
+    const d = parseDate(s)
+    return d ? Math.round((HOY.getTime() - d.getTime()) / DIA) : SIN_FECHA_DIAS
+  },
   proxVisita: (ultima: string, semanas: number) => {
-    const dt = parseDate(ultima)
+    const dt = parseDate(ultima) || new Date(HOY)
     dt.setDate(dt.getDate() + semanas * 7)
     return dt
   },
@@ -162,7 +178,7 @@ export const helpers = {
     return Math.round((dt.getTime() - HOY.getTime()) / DIA)
   },
   insights: (c: { ultima: string; ciclo?: number; estado: string; cumple?: string }) => {
-    const dias = Math.round((HOY.getTime() - parseDate(c.ultima).getTime()) / DIA)
+    const dias = helpers.diasDesde(c.ultima)
     const cicloD = (c.ciclo || 8) * 7
     let recompra = 'aldia'
     if (dias > cicloD + 14) recompra = 'atrasada'
