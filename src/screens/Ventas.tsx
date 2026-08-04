@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
 import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS } from '../lib/helpers'
 import { POSBuilder } from './POS'
-import type { Venta, CierreCaja } from '../types'
+import type { Venta, CierreCaja, LineaVenta } from '../types'
 
 function waLink(tel: string, msg: string): string {
   const digits = tel.replace(/\D/g, '')
@@ -505,12 +505,21 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
 
   // Imprimir el corte del periodo (día o rango).
   const imprimirCorte = () => {
-    const rows = corteItems.map(([l, v]) => `<div class="r"><span>${l}</span><span>${v}</span></div>`).join('')
+    const fila = ([l, v]: [string, string, string?]) => `<div class="r"><span>${l}</span><span>${v}</span></div>`
+    const seccion = (titulo: string, items: [string, string, string?][]) =>
+      items.length ? `<div class="s">${titulo}</div>${items.map(fila).join('')}` : ''
+    const rows = [
+      seccion('Resumen', corteResumen),
+      seccion('Por método de pago', corteXPago),
+      seccion('Por tipo de venta', corteXTipo.map(t => [t.label, mxn(t.total)] as [string, string])),
+      seccion('Por estilista', corteXEstilista.map(e => [e.est.nombre, mxn(e.total)] as [string, string])),
+    ].join('')
     const html = `<html><head><meta charset="utf-8"><style>
       body{font-family:sans-serif;font-size:13px;margin:0;padding:24px;max-width:420px}
       h2{font-size:18px;margin:0 0 2px}.sub{color:#666;font-size:12px;margin-bottom:14px}
       .tot{font-size:26px;font-weight:700;margin:6px 0 14px}
       .r{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee}
+      .s{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#999;margin:16px 0 4px}
       </style></head><body>
       <h2>${data.config?.nombre || 'Robsen Salón & Spa'} — Corte</h2>
       <div class="sub">${corteLabel}</div>
@@ -523,17 +532,51 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     win.onload = () => { win.print(); win.close() }
   }
 
-  const corteItems: [string, string, string?][] = [
+  // Resumen general del periodo mostrado.
+  const corteResumen: [string, string, string?][] = [
     ['Tickets', String(lista.length)],
     ['Ticket promedio', mxn(cortePromedio)],
+    ['Comisiones', mxn(corteComis), '#B08AC7'],
+  ]
+  if (corteDesc > 0) corteResumen.push(['Descuentos', mxn(corteDesc)])
+  if (corteAnticipos > 0) corteResumen.push(['Anticipos', mxn(corteAnticipos)])
+
+  // Parte 1: por método de pago.
+  const corteXPago: [string, string, string?][] = [
     ['Efectivo', mxn(totalesPorPago['Efectivo'] || 0), 'var(--st-conf)'],
     ['Tarjeta', mxn(totalesPorPago['Tarjeta'] || 0), 'var(--gold)'],
   ]
-  if (totalesPorPago['Transferencia']) corteItems.push(['Transferencia', mxn(totalesPorPago['Transferencia'])])
-  if (totalesPorPago['Crédito']) corteItems.push(['Crédito', mxn(totalesPorPago['Crédito'])])
-  corteItems.push(['Comisiones', mxn(corteComis), '#B08AC7'])
-  if (corteDesc > 0) corteItems.push(['Descuentos', mxn(corteDesc)])
-  if (corteAnticipos > 0) corteItems.push(['Anticipos', mxn(corteAnticipos)])
+  if (totalesPorPago['Transferencia']) corteXPago.push(['Transferencia', mxn(totalesPorPago['Transferencia'])])
+  if (totalesPorPago['Crédito']) corteXPago.push(['Crédito', mxn(totalesPorPago['Crédito'])])
+
+  // Parte 2: por tipo de venta (servicio / producto / adicional).
+  const TIPOS_VENTA: { tipo: LineaVenta['tipo']; label: string; color: string }[] = [
+    { tipo: 'servicio', label: 'Servicios', color: 'var(--gold)' },
+    { tipo: 'producto', label: 'Productos', color: 'var(--st-conf)' },
+    { tipo: 'adicional', label: 'Adicionales', color: '#6FA6B8' },
+  ]
+  const corteXTipo = TIPOS_VENTA
+    .map(t => ({ ...t, total: lista.reduce((s, v) => s + v.lineas.filter(l => l.tipo === t.tipo).reduce((s2, l) => s2 + totalLinea(l), 0), 0) }))
+    .filter(t => t.total > 0)
+
+  // Parte 3: por estilista — quién generó qué del periodo mostrado.
+  const comisionLinea = (l: LineaVenta) =>
+    l.comMonto != null ? Math.round(l.comMonto * l.cant) : Math.round(totalLinea(l) * (l.com || 0) / 100)
+  const corteXEstilista = (() => {
+    const acc = new Map<string, { total: number; comision: number; tickets: Set<string> }>()
+    lista.forEach(v => v.lineas.forEach(l => {
+      if (!l.est) return
+      const cur = acc.get(l.est) || { total: 0, comision: 0, tickets: new Set<string>() }
+      cur.total += totalLinea(l)
+      cur.comision += comisionLinea(l)
+      cur.tickets.add(v.id)
+      acc.set(l.est, cur)
+    }))
+    return [...acc.entries()]
+      .map(([estId, v]) => ({ est: data.estilistas.find(e => e.id === estId), ...v }))
+      .filter((x): x is typeof x & { est: NonNullable<typeof x.est> } => !!x.est)
+      .sort((a, b) => b.total - a.total)
+  })()
 
   const registrarVenta = async (venta: Venta) => {
     try {
@@ -678,15 +721,71 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
               <button className="btn ghost sm" onClick={imprimirCorte} title="Imprimir el corte"><Ic n="printer" />Imprimir</button>
             </div>
           </div>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-            {corteItems.map(([label, val, color]) => (
-              <div key={label} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px' }}>
-                <div className="dim" style={{ fontSize: 11 }}>{label}</div>
-                <div className="num" style={{ fontWeight: 700, fontSize: 15, color: color || 'var(--text)', marginTop: 2 }}>{val}</div>
+          {lista.length === 0 ? (
+            <div className="dim" style={{ fontSize: 12.5 }}>Sin ventas en este periodo.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {/* Resumen */}
+              <div>
+                <div className="dim" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Resumen</div>
+                <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+                  {corteResumen.map(([label, val, color]) => (
+                    <div key={label} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px' }}>
+                      <div className="dim" style={{ fontSize: 11 }}>{label}</div>
+                      <div className="num" style={{ fontWeight: 700, fontSize: 15, color: color || 'var(--text)', marginTop: 2 }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-          {lista.length === 0 && <div className="dim" style={{ fontSize: 12.5, marginTop: 12 }}>Sin ventas en este periodo.</div>}
+
+              {/* Por método de pago */}
+              <div>
+                <div className="dim" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Por método de pago</div>
+                <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+                  {corteXPago.map(([label, val, color]) => (
+                    <div key={label} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px' }}>
+                      <div className="dim" style={{ fontSize: 11 }}>{label}</div>
+                      <div className="num" style={{ fontWeight: 700, fontSize: 15, color: color || 'var(--text)', marginTop: 2 }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Por tipo de venta */}
+              {corteXTipo.length > 0 && (
+                <div>
+                  <div className="dim" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Por tipo de venta</div>
+                  <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+                    {corteXTipo.map(t => (
+                      <div key={t.tipo} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px' }}>
+                        <div className="dim" style={{ fontSize: 11 }}>{t.label}</div>
+                        <div className="num" style={{ fontWeight: 700, fontSize: 15, color: t.color, marginTop: 2 }}>{mxn(t.total)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Por estilista */}
+              {corteXEstilista.length > 0 && (
+                <div>
+                  <div className="dim" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Por estilista</div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {corteXEstilista.map(e => (
+                      <div key={e.est.id} className="list-item" style={{ padding: '10px 0' }}>
+                        <Avatar ini={e.est.ini} size="sm" />
+                        <div className="f1" style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5 }}>{e.est.nombre}</div>
+                          <div className="dim" style={{ fontSize: 11.5, marginTop: 2 }}>{e.tickets.size} ticket{e.tickets.size !== 1 ? 's' : ''} · comisión {mxn(e.comision)}</div>
+                        </div>
+                        <div className="num gold-text" style={{ fontWeight: 700, fontSize: 14 }}>{mxn(e.total)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
