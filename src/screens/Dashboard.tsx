@@ -43,7 +43,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   // — Ventas —
   const todayStr = hoy.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
   const ventasHoy = data.ventas.filter(v => v.fecha.startsWith(todayStr))
-  const totalHoy = ventasHoy.reduce((s, v) => s + ventaCalc.total(v), 0)
+  const totalHoy = ventasHoy.reduce((s, v) => s + ventaCalc.cobrado(v), 0)
 
   // Últimos 7 días reales
   const semanaData = useMemo(() => Array.from({ length: 7 }, (_, i) => {
@@ -51,7 +51,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
     const dStr = d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
     const total = data.ventas
       .filter(v => v.fecha.toLowerCase().startsWith(dStr.toLowerCase()))
-      .reduce((s, v) => s + ventaCalc.total(v), 0)
+      .reduce((s, v) => s + ventaCalc.cobrado(v), 0)
     return { d: DIAS_SHORT_ES[d.getDay()], v: total }
   }), [data.ventas, hoy.toDateString()])
 
@@ -59,7 +59,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   // total de periodo — es información operativa, no un reporte financiero).
   const mesActualStr = MESES_SHORT[hoy.getMonth()].toLowerCase()
   const ventasMesArr = data.ventas.filter(v => v.fecha.toLowerCase().includes(mesActualStr))
-  const totalMes = ventasMesArr.reduce((s, v) => s + ventaCalc.total(v), 0)
+  const totalMes = ventasMesArr.reduce((s, v) => s + ventaCalc.cobrado(v), 0)
   const ticketProm = ventasMesArr.length ? Math.round(totalMes / ventasMesArr.length) : 0
 
   // Citas de hoy por estilista — vista operativa del día.

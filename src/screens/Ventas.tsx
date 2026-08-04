@@ -229,11 +229,7 @@ function CierreCajaModal({ onClose, ventas, pendientes, usuarioNombre, usuarioId
   // Saldos de citas/ventas creadas en otro día pero cobrados hoy — se cuentan aparte para no duplicar.
   const saldosHoy = ventas.filter(v => esMismaFecha(v.saldoCobradoEn, hoy) && !v.fecha.startsWith(todayStr))
 
-  const montoRecibidoAlCrear = (v: Venta) => {
-    if (v.estado === 'pagada') return totalVenta(v)
-    if (v.estado === 'parcial' || v.estado === 'apartado') return v.anticipo || 0
-    return 0
-  }
+  const montoRecibidoAlCrear = ventaCalc.cobrado
 
   const porMetodo: Record<string, number> = { efectivo: 0, transferencia: 0, tarjeta: 0 }
   const sumar = (metodo: string, monto: number) => {
@@ -413,7 +409,10 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const todayStr = hoyDate.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })   // para el cierre de caja del día
 
   const hoyVentas = ventas.filter(v => esMismoDia(ventaTS(v), hoyDate))
-  const totalHoy = hoyVentas.reduce((s, v) => s + totalVenta(v), 0)
+  // "Ventas de hoy" es dinero realmente cobrado, no lo facturado: un ticket
+  // 'pendiente' o el saldo sin cobrar de un 'apartado'/'parcial' no cuenta
+  // como venta del día hasta que de verdad se recibe.
+  const totalHoy = hoyVentas.reduce((s, v) => s + ventaCalc.cobrado(v), 0)
   const ticketProm = hoyVentas.length ? Math.round(totalHoy / hoyVentas.length) : 0
   const comisionesHoy = hoyVentas.reduce((s, v) => s + comisionVenta(v), 0)
   const pendientes = ventas.filter(v => v.estado === 'parcial' || v.estado === 'pendiente')
