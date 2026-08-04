@@ -508,10 +508,14 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     const fila = ([l, v]: [string, string, string?]) => `<div class="r"><span>${l}</span><span>${v}</span></div>`
     const seccion = (titulo: string, items: [string, string, string?][]) =>
       items.length ? `<div class="s">${titulo}</div>${items.map(fila).join('')}` : ''
+    const itemsPorTipo = corteXTipo.flatMap(t => [
+      [t.label.toUpperCase(), mxn(t.total)] as [string, string],
+      ...t.items.map(i => [`  ${i.nombre}${i.cant > 1 ? ` ×${i.cant}` : ''}`, mxn(i.total)] as [string, string]),
+    ])
     const rows = [
       seccion('Resumen', corteResumen),
       seccion('Por método de pago', corteXPago),
-      seccion('Por tipo de venta', corteXTipo.map(t => [t.label, mxn(t.total)] as [string, string])),
+      seccion('Por tipo de venta', itemsPorTipo),
       seccion('Por estilista', corteXEstilista.map(e => [e.est.nombre, mxn(e.total)] as [string, string])),
     ].join('')
     const html = `<html><head><meta charset="utf-8"><style>
@@ -555,8 +559,22 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     { tipo: 'producto', label: 'Productos', color: 'var(--st-conf)' },
     { tipo: 'adicional', label: 'Adicionales', color: '#6FA6B8' },
   ]
+  // Cada línea con el mismo nombre dentro de un tipo se acumula en un solo
+  // renglón (cantidad y total sumados) — así "Corte de dama ×5" se ve junto
+  // en vez de repetido una vez por ticket.
+  const itemsDe = (tipo: LineaVenta['tipo']) => {
+    const acc = new Map<string, { nombre: string; cant: number; total: number }>()
+    lista.forEach(v => v.lineas.filter(l => l.tipo === tipo).forEach(l => {
+      const cur = acc.get(l.nombre) || { nombre: l.nombre, cant: 0, total: 0 }
+      cur.cant += l.cant
+      cur.total += totalLinea(l)
+      acc.set(l.nombre, cur)
+    }))
+    return [...acc.values()].sort((a, b) => b.total - a.total)
+  }
   const corteXTipo = TIPOS_VENTA
-    .map(t => ({ ...t, total: lista.reduce((s, v) => s + v.lineas.filter(l => l.tipo === t.tipo).reduce((s2, l) => s2 + totalLinea(l), 0), 0) }))
+    .map(t => ({ ...t, items: itemsDe(t.tipo), total: 0 }))
+    .map(t => ({ ...t, total: t.items.reduce((s, i) => s + i.total, 0) }))
     .filter(t => t.total > 0)
 
   // Parte 3: por estilista — quién generó qué del periodo mostrado.
@@ -751,18 +769,38 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                 </div>
               </div>
 
-              {/* Por tipo de venta */}
+              {/* Por tipo de venta — con el detalle de cada servicio/producto
+                  que acumula ese total, no solo el número redondo. */}
               {corteXTipo.length > 0 && (
-                <div>
-                  <div className="dim" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Por tipo de venta</div>
-                  <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-                    {corteXTipo.map(t => (
-                      <div key={t.tipo} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px' }}>
-                        <div className="dim" style={{ fontSize: 11 }}>{t.label}</div>
-                        <div className="num" style={{ fontWeight: 700, fontSize: 15, color: t.color, marginTop: 2 }}>{mxn(t.total)}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div className="dim" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em' }}>Por tipo de venta</div>
+                  {corteXTipo.map(t => (
+                    <div key={t.tipo} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '12px 14px' }}>
+                      <div className="between" style={{ marginBottom: 10 }}>
+                        <span className="vc gap8" style={{ fontWeight: 600, fontSize: 13.5 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.color, flexShrink: 0 }} />
+                          {t.label}
+                          <span className="dim" style={{ fontWeight: 400, fontSize: 11.5 }}>· {t.items.length} artículo{t.items.length !== 1 ? 's' : ''}</span>
+                        </span>
+                        <span className="num" style={{ fontWeight: 700, fontSize: 15, color: t.color }}>{mxn(t.total)}</span>
                       </div>
-                    ))}
-                  </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {t.items.map(item => (
+                          <div key={item.nombre}>
+                            <div className="between" style={{ fontSize: 12.5 }}>
+                              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.nombre}{item.cant > 1 && <span className="dim"> ×{item.cant}</span>}
+                              </span>
+                              <span className="num" style={{ fontWeight: 600, flexShrink: 0, marginLeft: 10 }}>{mxn(item.total)}</span>
+                            </div>
+                            <div style={{ height: 3, borderRadius: 2, background: 'var(--line-soft)', marginTop: 4, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${Math.round((item.total / t.total) * 100)}%`, background: t.color }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
