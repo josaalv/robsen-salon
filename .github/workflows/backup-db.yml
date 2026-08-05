@@ -17,7 +17,11 @@ jobs:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
-            echo "::error::Falta el secret SUPABASE_DB_URL. Agrégalo en GitHub → Settings → Secrets and variables → Actions, con la connection string de Supabase (Dashboard → Project Settings → Database → Connection string → modo 'Session pooler')."
+            echo "::error::Falta el secret SUPABASE_DB_URL. Agrégalo en GitHub → Settings → Secrets and variables → Actions, con la connection string de Supabase (botón 'Connect' en la parte superior del dashboard → modo 'Session pooler')."
+            exit 1
+          fi
+          if ! echo "$DATABASE_URL" | grep -qE '^postgresql://[^]:@/[:space:][]+:[^]:@/[:space:][]+@[^]:@/[:space:][]+:[0-9]+/[^]:@/[:space:][]+$'; then
+            echo "::error::SUPABASE_DB_URL tiene un formato inválido (no se muestra el valor por seguridad). Causas típicas: quedó el placeholder [YOUR-PASSWORD] sin reemplazar, la contraseña se escribió encima del puerto 5432 en vez de encima del placeholder, o la contraseña contiene un caracter ':' '@' o '/' sin codificar. Vuelve a copiar la connection string completa desde el botón 'Connect' del dashboard de Supabase y reemplaza únicamente el texto [YOUR-PASSWORD]."
             exit 1
           fi
           mkdir -p backups
