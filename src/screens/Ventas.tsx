@@ -614,8 +614,6 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     return [s && `${s} servicio${s > 1 ? 's' : ''}`, p && `${p} producto${p > 1 ? 's' : ''}`, a && `${a} extra${a > 1 ? 's' : ''}`].filter(Boolean).join(' · ')
   }
 
-  const nextTicket = '#' + (1000 + ventas.length + 1)
-
   return (
     <div>
       <div className="between" style={{ marginBottom: 22 }}>
@@ -934,7 +932,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
         <Pager page={Math.min(page, totalPages)} totalPages={totalPages} onPage={setPage} />
       </div>
 
-      {pos && <POSBuilder onClose={() => setPos(false)} onConfirm={registrarVenta} nextTicket={nextTicket} />}
+      {pos && <POSBuilder onClose={() => setPos(false)} onConfirm={registrarVenta} />}
       {detalle && <VentaDetalle v={detalle} onClose={() => setDetalle(null)} />}
       {confirmDel && (
         <ConfirmModal

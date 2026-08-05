@@ -3,7 +3,24 @@ import { persist } from 'zustand/middleware'
 import { defaultData } from './mockData'
 import { db } from '../lib/db'
 import { toast } from '../components/ui'
+import { enqueue, classifyError, getProtectedIds, subscribeOutbox, discardOutboxItem } from '../lib/outbox'
+
+// El número de ticket real lo asigna el servidor (secuencia
+// ventas_ticket_seq dentro de crear_venta_con_lineas) — nunca se calcula del
+// lado del cliente, para no repetir el mismo número en dos dispositivos.
+export const TICKET_PENDIENTE = 'Pendiente'
 import type { RBData, Cita, Clienta, Servicio, Producto, Venta, LineaVenta, Estilista, Movimiento, Transaccion, SalonConfig, Usuario, Plantilla, Bloqueo, Gasto } from '../types'
+
+// Preserva del reemplazo del servidor cualquier registro que la cola de
+// sincronización todavía tenga pendiente (o en conflicto) — si no,
+// loadFromSupabase borraría de la vista una cita/clienta/venta creada
+// offline que aún no existe (o quedó rechazada) del lado del servidor.
+function mergeProtected<T extends { id: string }>(serverList: T[], localList: T[], protectedIds: Set<string>): T[] {
+  if (protectedIds.size === 0) return serverList
+  const kept = localList.filter(r => protectedIds.has(r.id))
+  const keptIds = new Set(kept.map(r => r.id))
+  return [...serverList.filter(r => !keptIds.has(r.id)), ...kept]
+}
 
 const STORAGE_KEY = 'rb_data_v3'
 
@@ -81,23 +98,37 @@ export const useStore = create<Store>()(
             return true
           }
 
-          // Supabase tiene datos — es la fuente de verdad
+          // Supabase tiene datos — es la fuente de verdad, EXCEPTO para lo
+          // que la cola de sincronización todavía tiene pendiente o en
+          // conflicto: eso no se reemplaza a ciegas, o desaparecería de la
+          // vista una cita/clienta/venta creada offline que aún no llegó
+          // (o no pudo llegar) al servidor.
+          const [citaIds, clientaIds, ventaIds] = await Promise.all([
+            getProtectedIds('cita'),
+            getProtectedIds('clienta'),
+            getProtectedIds('venta'),
+          ])
           set(s => ({
             data: {
               ...s.data,
               ...(result.config ? { config: result.config } : {}),
               estilistas:   result.estilistas,
               servicios:    result.servicios,
-              clientas:     result.clientas,
-              ventas:       result.ventas,
+              clientas:     mergeProtected(result.clientas, s.data.clientas, clientaIds),
+              ventas:       mergeProtected(result.ventas, s.data.ventas, ventaIds),
               productos:    result.productos,
               plantillas:   result.plantillas,
               usuarios:     result.usuarios,
               movimientos:  result.movimientos,
               bloqueos:     result.bloqueos,
               gastos:       result.gastos,
-              hoy:          result.citas.hoy,
-              citasFuturas: result.citas.futuras,
+              hoy:          mergeProtected(result.citas.hoy, s.data.hoy, citaIds)
+                              .sort((a, b) => a.h.localeCompare(b.h)),
+              citasFuturas: mergeProtected(result.citas.futuras, s.data.citasFuturas || [], citaIds)
+                              .sort((a, b) => {
+                                const fd = (a.fecha || '').localeCompare(b.fecha || '')
+                                return fd !== 0 ? fd : a.h.localeCompare(b.h)
+                              }),
             }
           }))
           return true
@@ -133,7 +164,17 @@ export const useStore = create<Store>()(
         })
         try {
           await db.upsertCita(merged!)
+          // Si este id venía de un conflicto ya resuelto a mano (reagendado y
+          // guardado con éxito), no debe quedar un renglón viejo en la cola.
+          void discardOutboxItem(merged!.id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            // Sin conexión (o sesión por refrescar): se queda en la cola
+            // local, la vista optimista se mantiene, se sincroniza sola.
+            await enqueue('cita', 'upsert', merged!.id, merged!)
+            toast('Guardado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, hoy: previous } }))
           throw err
         }
@@ -144,7 +185,13 @@ export const useStore = create<Store>()(
         set(s => ({ data: { ...s.data, hoy: s.data.hoy.filter(c => c.id !== id) } }))
         try {
           await db.deleteCita(id)
+          void discardOutboxItem(id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            await enqueue('cita', 'delete', id, { id })
+            toast('Eliminado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, hoy: previous } }))
           throw err
         }
@@ -167,7 +214,13 @@ export const useStore = create<Store>()(
         })
         try {
           await db.upsertCita(merged!)
+          void discardOutboxItem(merged!.id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            await enqueue('cita', 'upsert', merged!.id, merged!)
+            toast('Guardado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, citasFuturas: previous } }))
           throw err
         }
@@ -178,7 +231,13 @@ export const useStore = create<Store>()(
         set(s => ({ data: { ...s.data, citasFuturas: (s.data.citasFuturas || []).filter(c => c.id !== id) } }))
         try {
           await db.deleteCita(id)
+          void discardOutboxItem(id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            await enqueue('cita', 'delete', id, { id })
+            toast('Eliminado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, citasFuturas: previous } }))
           throw err
         }
@@ -198,7 +257,13 @@ export const useStore = create<Store>()(
         })
         try {
           await db.upsertClienta(merged!)
+          void discardOutboxItem(merged!.id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            await enqueue('clienta', 'upsert', merged!.id, merged!)
+            toast('Guardado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, clientas: previous } }))
           throw err
         }
@@ -209,7 +274,13 @@ export const useStore = create<Store>()(
         set(s => ({ data: { ...s.data, clientas: s.data.clientas.filter(c => c.id !== id) } }))
         try {
           await db.deleteClienta(id)
+          void discardOutboxItem(id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            await enqueue('clienta', 'delete', id, { id })
+            toast('Eliminado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, clientas: previous } }))
           throw err
         }
@@ -389,7 +460,20 @@ export const useStore = create<Store>()(
         // estadísticas de clienta sí quedan fuera de esa transacción.
         try {
           await db.addVenta(v)
+          void discardOutboxItem(v.id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            // Sin conexión: la venta se queda encolada con el ticket
+            // provisional que ya trae — al sincronizar, el motor de cola
+            // reemplaza el ticket por el real que asigna el servidor.
+            await enqueue('venta', 'upsert', v.id, v)
+            if (syncClienta) {
+              try { await enqueue('clienta', 'upsert', syncClienta.id, syncClienta) }
+              catch (e) { console.error('[addVenta:syncClienta:enqueue]', e) }
+            }
+            toast('Venta guardada localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, ...previous } }))
           throw err
         }
@@ -408,7 +492,13 @@ export const useStore = create<Store>()(
         set(s => ({ data: { ...s.data, ventas: s.data.ventas.map(v => v.id === id ? { ...v, ...patch } : v) } }))
         try {
           await db.updateVenta(id, patch)
+          void discardOutboxItem(id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            await enqueue('venta', 'update', id, { patch })
+            toast('Guardado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, ventas: previous } }))
           throw err
         }
@@ -456,7 +546,17 @@ export const useStore = create<Store>()(
 
         try {
           await db.deleteVenta(id)
+          void discardOutboxItem(id)
         } catch (err) {
+          if (classifyError(err).kind !== 'conflict') {
+            await enqueue('venta', 'delete', id, { id })
+            if (syncClienta) {
+              try { await enqueue('clienta', 'upsert', syncClienta.id, syncClienta) }
+              catch (e) { console.error('[deleteVenta:syncClienta:enqueue]', e) }
+            }
+            toast('Eliminado localmente — se sincronizará cuando vuelva la conexión')
+            return
+          }
           set(s => ({ data: { ...s.data, ...previous } }))
           throw err
         }
@@ -568,6 +668,15 @@ export const useStore = create<Store>()(
       },
 
       ajustarStock: async (productoId, cant, motivo) => {
+        // A diferencia de la venta (que descuenta stock de forma relativa y
+        // atómica en el servidor), este ajuste manual escribe un valor
+        // ABSOLUTO calculado en el cliente — reproducirlo offline podría
+        // machacar un cambio de otro dispositivo que sí sincronizó mientras
+        // tanto. Se mantiene "requiere conexión" a propósito.
+        if (!navigator.onLine) {
+          toast('El ajuste manual de stock necesita conexión — inténtalo cuando vuelva el internet')
+          return
+        }
         let syncProd: Producto | null = null
         const syncMov: Movimiento[] = []
         const previous = {
@@ -610,7 +719,10 @@ export const useStore = create<Store>()(
         const { data, addVenta } = get()
         const prod = data.productos.find(p => p.id === productoId)
         if (!prod || prod.stock < cant) { toast('Stock insuficiente'); return }
-        const ticket = '#' + (1000 + data.ventas.length + 1)
+        // El ticket real lo asigna el servidor (secuencia ventas_ticket_seq,
+        // ver crear_venta_con_lineas) — placeholder hasta que addVenta
+        // confirme o hasta que el motor de cola sincronice si fue offline.
+        const ticket = TICKET_PENDIENTE
         const clienteEncontrado = clienta ? data.clientas.find(c => c.nombre === clienta) : null
         const com = (data.config.comisiones as Record<string, number>)['_producto'] ?? 10
         const venta: Venta = {
@@ -630,3 +742,15 @@ export const useStore = create<Store>()(
     }
   )
 )
+
+// Cuando el motor de cola sincroniza una venta que se creó offline (ticket
+// TICKET_PENDIENTE), db.addVenta devuelve la venta real con el ticket que le
+// asignó el servidor — se reemplaza aquí la versión optimista por esa.
+subscribeOutbox(e => {
+  if (e.type === 'synced' && e.entityType === 'venta' && e.result) {
+    const synced = e.result as Venta
+    useStore.setState(s => ({
+      data: { ...s.data, ventas: s.data.ventas.map(v => v.id === e.id ? synced : v) },
+    }))
+  }
+})

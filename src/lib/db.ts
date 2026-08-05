@@ -325,7 +325,7 @@ export const db = {
   async deleteClienta(id: string) {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('clientas').delete().eq('id', id)
-    if (error) { console.error('[db.deleteClienta]', error.message); throw new Error(error.message) }
+    if (error) { console.error('[db.deleteClienta]', error.message); throw error }
   },
 
   // — Citas —
@@ -352,16 +352,16 @@ export const db = {
     // valida el INSERT aunque la fila ya exista). Si la fila no existe todavía
     // (cita nueva, que crea gestión), caemos a INSERT.
     const { data, error } = await supabase.from('citas').update(row).eq('id', c.id).select('id')
-    if (error) { console.error('[db.upsertCita:update]', error.message); throw new Error(error.message) }
+    if (error) { console.error('[db.upsertCita:update]', error.message); throw error }
     if (!data || data.length === 0) {
       const { error: insErr } = await supabase.from('citas').insert(row)
-      if (insErr) { console.error('[db.upsertCita:insert]', insErr.message); throw new Error(insErr.message) }
+      if (insErr) { console.error('[db.upsertCita:insert]', insErr.message); throw insErr }
     }
   },
   async deleteCita(id: string) {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     const { error } = await supabase.from('citas').delete().eq('id', id)
-    if (error) { console.error('[db.deleteCita]', error.message); throw new Error(error.message) }
+    if (error) { console.error('[db.deleteCita]', error.message); throw error }
   },
 
   // — Ventas —
@@ -392,7 +392,7 @@ export const db = {
         com_monto: l.comMonto ?? null,
       })),
     })
-    if (error) { console.error('[db.addVenta]', error.message); throw new Error(error.message) }
+    if (error) { console.error('[db.addVenta]', error.message); throw error }
     return mapVenta(data.venta, data.lineas)
   },
   async updateVenta(id: string, patch: Partial<Venta>) {
@@ -422,7 +422,7 @@ export const db = {
     // movimiento inverso (ver eliminar_venta en 031_eliminar_venta.sql).
     // lineas_venta cae por ON DELETE CASCADE dentro de la función.
     const { error } = await supabase.rpc('eliminar_venta', { p_venta_id: id })
-    if (error) { console.error('[db.deleteVenta]', error.message); throw new Error(error.message) }
+    if (error) { console.error('[db.deleteVenta]', error.message); throw error }
   },
 
   // — Productos —
@@ -530,10 +530,15 @@ export const db = {
     if (error) console.error('[db.getUsuarioById]', error.message)
     return data ? mapUsuario(data) : null
   },
+  // Nota: a diferencia de otros getters de este archivo, aquí SÍ se relanza
+  // el error (en vez de tragárselo y devolver null) — el login offline
+  // necesita distinguir "sin perfil / cuenta desactivada" (null real, sin
+  // error) de "no se pudo verificar por falta de red" (error), para no
+  // cerrar sesión y borrar cachés locales solo porque no hay conexión.
   async getUsuarioByAuthId(authUserId: string): Promise<Usuario | null> {
     if (!supabase) return null
     const { data, error } = await supabase.from('usuarios').select('*').eq('auth_user_id', authUserId).maybeSingle()
-    if (error) console.error('[db.getUsuarioByAuthId]', error.message)
+    if (error) { console.error('[db.getUsuarioByAuthId]', error.message); throw new Error(error.message) }
     return data ? mapUsuario(data) : null
   },
   async upsertUsuario(u: Usuario): Promise<Usuario> {

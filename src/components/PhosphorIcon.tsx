@@ -152,6 +152,8 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   'download-simple': Ph.DownloadSimple,
   'caret-up': Ph.CaretUp,
   'caret-down': Ph.CaretDown,
+  'wifi-slash': Ph.WifiSlash,
+  'user-check': Ph.UserCheck,
 }
 
 interface IconProps {

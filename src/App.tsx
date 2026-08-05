@@ -7,6 +7,7 @@ import { db } from './lib/db'
 import { usuarios, roles } from './data/mockData'
 import { rolPuede } from './lib/helpers'
 import { hasSupabase } from './lib/supabase'
+import { startSyncEngine, subscribeOutbox } from './lib/outbox'
 import type { NavGroup } from './types'
 
 class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
@@ -42,8 +43,9 @@ const NAV: NavGroup[] = [
     { id:'whatsapp',  label:'Seguimiento',          icon:'whatsapp-logo',        title:'Seguimiento',           sub:'Mensajes y recordatorios' },
   ]},
   { grupo: 'Sistema', items: [
-    { id:'ajustes',   label:'Ajustes',              icon:'gear-six',             title:'Ajustes',               sub:'Configuración y permisos' },
-    { id:'booking',   label:'Agendamiento en línea',icon:'calendar-plus',        title:'',                      sub:'' },
+    { id:'ajustes',    label:'Ajustes',              icon:'gear-six',             title:'Ajustes',               sub:'Configuración y permisos' },
+    { id:'conflictos', label:'Conflictos',           icon:'warning-circle',       title:'Conflictos de sincronización', sub:'Cambios sin conexión que no se sincronizaron solos' },
+    { id:'booking',    label:'Agendamiento en línea',icon:'calendar-plus',        title:'',                      sub:'' },
   ]},
 ]
 const ALL = NAV.flatMap(g => g.items)
@@ -76,6 +78,29 @@ function AppShell() {
     cargar()
     const id = setInterval(cargar, 60000)
     return () => clearInterval(id)
+  }, [])
+
+  // Estado de conexión + cola de sincronización offline: online/offline real
+  // (evento del navegador, con navigator.onLine como estado inicial),
+  // cuántos cambios siguen pendientes de subir y cuántos quedaron en
+  // conflicto (necesitan resolverse a mano en Conflictos).
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [outboxPending, setOutboxPending] = useState(0)
+  const [outboxConflict, setOutboxConflict] = useState(0)
+  useEffect(() => {
+    startSyncEngine()
+    const onOnline = () => setIsOnline(true)
+    const onOffline = () => setIsOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    const unsub = subscribeOutbox(e => {
+      if (e.type === 'counts') { setOutboxPending(e.pending); setOutboxConflict(e.conflict) }
+    })
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+      unsub()
+    }
   }, [])
 
   // Sincronizar desde Supabase al iniciar
@@ -166,6 +191,7 @@ function AppShell() {
           case 'finanzas':  mod = await import('./screens/Finanzas');  setScreen(() => mod.ScreenFinanzas);  break
           case 'whatsapp':  mod = await import('./screens/whatsapp'); setScreen(() => mod.ScreenWhatsApp);  break
           case 'ajustes':   mod = await import('./screens/Ajustes');   setScreen(() => mod.ScreenAjustes);   break
+          case 'conflictos': mod = await import('./screens/ConflictosInbox'); setScreen(() => mod.ScreenConflictosInbox); break
           case 'booking':   mod = await import('./screens/Booking');   setScreen(() => mod.ScreenBooking);   break
           default: setScreen(null)
         }
@@ -220,7 +246,7 @@ function AppShell() {
               <React.Fragment key={g.grupo}>
                 <div className="nav-label">{g.grupo}</div>
                 {items.map(it => {
-                  const badge = it.id === 'whatsapp' ? waPend : it.badge
+                  const badge = it.id === 'whatsapp' ? waPend : it.id === 'conflictos' ? outboxConflict : it.badge
                   return (
                     <div key={it.id} className={'nav-item' + (effRoute === it.id ? ' active' : '')} onClick={() => setRoute(it.id)}>
                       <Ic n={it.icon} />{it.label}
@@ -267,7 +293,19 @@ function AppShell() {
             <div className="page-sub">{meta.sub}</div>
           </div>
           <div className="spacer" />
-          {syncing && (
+          {!isOnline ? (
+            <div className="vc gap6" style={{ fontSize: 11.5, color: 'var(--st-canc)', padding: '0 8px' }} title={outboxPending > 0 ? `${outboxPending} cambio${outboxPending !== 1 ? 's' : ''} guardado${outboxPending !== 1 ? 's' : ''} localmente, en espera de conexión` : 'Sin conexión'}>
+              <Ic n="wifi-slash" size={14} />
+              Sin conexión{outboxPending > 0 ? ` · ${outboxPending} pendiente${outboxPending !== 1 ? 's' : ''}` : ''}
+            </div>
+          ) : outboxPending > 0 ? (
+            <div className="vc gap6" style={{ fontSize: 11.5, color: 'var(--text-3)', padding: '0 8px' }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: 'spin 1s linear infinite' }}>
+                <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="22 8" />
+              </svg>
+              Sincronizando {outboxPending} pendiente{outboxPending !== 1 ? 's' : ''}…
+            </div>
+          ) : syncing && (
             <div className="vc gap6" style={{ fontSize: 11.5, color: 'var(--text-3)', padding: '0 8px' }}>
               <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: 'spin 1s linear infinite' }}>
                 <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="22 8" />

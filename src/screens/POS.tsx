@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, Seg, toast, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
-import { useStore } from '../data/store'
+import { useStore, TICKET_PENDIENTE } from '../data/store'
 import { mxn, mxn0, resolverComision, normalizarTel, formatTel } from '../lib/helpers'
 import type { Venta, Cita, Producto } from '../types'
 
@@ -50,10 +50,9 @@ const comLinea = (servicioId: string, est: string | null, estilistas: Parameters
   return r.tipo === 'monto' ? { com: 0, comMonto: r.monto } : { com: r.pct, comMonto: undefined }
 }
 
-export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
+export function POSBuilder({ onClose, onConfirm, citaOrigen }: {
   onClose: () => void
   onConfirm: (v: Venta) => Promise<void>
-  nextTicket?: string
   citaOrigen?: Cita
 }) {
   const { data } = useStore()
@@ -108,7 +107,10 @@ export function POSBuilder({ onClose, onConfirm, nextTicket, citaOrigen }: {
     ;[DRAFT_KEY + '_cart', DRAFT_KEY + '_cliente', DRAFT_KEY + '_desc', DRAFT_KEY + '_anticipo'].forEach(k => localStorage.removeItem(k))
   }
 
-  const ticket = nextTicket || ('#' + (1043 + data.ventas.length))
+  // El ticket real lo asigna el servidor (secuencia ventas_ticket_seq, ver
+  // crear_venta_con_lineas) — nunca se calcula aquí, para que dos
+  // dispositivos offline nunca puedan generar el mismo número.
+  const ticket = TICKET_PENDIENTE
   const comisiones = data.config?.comisiones || {}
   const metodosPago = data.config?.metodospago
   const pagoOpts = [

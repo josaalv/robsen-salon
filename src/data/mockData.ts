@@ -140,9 +140,9 @@ export const modulos: Modulo[] = [
 
 export const roles: Record<string, Rol> = {
   admin:     { id:'admin',     nombre:'Administrador', desc:'Acceso total al sistema',         allow:'*' },
-  gerente:   { id:'gerente',   nombre:'Gerente',       desc:'Operación, finanzas y equipo',     allow:['dashboard','agenda','ventas','crm','servicios','productos','empleados','finanzas','whatsapp','ajustes'] },
-  recepcion: { id:'recepcion', nombre:'Recepción',     desc:'Ventas, agenda y clientas',        allow:['dashboard','agenda','ventas','crm','servicios','productos','whatsapp','booking','ajustes'] },
-  estilista: { id:'estilista', nombre:'Estilista',     desc:'Tu agenda, clientas y comisiones', allow:['dashboard','agenda','ventas','crm','ajustes'] },
+  gerente:   { id:'gerente',   nombre:'Gerente',       desc:'Operación, finanzas y equipo',     allow:['dashboard','agenda','ventas','crm','servicios','productos','empleados','finanzas','whatsapp','ajustes','conflictos'] },
+  recepcion: { id:'recepcion', nombre:'Recepción',     desc:'Ventas, agenda y clientas',        allow:['dashboard','agenda','ventas','crm','servicios','productos','whatsapp','booking','ajustes','conflictos'] },
+  estilista: { id:'estilista', nombre:'Estilista',     desc:'Tu agenda, clientas y comisiones', allow:['dashboard','agenda','ventas','crm','ajustes','conflictos'] },
 }
 
 export const usuarios: Usuario[] = [

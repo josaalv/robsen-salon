@@ -24,7 +24,25 @@ function clearLocalCaches() {
     localStorage.removeItem('rb_data_v3')
     localStorage.removeItem('rb_notif_leidas')
     localStorage.removeItem('rb_wa_contactados')
+    localStorage.removeItem(CACHED_PROFILE_KEY)
   } catch { /* localStorage no disponible */ }
+}
+
+// Perfil del último login exitoso, en su propia key — separada de rb_data_v3
+// para que un corte de red al validar el perfil (no un "sin acceso" real)
+// pueda usar este respaldo en vez de tirar a la persona al login teniendo ya
+// una sesión válida guardada.
+const CACHED_PROFILE_KEY = 'rb_cached_profile'
+
+function getCachedProfile(): Usuario | null {
+  try {
+    const raw = localStorage.getItem(CACHED_PROFILE_KEY)
+    return raw ? (JSON.parse(raw) as Usuario) : null
+  } catch { return null }
+}
+
+function setCachedProfile(u: Usuario) {
+  try { localStorage.setItem(CACHED_PROFILE_KEY, JSON.stringify(u)) } catch { /* localStorage no disponible */ }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -33,9 +51,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [passwordRecovery, setPasswordRecovery] = useState(false)
 
   const loadProfile = async (authUserId: string) => {
-    const profile = await db.getUsuarioByAuthId(authUserId)
+    let profile: Usuario | null
+    try {
+      profile = await db.getUsuarioByAuthId(authUserId)
+    } catch {
+      // No se pudo verificar el perfil (sin red, no "sin acceso" real) — usar
+      // el último perfil confirmado en vez de tirar a la persona al login
+      // teniendo ya una sesión válida guardada.
+      const cached = getCachedProfile()
+      if (cached) setUser(cached)
+      return
+    }
     if (profile && profile.activo) {
       setUser(profile)
+      setCachedProfile(profile)
     } else {
       // Sin perfil vinculado o cuenta desactivada: no hay acceso operativo.
       setUser(null)

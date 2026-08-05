@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, EstadoBadge, Seg, toast, ConfirmModal, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
-import { useStore } from '../data/store'
+import { useStore, TICKET_PENDIENTE } from '../data/store'
 import { mxn, resolverComision, fechaLocalIso } from '../lib/helpers'
 import type { Cita, CitaServicio, EstadoCita, Bloqueo, Venta } from '../types'
-import { db } from '../lib/db'
 import { POSBuilder } from './POS'
 
 const PXH = 60
@@ -72,13 +71,15 @@ function citaBloques(a: Cita): CitaBloque[] {
 }
 
 // ─── Modal nueva/editar cita ────────────────────────────────────────────────
-function CitaModal({ cita, bloqueos, onClose, onSaved }: {
+// Exportado: la bandeja de conflictos (ConflictosInbox) lo reutiliza para
+// reagendar una cita que chocó con otra creada en otro dispositivo offline.
+export function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   cita: Partial<Cita>
   bloqueos: Bloqueo[]
   onClose: () => void
   onSaved: (c: Cita) => void
 }) {
-  const { data, upsertCita, upsertCitaFutura } = useStore()
+  const { data, upsertCita, upsertCitaFutura, addVenta, updateVenta } = useStore()
   const { agendaStart: S, agendaEnd: E, slotMin, diasAbiertos } = data.config
   const SLOTS = makeSlots(S, E, slotMin)
   const nuevo = !cita.id
@@ -233,15 +234,18 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
 
       // Sincronizar venta de apartado cuando hay anticipo: una línea por servicio,
       // cada una con su propio empleado (para la comisión correcta).
+      // Se busca en el store ya cargado (no con una lectura de red aparte) y se
+      // pasa por addVenta/updateVenta del store — no por db.* directo — para que
+      // esto también quede protegido por la cola de sincronización si no hay
+      // conexión (es, ni más ni menos, un pago).
       if (antFinal > 0) {
-        const existing = await db.getVentaByCitaId(id)
+        const existing = data.ventas.find(v => v.citaId === id)
         const hoy = new Date().toISOString().slice(0, 10)
-        const ticket = `APT-${id.slice(-6).toUpperCase()}`
         if (existing) {
-          await db.updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= precioTotal ? 'pagada' : 'apartado' })
+          await updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= precioTotal ? 'pagada' : 'apartado' })
         } else {
           const ventaApartado: Venta = {
-            id: 'v' + Date.now(), ticket, fecha: hoy,
+            id: 'v' + Date.now(), ticket: TICKET_PENDIENTE, fecha: hoy,
             cliente: cl.trim(), clienteId: '', pago: 'efectivo',
             estado: antFinal >= precioTotal ? 'pagada' : 'apartado',
             desc: 0, anticipo: antFinal, citaId: id,
@@ -254,7 +258,7 @@ function CitaModal({ cita, bloqueos, onClose, onSaved }: {
               }
             }),
           }
-          await db.addVenta(ventaApartado)
+          await addVenta(ventaApartado)
         }
       }
 
@@ -927,10 +931,7 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
     // precarga en el POS (venta.anticipo), así que esta venta ya representa el
     // total con el anticipo aplicado. Se elimina la de apartado para no duplicar
     // la venta ni dejar el apartado colgado como pendiente.
-    let apartadoPrevio: Venta | null = null
-    try {
-      apartadoPrevio = await db.getVentaByCitaId(cita.id)
-    } catch { /* no bloquea el cobro */ }
+    const apartadoPrevio = data.ventas.find(v => v.citaId === cita.id) || null
     try {
       await addVenta(venta)
     } catch {
