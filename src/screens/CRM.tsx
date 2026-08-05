@@ -535,16 +535,16 @@ function AntesDesTab({ c }: { c: Clienta }) {
     setUploading(true)
     try {
       const id = 'p' + Date.now()
-      const [antesPath, despuesPath] = await Promise.all([
-        antesFile ? db.uploadMediaPrivado(`${c.id}/${id}-antes`, antesFile) : Promise.resolve(null),
-        despuesFile ? db.uploadMediaPrivado(`${c.id}/${id}-despues`, despuesFile) : Promise.resolve(null),
+      const [antes, despues] = await Promise.all([
+        antesFile ? db.uploadMediaPrivado(`${c.id}/${id}-antes`, antesFile) : Promise.resolve({ path: null, error: null }),
+        despuesFile ? db.uploadMediaPrivado(`${c.id}/${id}-despues`, despuesFile) : Promise.resolve({ path: null, error: null }),
       ])
-      if (antesFile && !antesPath) { toast('Error al subir la foto de antes'); return }
-      if (despuesFile && !despuesPath) { toast('Error al subir la foto de después'); return }
+      if (antesFile && !antes.path) { toast(`No se pudo subir la foto de antes: ${antes.error || 'error desconocido'}`); return }
+      if (despuesFile && !despues.path) { toast(`No se pudo subir la foto de después: ${despues.error || 'error desconocido'}`); return }
       const entry: FotoEntry = {
         id,
-        antes: antesPath || '',
-        despues: despuesPath || '',
+        antes: antes.path || '',
+        despues: despues.path || '',
         fecha: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }),
         nota,
       }

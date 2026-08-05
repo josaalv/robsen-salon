@@ -222,11 +222,13 @@ export const db = {
   // El bucket "fotos-clientas" no es público. Se sube y se guarda solo el
   // path (no una URL), y para mostrarlas hay que pedir una URL firmada que
   // expira — nunca queda un enlace público permanente a una foto de clienta.
-  async uploadMediaPrivado(path: string, file: File): Promise<string | null> {
-    if (!supabase) return null
+  // Devuelve el motivo real del fallo (antes se perdía y solo quedaba un
+  // "no se pudo" genérico en el toast, imposible de diagnosticar después).
+  async uploadMediaPrivado(path: string, file: File): Promise<{ path: string | null; error: string | null }> {
+    if (!supabase) return { path: null, error: 'Sin conexión a Supabase.' }
     const { error } = await supabase.storage.from(BUCKET_PRIVADO).upload(path, file, { upsert: true })
-    if (error) { console.error('[storage.uploadPrivado]', path, error.message); return null }
-    return path
+    if (error) { console.error('[storage.uploadPrivado]', path, error.message); return { path: null, error: error.message } }
+    return { path, error: null }
   },
 
   async deleteMediaPrivado(paths: string[]): Promise<void> {
