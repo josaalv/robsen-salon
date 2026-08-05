@@ -459,7 +459,12 @@ export const useStore = create<Store>()(
         // falta sincronizar productos/movimientos por separado. Las
         // estadísticas de clienta sí quedan fuera de esa transacción.
         try {
-          await db.addVenta(v)
+          const synced = await db.addVenta(v)
+          // db.addVenta ya regresa la venta con el ticket real asignado por
+          // el servidor (secuencia ventas_ticket_seq) — hay que reemplazar
+          // la versión optimista (ticket "Pendiente") con esta de inmediato,
+          // no solo cuando la venta viene de la cola offline.
+          set(s => ({ data: { ...s.data, ventas: s.data.ventas.map(x => x.id === v.id ? synced : x) } }))
           void discardOutboxItem(v.id)
         } catch (err) {
           if (classifyError(err).kind !== 'conflict') {
