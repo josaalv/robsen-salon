@@ -66,6 +66,12 @@ export const descargarCSV = (nombre: string, filas: (string | number)[][]): void
   URL.revokeObjectURL(url)
 }
 
+// Quita acentos/diacríticos y pasa a minúsculas — para que buscar "Sahagon"
+// SÍ encuentre a "Sahagón" (muy común escribir rápido sin acentos, y con
+// nombres importados de bases viejas la ortografía real puede variar).
+export const normalizarBusqueda = (t: string): string =>
+  (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
 // Teléfono: acepta con o sin código de país (52) y con o sin el 1 de
 // celular (521…), siempre y cuando el número local (con lada) sean 10 dígitos.
 export const normalizarTel = (t: string): string => (t || '').replace(/\D/g, '')

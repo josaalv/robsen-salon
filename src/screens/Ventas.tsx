@@ -4,7 +4,7 @@ import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
-import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS } from '../lib/helpers'
+import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS, normalizarBusqueda } from '../lib/helpers'
 import { POSBuilder } from './POS'
 import type { Venta, CierreCaja, LineaVenta } from '../types'
 
@@ -446,7 +446,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     } else if (!periodFilter(v)) return false
     if (filtroPago !== 'Todos' && v.pago !== filtroPago &&
         !(v.pagos && v.pagos.some(p => p.metodo === filtroPago))) return false
-    if (q && !v.cliente.toLowerCase().includes(q.toLowerCase()) && !v.ticket.includes(q)) return false
+    if (q && !normalizarBusqueda(v.cliente).includes(normalizarBusqueda(q)) && !v.ticket.includes(q)) return false
     if (filtroTipo === 'Con producto') return v.lineas.some(l => l.tipo === 'producto')
     if (filtroTipo === 'Solo servicio') return v.lineas.every(l => l.tipo !== 'producto')
     if (filtroTipo === 'Con saldo') return saldo(v) > 0

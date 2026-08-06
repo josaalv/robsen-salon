@@ -5,7 +5,7 @@ import { Avatar, ToastHost, toast } from './components/ui'
 import { useStore } from './data/store'
 import { db } from './lib/db'
 import { usuarios, roles } from './data/mockData'
-import { rolPuede } from './lib/helpers'
+import { rolPuede, normalizarBusqueda } from './lib/helpers'
 import { hasSupabase } from './lib/supabase'
 import { startSyncEngine, subscribeOutbox } from './lib/outbox'
 import type { NavGroup } from './types'
@@ -156,20 +156,20 @@ function AppShell() {
 
   const searchResults = useMemo(() => {
     if (!searchQ.trim() || searchQ.length < 2) return []
-    const q = searchQ.toLowerCase()
+    const q = normalizarBusqueda(searchQ)
     const qDigits = searchQ.replace(/\D/g, '')  // para buscar por teléfono sin importar el formato
     const out: { tipo: string; label: string; sub: string; ruta: string; icon: string }[] = []
 
     data.clientas.filter(c =>
-      c.nombre.toLowerCase().includes(q) ||
+      normalizarBusqueda(c.nombre).includes(q) ||
       (qDigits.length > 0 && (c.tel || '').replace(/\D/g, '').includes(qDigits))
     ).slice(0, 3)
       .forEach(c => out.push({ tipo: 'Clienta', label: c.nombre, sub: c.tel || 'CRM', ruta: 'crm', icon: 'user' }))
 
-    data.hoy.filter(a => a.cl.toLowerCase().includes(q) || a.srv.toLowerCase().includes(q)).slice(0, 3)
+    data.hoy.filter(a => normalizarBusqueda(a.cl).includes(q) || normalizarBusqueda(a.srv).includes(q)).slice(0, 3)
       .forEach(a => out.push({ tipo: 'Cita', label: a.cl, sub: `${a.h} · ${a.srv}`, ruta: 'agenda', icon: 'calendar-blank' }))
 
-    data.ventas.filter(v => v.cliente.toLowerCase().includes(q) || v.ticket.toLowerCase().includes(q)).slice(0, 3)
+    data.ventas.filter(v => normalizarBusqueda(v.cliente).includes(q) || v.ticket.toLowerCase().includes(q)).slice(0, 3)
       .forEach(v => out.push({ tipo: 'Venta', label: `${v.ticket} · ${v.cliente}`, sub: v.fecha, ruta: 'ventas', icon: 'cash-register' }))
 
     return out.slice(0, 8)

@@ -3,7 +3,7 @@ import { Avatar, EstadoBadge, ClienteBadge, Switch, toast, ConfirmModal, useModa
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
-import { mxn, helpers, normalizarTel as normalizarTelShared, telefonoValido, telefonoError, filtrarTel, formatTel, descargarCSV } from '../lib/helpers'
+import { mxn, helpers, normalizarTel as normalizarTelShared, normalizarBusqueda, telefonoValido, telefonoError, filtrarTel, formatTel, descargarCSV } from '../lib/helpers'
 import type { Clienta, EstadoClienta, FotoEntry } from '../types'
 
 function waUrl(tel: string, msg: string): string {
@@ -918,7 +918,7 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
     const qDigits = normalizarTel(q)
     let r = data.clientas.filter(c =>
       (filtro === 'Todas' || c.estado === filtro) &&
-      (c.nombre.toLowerCase().includes(q.toLowerCase()) ||
+      (normalizarBusqueda(c.nombre).includes(normalizarBusqueda(q)) ||
         (qDigits.length > 0 && normalizarTel(c.tel).includes(qDigits)))
     )
     const { k, dir } = sort

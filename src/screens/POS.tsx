@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, Seg, toast, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore, TICKET_PENDIENTE } from '../data/store'
-import { mxn, mxn0, resolverComision, normalizarTel, formatTel } from '../lib/helpers'
+import { mxn, mxn0, resolverComision, normalizarTel, normalizarBusqueda, formatTel } from '../lib/helpers'
 import type { Venta, Cita, Producto } from '../types'
 
 // Sonido de confirmación/error para el escáner. Usa Web Audio (sin archivos):
@@ -247,12 +247,12 @@ export function POSBuilder({ onClose, onConfirm, citaOrigen }: {
 
   // Buscador de clientas por nombre o teléfono.
   const clienteResultados = (() => {
-    const term = clienteQ.trim().toLowerCase()
+    const term = normalizarBusqueda(clienteQ.trim())
     const dig = normalizarTel(clienteQ)
     const base = !term
       ? data.clientas
       : data.clientas.filter(c =>
-          c.nombre.toLowerCase().includes(term) ||
+          normalizarBusqueda(c.nombre).includes(term) ||
           (dig.length >= 3 && normalizarTel(c.tel).includes(dig)))
     return base.slice(0, 8)
   })()
