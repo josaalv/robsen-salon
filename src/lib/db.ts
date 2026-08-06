@@ -311,11 +311,25 @@ export const db = {
   },
 
   // — Clientas —
+  // PostgREST corta cualquier select('*') sin rango en 1000 filas por
+  // defecto, sin avisar — con 1300+ clientas eso significa que una parte
+  // real de la base nunca llegaba a cargar en la app (y cuál parte exacta
+  // podía variar entre cargas, porque tampoco había un orden explícito).
+  // Se pagina en bloques de 1000 hasta agotar la tabla completa.
   async getClientas(): Promise<Clienta[]> {
     if (!supabase) return []
-    const { data, error } = await supabase.from('clientas').select('*')
-    if (error) console.error('[db.getClientas]', error.message)
-    return (data ?? []).map(mapClienta)
+    const PAGE = 1000
+    let desde = 0
+    const todas: unknown[] = []
+    for (;;) {
+      const { data, error } = await supabase.from('clientas').select('*').order('id').range(desde, desde + PAGE - 1)
+      if (error) { console.error('[db.getClientas]', error.message); break }
+      if (!data || data.length === 0) break
+      todas.push(...data)
+      if (data.length < PAGE) break
+      desde += PAGE
+    }
+    return todas.map(mapClienta)
   },
   async upsertClienta(c: Clienta) {
     if (!supabase) return
