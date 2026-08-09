@@ -234,6 +234,23 @@ export const ventaCalc = {
   porTipo: (v: Venta, tipo: string) => v.lineas.filter(l => l.tipo === tipo).reduce((s, l) => s + l.precio * l.cant, 0),
 }
 
+// Traduce el error real que rechazó una venta a un mensaje que el equipo del
+// salón pueda entender. Si esto se está mostrando, NUNCA es un problema de
+// conexión: store.addVenta ya intercepta las fallas de red reales (sin código
+// Postgres/PostgREST) y las encola para sincronizar después sin lanzar error
+// — lo que llega hasta aquí es siempre un rechazo real del servidor (stock
+// insuficiente, choque de horario, teléfono duplicado, etc.), y decir
+// "verifica tu conexión" en esos casos oculta la causa real.
+export const friendlyVentaError = (err: unknown): string => {
+  const msg = (err as { message?: string } | null)?.message || ''
+  if (/productos_stock_no_negativo/.test(msg)) return 'No hay stock suficiente de uno de los productos para completar la venta.'
+  if (/no encontrado/i.test(msg)) return msg
+  if (/ya existe una cita/i.test(msg)) return 'Ese horario ya fue tomado — actualiza la agenda e intenta de nuevo.'
+  if (/idx_clientas_tel_unico|duplicate key.*tel/i.test(msg)) return 'Ya existe una clienta registrada con ese teléfono.'
+  if (/row-level security|permission denied/i.test(msg)) return 'Tu usuario no tiene permiso para esta operación.'
+  return msg ? `No se pudo registrar la venta: ${msg}` : 'No se pudo registrar la venta.'
+}
+
 // Reparte un `monto` de una venta entre sus métodos de pago. Si el cobro fue
 // mixto usa el desglose guardado (escalado proporcionalmente por si `monto` es
 // sólo una parte, p. ej. un anticipo); si no, todo va al método único de la venta.

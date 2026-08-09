@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Avatar, EstadoBadge, Seg, toast, ConfirmModal, useModalKeys } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore, TICKET_PENDIENTE } from '../data/store'
-import { mxn, resolverComision, fechaLocalIso } from '../lib/helpers'
+import { mxn, resolverComision, fechaLocalIso, friendlyVentaError } from '../lib/helpers'
 import type { Cita, CitaServicio, EstadoCita, Bloqueo, Venta } from '../types'
 import { POSBuilder } from './POS'
 
@@ -934,8 +934,8 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
     const apartadoPrevio = data.ventas.find(v => v.citaId === cita.id) || null
     try {
       await addVenta(venta)
-    } catch {
-      toast('No se pudo registrar la venta. Verifica tu conexión e intenta de nuevo.')
+    } catch (err) {
+      toast(friendlyVentaError(err))
       throw new Error('addVenta failed')
     }
     if (apartadoPrevio) {

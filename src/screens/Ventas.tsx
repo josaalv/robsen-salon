@@ -4,7 +4,7 @@ import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
-import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS, normalizarBusqueda } from '../lib/helpers'
+import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS, normalizarBusqueda, friendlyVentaError } from '../lib/helpers'
 import { POSBuilder } from './POS'
 import type { Venta, CierreCaja, LineaVenta } from '../types'
 
@@ -601,8 +601,8 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
       await addVenta(venta)
       setPos(false)
       toast('Venta registrada correctamente')
-    } catch {
-      toast('No se pudo registrar la venta. Verifica tu conexión e intenta de nuevo.')
+    } catch (err) {
+      toast(friendlyVentaError(err))
       throw new Error('addVenta failed')
     }
   }
