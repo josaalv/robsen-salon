@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Seg } from '../../components/ui'
 import { useStore } from '../../data/store'
 import { db } from '../../lib/db'
+import { supabase } from '../../lib/supabase'
 import type { WaMensaje, WaPlantilla } from '../../types'
 import { Resumen } from './Resumen'
 import { Audiencias } from './Audiencias'
@@ -32,11 +33,29 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r: st
   }
   useEffect(() => { recargarCola().finally(() => setCargandoCola(false)) }, [])
 
-  // Refresco periódico: los cambios que hace el webhook del lado del
-  // servidor (confirmar/cancelar por botón de WhatsApp, entregado/leído)
-  // no llegan solos a una pantalla ya abierta — no hay Supabase Realtime
-  // wireado (sería un cambio de arquitectura mucho más grande). Mientras
-  // esta pantalla esté montada, se refresca sola cada 45s.
+  // Realtime: un mensaje entrante o un cambio de estado (entregado/leído,
+  // confirmar/cancelar por botón) escrito por el webhook del lado del
+  // servidor llega aquí al instante, sin esperar a que alguien recargue la
+  // página — el mismo comportamiento "vinculado al momento" que WhatsApp
+  // normal. Se debounce 400ms porque el webhook puede escribir varias filas
+  // seguidas (ej. mensaje + patch de estado) y no tiene caso recargar dos
+  // veces por el mismo evento humano.
+  useEffect(() => {
+    if (!supabase) return
+    let t: ReturnType<typeof setTimeout> | null = null
+    const disparar = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => { recargarCola() }, 400)
+    }
+    const canal = supabase
+      .channel('wa_mensajes_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wa_mensajes' }, disparar)
+      .subscribe()
+    return () => { if (t) clearTimeout(t); supabase.removeChannel(canal) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Respaldo: si el canal de Realtime se cae por una red intermitente,
+  // este timer evita quedarse desactualizado indefinidamente.
   useEffect(() => {
     const id = setInterval(() => { recargarCola(); loadFromSupabase() }, 45000)
     return () => clearInterval(id)
