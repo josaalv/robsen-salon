@@ -160,13 +160,15 @@ Deno.serve(async (req: Request) => {
 
     // phone-info: consulta directo un phone_number_id específico (no depende
     // del WABA configurado) — para resolver a qué número/cuenta pertenece
-    // realmente un ID dado.
+    // realmente un ID dado. Si no se manda 'id' explícito, usa el secreto
+    // WHATSAPP_PHONE_NUMBER_ID ya configurado — diagnóstico de solo lectura.
     if (action === "phone-info") {
-      const id = String(body.id || "");
-      if (!id) return json({ error: "Falta 'id' (phone_number_id a consultar)" }, 400);
-      const res = await fetch(`${GRAPH}/${id}?fields=id,display_phone_number,verified_name,quality_rating,platform_type,code_verification_status`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
+      const id = String(body.id || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "");
+      if (!id) return json({ error: "Falta 'id' y no hay WHATSAPP_PHONE_NUMBER_ID configurado." }, 400);
+      const res = await fetch(
+        `https://graph.facebook.com/v26.0/${id}?fields=is_on_biz_app,platform_type,status,code_verification_status,display_phone_number,verified_name,quality_rating`,
+        { headers: { "Authorization": `Bearer ${token}` } },
+      );
       return json(await res.json(), res.ok ? 200 : 400);
     }
 
