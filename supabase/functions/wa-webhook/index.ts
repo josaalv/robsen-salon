@@ -6,6 +6,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || "robsen-verify-2026";
+const WHATSAPP_TOKEN = Deno.env.get("WHATSAPP_TOKEN");
+
+const MEDIA_TIPOS = ["image", "audio", "video", "document", "sticker"];
 
 const STATUS_MAP: Record<string, string> = {
   sent: "enviado", delivered: "entregado", read: "leido", failed: "fallido",
@@ -37,6 +40,38 @@ function extraerTexto(msg: any, btn: any): string {
   if (msg.contacts) return '[Contacto compartido]';
   if (msg.type === 'unsupported' || msg.errors) return '[Mensaje no compatible con esta bandeja]';
   return '[Mensaje sin texto]';
+}
+
+// Descarga un archivo entrante (foto, audio, documento, sticker) de los
+// servidores de Meta y lo sube al bucket privado wa-media. Meta solo manda
+// un media_id en el webhook — hay que resolverlo a una URL temporal (con el
+// mismo token de la app) y bajar los bytes ahí mismo, en el servidor, porque
+// esa URL exige el token de WhatsApp para descargar (no se le puede pasar
+// directo al navegador del staff). Si algo falla se regresa null — nunca
+// bloquea el registro del mensaje en la bitácora.
+async function descargarYSubirMedia(mediaId: string, mimeType: string, tel: string): Promise<string | null> {
+  if (!WHATSAPP_TOKEN) return null;
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+      headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}` },
+    });
+    if (!metaRes.ok) return null;
+    const metaData = await metaRes.json();
+    if (!metaData?.url) return null;
+    const fileRes = await fetch(metaData.url, { headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}` } });
+    if (!fileRes.ok) return null;
+    const bytes = await fileRes.arrayBuffer();
+    const ext = (mimeType.split("/")[1] || "bin").split(";")[0];
+    const path = `${tel}/${Date.now()}-${mediaId}.${ext}`;
+    const upRes = await fetch(`${SUPA_URL}/storage/v1/object/wa-media/${path}`, {
+      method: "POST",
+      headers: { "apikey": SERVICE, "Authorization": `Bearer ${SERVICE}`, "Content-Type": mimeType || "application/octet-stream" },
+      body: bytes,
+    });
+    return upRes.ok ? path : null;
+  } catch {
+    return null;
+  }
 }
 
 async function rest(path: string, init: RequestInit = {}) {
@@ -130,11 +165,23 @@ Deno.serve(async (req: Request) => {
               body: JSON.stringify({ p_from: from, p_texto: texto }),
             });
           }
+
+          // Si el mensaje trae un archivo (foto/audio/video/documento/
+          // sticker), se descarga y se sube a wa-media — así queda
+          // disponible en Conversaciones y no solo como una etiqueta.
+          const tipoMedia = MEDIA_TIPOS.find(t => msg[t]);
+          let mediaPath: string | null = null;
+          if (tipoMedia) {
+            const m = msg[tipoMedia];
+            mediaPath = await descargarYSubirMedia(m.id, m.mime_type || "application/octet-stream", from);
+          }
+
           // Registra la respuesta en la bitácora.
           await rest(`wa_mensajes`, {
             method: "POST", headers: { "Prefer": "return=minimal" },
             body: JSON.stringify({
               tel: from, flujo: "entrante", cuerpo: texto, estado: "respondido",
+              media_path: mediaPath, media_tipo: tipoMedia ?? null,
               requiere_aprobacion: false, creado_por: "clienta",
             }),
           });

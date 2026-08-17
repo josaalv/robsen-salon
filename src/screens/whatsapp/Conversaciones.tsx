@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { toast, ConfirmModal } from '../../components/ui'
 import { PhosphorIcon as Ic } from '../../components/PhosphorIcon'
 import { useStore } from '../../data/store'
@@ -16,13 +16,27 @@ interface Hilo {
   ultimo: WaMensaje; ventanaAbierta: boolean
 }
 
+const MEDIA_TIPO_ARCHIVO = (file: File): 'image' | 'audio' | 'video' | 'document' => {
+  if (file.type.startsWith('image/')) return 'image'
+  if (file.type.startsWith('audio/')) return 'audio'
+  if (file.type.startsWith('video/')) return 'video'
+  return 'document'
+}
+
+// Etiquetas tipo "[Imagen]"/"[Documento]" que deja el servidor cuando no hay
+// caption real — no tiene caso mostrarlas de nuevo debajo del archivo.
+const esEtiquetaSinCaption = (cuerpo: string) => /^\[[^\]]+\]$/.test(cuerpo.trim())
+
 export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[]; recargar: () => Promise<void>; openTel?: string | null }) {
   const { data } = useStore()
   const [selTel, setSelTel] = useState<string | null>(null)
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false)
   const [confirmBorrarHilo, setConfirmBorrarHilo] = useState<Hilo | null>(null)
   const [borrandoMsgId, setBorrandoMsgId] = useState<string | null>(null)
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const hilos = useMemo((): Hilo[] => {
     const grupos = new Map<string, WaMensaje[]>()
@@ -54,6 +68,25 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
 
   const hilo = hilos.find(h => h.tel10 === selTel) || null
 
+  // Las fotos/audios/documentos viven en un bucket privado — cada burbuja
+  // necesita su propia URL firmada (temporal) para poder mostrarse/reproducirse.
+  useEffect(() => {
+    if (!hilo) return
+    const pendientes = hilo.mensajes.filter(m => m.mediaPath && !mediaUrls[m.id])
+    if (pendientes.length === 0) return
+    let cancelado = false
+    Promise.all(pendientes.map(async m => {
+      const url = await db.getWaMediaUrl(m.mediaPath!)
+      return [m.id, url] as const
+    })).then(pares => {
+      if (cancelado) return
+      const nuevos: Record<string, string> = {}
+      for (const [id, url] of pares) if (url) nuevos[id] = url
+      if (Object.keys(nuevos).length) setMediaUrls(prev => ({ ...prev, ...nuevos }))
+    })
+    return () => { cancelado = true }
+  }, [hilo, mediaUrls])
+
   const enviar = async () => {
     if (!hilo || !texto.trim() || enviando) return
     setEnviando(true)
@@ -65,6 +98,28 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
       toast(e instanceof Error ? e.message : 'No se pudo enviar. Intenta de nuevo.')
     } finally {
       setEnviando(false)
+    }
+  }
+
+  const elegirArchivo = () => fileInputRef.current?.click()
+
+  const onArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // permite volver a elegir el mismo archivo después
+    if (!file || !hilo) return
+    const tipo = MEDIA_TIPO_ARCHIVO(file)
+    setSubiendoArchivo(true)
+    try {
+      const path = `${hilo.tel10}/${Date.now()}-${file.name}`
+      const { path: subido, error } = await db.uploadWaMedia(path, file)
+      if (error || !subido) throw new Error(error || 'No se pudo subir el archivo.')
+      await db.responderWaMedia(hilo.tel, subido, tipo, texto.trim() || undefined)
+      setTexto('')
+      await recargar()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'No se pudo enviar el archivo.')
+    } finally {
+      setSubiendoArchivo(false)
     }
   }
 
@@ -94,6 +149,25 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
     } catch (e) {
       toast(e instanceof Error ? e.message : 'No se pudo borrar la conversación.')
     }
+  }
+
+  const renderMedia = (m: WaMensaje) => {
+    const url = mediaUrls[m.id]
+    if (!url) return <div className="dim" style={{ fontSize: 11 }}>Cargando archivo…</div>
+    if (m.mediaTipo === 'image' || m.mediaTipo === 'sticker') {
+      return <img src={url} alt="" style={{ maxWidth: 260, maxHeight: 260, borderRadius: 8, display: 'block' }} />
+    }
+    if (m.mediaTipo === 'audio') {
+      return <audio controls src={url} style={{ maxWidth: 260, display: 'block' }} />
+    }
+    if (m.mediaTipo === 'video') {
+      return <video controls src={url} style={{ maxWidth: 260, borderRadius: 8, display: 'block' }} />
+    }
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="vc gap6" style={{ fontSize: 12.5 }}>
+        <Ic n="file" /> Ver archivo
+      </a>
+    )
   }
 
   return (
@@ -143,6 +217,7 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
             <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {hilo.mensajes.map(m => {
                 const deClienta = m.creadoPor === 'clienta'
+                const mostrarCuerpo = m.cuerpo && !(m.mediaPath && esEtiquetaSinCaption(m.cuerpo))
                 return (
                   <div
                     key={m.id}
@@ -156,7 +231,8 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
                         borderRadius: 10, padding: '8px 12px',
                       }}
                     >
-                      <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{m.cuerpo}</div>
+                      {m.mediaPath && <div style={{ marginBottom: mostrarCuerpo ? 6 : 0 }}>{renderMedia(m)}</div>}
+                      {mostrarCuerpo && <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{m.cuerpo}</div>}
                       <div className="dim" style={{ fontSize: 10, marginTop: 3 }}>
                         {new Date(m.createdAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </div>
@@ -175,12 +251,19 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
             <div style={{ padding: 12, borderTop: '1px solid var(--line-soft)' }}>
               {hilo.ventanaAbierta ? (
                 <div className="vc gap8">
+                  <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={onArchivoSeleccionado} />
+                  <button
+                    className="btn ghost" title="Adjuntar foto, audio o documento"
+                    disabled={subiendoArchivo || enviando} onClick={elegirArchivo}
+                  >
+                    <Ic n={subiendoArchivo ? 'spinner' : 'paperclip'} />
+                  </button>
                   <input
                     className="input f1" placeholder="Escribe una respuesta…" value={texto}
                     onChange={e => setTexto(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') enviar() }}
                   />
-                  <button className="btn gold" disabled={!texto.trim() || enviando} onClick={enviar}>
+                  <button className="btn gold" disabled={!texto.trim() || enviando || subiendoArchivo} onClick={enviar}>
                     <Ic n={enviando ? 'spinner' : 'paper-plane-tilt'} />{enviando ? 'Enviando…' : 'Enviar'}
                   </button>
                 </div>

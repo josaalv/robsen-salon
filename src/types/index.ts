@@ -285,6 +285,8 @@ export interface WaMensaje {
   plantilla?: string
   variables: Record<string, string | number>
   cuerpo: string
+  mediaPath?: string
+  mediaTipo?: 'image' | 'audio' | 'video' | 'document' | 'sticker'
   estado: WaEstado
   requiereAprobacion: boolean
   programadoPara?: string

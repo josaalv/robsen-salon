@@ -32,6 +32,20 @@ async function rest(path: string, init: RequestInit = {}) {
   });
 }
 
+// El bucket wa-media es privado (igual que fotos-clientas) — para que Meta
+// pueda descargar el archivo hace falta una URL firmada temporal; 10 min le
+// sobra de margen a Meta para ir por el archivo antes de que expire.
+async function signedUrlWaMedia(path: string): Promise<string | null> {
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/sign/wa-media/${path}`, {
+    method: "POST",
+    headers: { "apikey": SERVICE, "Authorization": `Bearer ${SERVICE}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn: 600 }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data?.signedURL ? `${SUPA_URL}/storage/v1${data.signedURL}` : null;
+}
+
 Deno.serve(async (req: Request) => {
   try {
     const token = Deno.env.get("WHATSAPP_TOKEN");
@@ -39,8 +53,14 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const telRaw = String(body.tel || "");
-    const texto = String(body.texto || "").trim();
-    if (!telRaw || !texto) return json({ error: "Faltan 'tel' y/o 'texto'." }, 400);
+    const texto = typeof body.texto === "string" ? body.texto.trim() : "";
+    const media = body.media as { path?: string; tipo?: string; caption?: string } | undefined;
+    if (!telRaw || (!texto && !media?.path)) return json({ error: "Faltan 'tel' y ('texto' o 'media')." }, 400);
+
+    const MEDIA_TIPOS = ["image", "audio", "video", "document"];
+    if (media?.path && !MEDIA_TIPOS.includes(media.tipo || "")) {
+      return json({ error: "Tipo de media no soportado." }, 400);
+    }
 
     const last10 = telRaw.replace(/\D/g, "").slice(-10);
     // Último mensaje entrante de esa clienta — determina si la ventana de
@@ -61,10 +81,28 @@ Deno.serve(async (req: Request) => {
     }
 
     const to = normTel(telRaw);
+
+    let payload: Record<string, unknown>;
+    let cuerpoLog: string;
+    if (media?.path) {
+      const signedUrl = await signedUrlWaMedia(media.path);
+      if (!signedUrl) return json({ error: "No se pudo generar el enlace del archivo — verifica que se haya subido correctamente." }, 500);
+      const tipo = media.tipo!;
+      const mediaObj: Record<string, unknown> = { link: signedUrl };
+      // Meta solo acepta "caption" en image/video/document, no en audio.
+      if (media.caption && tipo !== "audio") mediaObj.caption = media.caption;
+      payload = { messaging_product: "whatsapp", to, type: tipo, [tipo]: mediaObj };
+      const MEDIA_LABEL: Record<string, string> = { image: "Imagen", audio: "Audio", video: "Video", document: "Documento" };
+      cuerpoLog = media.caption || `[${MEDIA_LABEL[tipo] || tipo}]`;
+    } else {
+      payload = { messaging_product: "whatsapp", to, type: "text", text: { body: texto } };
+      cuerpoLog = texto;
+    }
+
     const res = await fetch(`${GRAPH}/${PHONE_NUMBER_ID}/messages`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: texto } }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     const nowIso = new Date().toISOString();
@@ -74,7 +112,8 @@ Deno.serve(async (req: Request) => {
       await rest(`wa_mensajes`, {
         method: "POST", headers: { "Prefer": "return=minimal" },
         body: JSON.stringify({
-          tel: to, flujo: "saliente_libre", cuerpo: texto, estado: "enviado",
+          tel: to, flujo: "saliente_libre", cuerpo: cuerpoLog, estado: "enviado",
+          media_path: media?.path ?? null, media_tipo: media?.tipo ?? null,
           wa_message_id: wamid, enviado_at: nowIso, requiere_aprobacion: false, creado_por: "staff",
         }),
       });
@@ -84,7 +123,8 @@ Deno.serve(async (req: Request) => {
       await rest(`wa_mensajes`, {
         method: "POST", headers: { "Prefer": "return=minimal" },
         body: JSON.stringify({
-          tel: to, flujo: "saliente_libre", cuerpo: texto, estado: "fallido",
+          tel: to, flujo: "saliente_libre", cuerpo: cuerpoLog, estado: "fallido",
+          media_path: media?.path ?? null, media_tipo: media?.tipo ?? null,
           error: err, requiere_aprobacion: false, creado_por: "staff",
         }),
       });

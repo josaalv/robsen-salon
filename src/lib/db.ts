@@ -4,6 +4,7 @@ import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, P
 
 const BUCKET = 'media'
 const BUCKET_PRIVADO = 'fotos-clientas'
+const BUCKET_WA_MEDIA = 'wa-media'
 
 // ─── Mappers DB ↔ TypeScript ──────────────────────────────────────────────────
 
@@ -140,6 +141,8 @@ const mapWaMensaje = (r: any): WaMensaje => ({
   plantilla: r.plantilla ?? undefined,
   variables: r.variables ?? {},
   cuerpo: r.cuerpo ?? '',
+  mediaPath: r.media_path ?? undefined,
+  mediaTipo: r.media_tipo ?? undefined,
   estado: r.estado,
   requiereAprobacion: r.requiere_aprobacion,
   programadoPara: r.programado_para ?? undefined,
@@ -715,6 +718,36 @@ export const db = {
       // cerrada, sin mensajes entrantes) en el cuerpo de la respuesta — el
       // cliente de Supabase no lo expone en `error.message` para respuestas
       // no-2xx, hay que leerlo del Response crudo.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctx = (error as any)?.context
+      const body = await ctx?.json?.().catch(() => null)
+      throw new Error(body?.error || error.message)
+    }
+    return data as { ok: boolean }
+  },
+  // Sube un archivo (foto, audio, documento) al bucket privado wa-media,
+  // previo a mandarlo por WhatsApp — path sugerido: `${tel10}/${Date.now()}-${file.name}`.
+  async uploadWaMedia(path: string, file: File): Promise<{ path: string | null; error: string | null }> {
+    if (!supabase) return { path: null, error: 'Sin conexión a Supabase.' }
+    const { error } = await supabase.storage.from(BUCKET_WA_MEDIA).upload(path, file, { upsert: true })
+    if (error) { console.error('[storage.uploadWaMedia]', path, error.message); return { path: null, error: error.message } }
+    return { path, error: null }
+  },
+  // URL firmada temporal para mostrar/reproducir media de WhatsApp (nunca
+  // pública ni permanente — mismo criterio que las fotos de clientas).
+  async getWaMediaUrl(path: string, expiresIn = 3600): Promise<string | null> {
+    if (!supabase || !path) return null
+    const { data, error } = await supabase.storage.from(BUCKET_WA_MEDIA).createSignedUrl(path, expiresIn)
+    if (error) { console.error('[storage.waMediaSignedUrl]', path, error.message); return null }
+    return data?.signedUrl ?? null
+  },
+  // Manda una foto/audio/documento ya subido a wa-media — mismo límite de
+  // ventana de 24h que el texto libre (Meta lo exige para cualquier mensaje
+  // que no sea una plantilla aprobada).
+  async responderWaMedia(tel: string, mediaPath: string, tipo: 'image' | 'audio' | 'video' | 'document', caption?: string): Promise<{ ok: boolean }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('wa-responder', { body: { tel, media: { path: mediaPath, tipo, caption } } })
+    if (error) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ctx = (error as any)?.context
       const body = await ctx?.json?.().catch(() => null)
