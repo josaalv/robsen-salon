@@ -11,6 +11,34 @@ const STATUS_MAP: Record<string, string> = {
   sent: "enviado", delivered: "entregado", read: "leido", failed: "fallido",
 };
 
+// Extrae un texto legible de cualquier tipo de mensaje entrante que manda
+// Meta — antes solo se leía msg.text/msg.button/interactive.button_reply y
+// todo lo demás (reacciones, medios, ubicación, listas, mensajes no
+// soportados) caía en cuerpo vacío: se guardaba en wa_mensajes igual pero
+// sin nada que mostrar, apareciendo como una burbuja en blanco en la bandeja
+// de Conversaciones. Cada rama deja algo legible en su lugar.
+// deno-lint-ignore no-explicit-any
+function extraerTexto(msg: any, btn: any): string {
+  if (msg.text?.body) return msg.text.body;
+  if (msg.button?.text) return msg.button.text;
+  if (btn?.title) return btn.title;
+  const listReply = msg.interactive?.list_reply;
+  if (listReply?.title) return listReply.title;
+  if (msg.reaction) return `[Reacción${msg.reaction.emoji ? ': ' + msg.reaction.emoji : ''}]`;
+  const MEDIA_LABEL: Record<string, string> = {
+    image: 'Imagen', video: 'Video', audio: 'Audio', document: 'Documento', sticker: 'Sticker',
+  };
+  for (const [tipo, etiqueta] of Object.entries(MEDIA_LABEL)) {
+    // deno-lint-ignore no-explicit-any
+    const media = (msg as any)[tipo];
+    if (media) return media.caption ? `[${etiqueta}] ${media.caption}` : `[${etiqueta}]`;
+  }
+  if (msg.location) return '[Ubicación compartida]';
+  if (msg.contacts) return '[Contacto compartido]';
+  if (msg.type === 'unsupported' || msg.errors) return '[Mensaje no compatible con esta bandeja]';
+  return '[Mensaje sin texto]';
+}
+
 async function rest(path: string, init: RequestInit = {}) {
   return fetch(`${SUPA_URL}/rest/v1/${path}`, {
     ...init,
@@ -91,7 +119,7 @@ Deno.serve(async (req: Request) => {
             });
           }
 
-          const texto = msg.text?.body ?? msg.button?.text ?? btn?.title ?? "";
+          const texto = extraerTexto(msg, btn);
           // Interpreta CONFIRMO / BAJA en texto libre (flujo original). Se
           // omite si ya se resolvió por botón (de cita o de plantilla)
           // arriba, para que "Cancelar" no dispare además la baja de

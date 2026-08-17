@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { toast } from '../../components/ui'
+import { toast, ConfirmModal } from '../../components/ui'
 import { PhosphorIcon as Ic } from '../../components/PhosphorIcon'
 import { useStore } from '../../data/store'
 import { db } from '../../lib/db'
@@ -21,6 +21,8 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
   const [selTel, setSelTel] = useState<string | null>(null)
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [confirmBorrarHilo, setConfirmBorrarHilo] = useState<Hilo | null>(null)
+  const [borrandoMsgId, setBorrandoMsgId] = useState<string | null>(null)
 
   const hilos = useMemo((): Hilo[] => {
     const grupos = new Map<string, WaMensaje[]>()
@@ -66,6 +68,34 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
     }
   }
 
+  // Borra un mensaje suelto (ej. un ping de prueba sin texto legible) sin
+  // tocar el resto de la conversación.
+  const borrarMensaje = async (m: WaMensaje) => {
+    setBorrandoMsgId(m.id)
+    try {
+      await db.deleteWaMensajes([m.id])
+      await recargar()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudo borrar el mensaje.')
+    } finally {
+      setBorrandoMsgId(null)
+    }
+  }
+
+  // Borra toda la conversación con este contacto (ej. un número de prueba que
+  // nunca fue una clienta real) — pide confirmación porque no se puede deshacer.
+  const borrarHilo = async () => {
+    if (!confirmBorrarHilo) return
+    try {
+      await db.deleteWaMensajes(confirmBorrarHilo.mensajes.map(m => m.id))
+      setConfirmBorrarHilo(null)
+      setSelTel(null)
+      await recargar()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudo borrar la conversación.')
+    }
+  }
+
   return (
     <div className="card" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', minHeight: 480, overflow: 'hidden' }}>
       <div style={{ borderRight: '1px solid var(--line-soft)', overflowY: 'auto' }}>
@@ -98,9 +128,17 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
           <div className="dim" style={{ margin: 'auto', fontSize: 13 }}>Selecciona una conversación</div>
         ) : (
           <>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line-soft)' }}>
-              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{hilo.nombre}</div>
-              <div className="dim" style={{ fontSize: 11 }}>{hilo.tel}</div>
+            <div className="between" style={{ padding: '12px 16px', borderBottom: '1px solid var(--line-soft)' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{hilo.nombre}</div>
+                <div className="dim" style={{ fontSize: 11 }}>{hilo.tel}</div>
+              </div>
+              <button
+                className="btn ghost sm" title="Eliminar esta conversación"
+                onClick={() => setConfirmBorrarHilo(hilo)}
+              >
+                <Ic n="trash" />
+              </button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {hilo.mensajes.map(m => {
@@ -108,16 +146,28 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
                 return (
                   <div
                     key={m.id}
-                    style={{
-                      alignSelf: deClienta ? 'flex-start' : 'flex-end', maxWidth: '70%',
-                      background: deClienta ? 'var(--surface-2)' : 'var(--gold-soft)',
-                      borderRadius: 10, padding: '8px 12px',
-                    }}
+                    className="vc gap6"
+                    style={{ alignSelf: deClienta ? 'flex-start' : 'flex-end', flexDirection: deClienta ? 'row' : 'row-reverse' }}
                   >
-                    <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{m.cuerpo}</div>
-                    <div className="dim" style={{ fontSize: 10, marginTop: 3 }}>
-                      {new Date(m.createdAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    <div
+                      style={{
+                        maxWidth: 340,
+                        background: deClienta ? 'var(--surface-2)' : 'var(--gold-soft)',
+                        borderRadius: 10, padding: '8px 12px',
+                      }}
+                    >
+                      <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{m.cuerpo}</div>
+                      <div className="dim" style={{ fontSize: 10, marginTop: 3 }}>
+                        {new Date(m.createdAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
+                    <button
+                      className="btn ghost sm" title="Borrar este mensaje" disabled={borrandoMsgId === m.id}
+                      onClick={() => borrarMensaje(m)}
+                      style={{ opacity: 0.5, flexShrink: 0 }}
+                    >
+                      <Ic n={borrandoMsgId === m.id ? 'spinner' : 'x'} />
+                    </button>
                   </div>
                 )
               })}
@@ -144,6 +194,15 @@ export function Conversaciones({ cola, recargar, openTel }: { cola: WaMensaje[];
           </>
         )}
       </div>
+
+      {confirmBorrarHilo && (
+        <ConfirmModal
+          title="¿Eliminar esta conversación?"
+          desc={`Se borrarán los ${confirmBorrarHilo.mensajes.length} mensajes con ${confirmBorrarHilo.nombre}. Esta acción no se puede deshacer.`}
+          onConfirm={borrarHilo}
+          onCancel={() => setConfirmBorrarHilo(null)}
+        />
+      )}
     </div>
   )
 }

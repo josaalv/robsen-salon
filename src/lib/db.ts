@@ -733,6 +733,14 @@ export const db = {
     const { error } = await supabase.from('wa_mensajes').update(row).eq('id', id)
     if (error) { console.error('[db.updateWaMensaje]', error.message); throw new Error(error.message) }
   },
+  // Borra un mensaje suelto de la bandeja (ej. un ping de prueba con cuerpo
+  // ilegible) o toda una conversación (varios ids a la vez) — administración
+  // manual de la bandeja de Conversaciones, no afecta el envío automático.
+  async deleteWaMensajes(ids: string[]): Promise<void> {
+    if (!supabase || ids.length === 0) return
+    const { error } = await supabase.from('wa_mensajes').delete().in('id', ids)
+    if (error) { console.error('[db.deleteWaMensajes]', error.message); throw new Error(error.message) }
+  },
 
   // ─── WhatsApp: "contactado" manual compartido (reemplaza localStorage) ────
   async getContactosManual(): Promise<Record<string, { por: string; at: string }>> {
