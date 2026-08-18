@@ -172,6 +172,21 @@ Deno.serve(async (req: Request) => {
       return json(await res.json(), res.ok ? 200 : 400);
     }
 
+    // deregister-number: quita el número de la Cloud API directa — deja de
+    // poder enviar/recibir por este sistema de inmediato. Acción destructiva
+    // deliberada (migración a un Tech Provider con Coexistence); exige
+    // body.confirmar === true para no dispararse por accidente.
+    if (action === "deregister-number") {
+      if (body.confirmar !== true) return json({ error: "Falta confirmar: true — acción destructiva, requiere confirmación explícita." }, 400);
+      const id = String(body.id || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "");
+      if (!id) return json({ error: "Falta 'id' y no hay WHATSAPP_PHONE_NUMBER_ID configurado." }, 400);
+      const res = await fetch(`https://graph.facebook.com/v21.0/${id}/deregister`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      return json(await res.json(), res.ok ? 200 : 400);
+    }
+
     // edit: reenvía a Meta el catálogo (componentes actualizados, ej. botones
     // nuevos) para una plantilla YA aprobada, sin cambiar su nombre/id — Meta
     // la vuelve a poner en revisión conservando el historial.
