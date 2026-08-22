@@ -458,6 +458,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const ventaValor = (v: Venta, key: string): number | string => {
     switch (key) {
       case 'fecha': return ventaTS(v) ?? 0
+      case 'hora': return ventaTS(v) ?? 0
       case 'cliente': return v.cliente.toLowerCase()
       case 'total': return totalVenta(v)
       case 'ticket': return v.ticket
@@ -612,6 +613,15 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
     const p = v.lineas.filter(l => l.tipo === 'producto').length
     const a = v.lineas.filter(l => l.tipo === 'adicional').length
     return [s && `${s} servicio${s > 1 ? 's' : ''}`, p && `${p} producto${p > 1 ? 's' : ''}`, a && `${a} extra${a > 1 ? 's' : ''}`].filter(Boolean).join(' · ')
+  }
+
+  // Solo la hora (sin fecha) — separado de "Fecha" para poder ver de un
+  // vistazo el orden real en que se registraron las ventas del día, sobre
+  // todo con el filtro de un solo día activo (ahí la fecha se repite en
+  // cada fila y solo la hora aporta algo).
+  const horaDe = (v: Venta) => {
+    const t = ventaTS(v)
+    return t == null ? '—' : new Date(t).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' })
   }
 
   return (
@@ -870,6 +880,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
             <tr>
               <SortTh label="Ticket" k="ticket" sort={sort} onSort={toggle} />
               <SortTh label="Fecha" k="fecha" sort={sort} onSort={toggle} />
+              <SortTh label="Hora" k="hora" sort={sort} onSort={toggle} />
               <SortTh label="Clienta" k="cliente" sort={sort} onSort={toggle} />
               <th>Detalle</th>
               <th>Atendió</th>
@@ -887,6 +898,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                 <tr key={v.id} onClick={() => setDetalle(v)}>
                   <td className="num" style={{ fontWeight: 700, color: 'var(--gold)' }}>{v.ticket}</td>
                   <td className="muted">{v.fecha}</td>
+                  <td className="num muted">{horaDe(v)}</td>
                   <td style={{ fontWeight: 600 }}>{v.cliente}</td>
                   <td className="muted">{resumenItems(v)}</td>
                   <td>
