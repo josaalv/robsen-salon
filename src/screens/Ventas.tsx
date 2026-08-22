@@ -378,6 +378,10 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const [q, setQ] = useState('')
   const [confirmDel, setConfirmDel] = useState<Venta | null>(null)
   const [deleting, setDeleting] = useState(false)
+  // Paneles grandes (corte del periodo, apartados) — colapsables para no
+  // ocupar toda la pantalla cuando no hace falta verlos con detalle.
+  const [corteAbierto, setCorteAbierto] = useState(true)
+  const [apartadosAbierto, setApartadosAbierto] = useState(true)
   // Borrar una venta es destructivo (revierte inventario y reportes): solo
   // administración.
   const puedeBorrar = !!user && ['admin', 'gerente'].includes(user.rol)
@@ -745,9 +749,12 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                 <div className="num" style={{ fontWeight: 800, fontSize: 22, color: 'var(--gold)' }}>{mxn(corteTotal)}</div>
               </div>
               <button className="btn ghost sm" onClick={imprimirCorte} title="Imprimir el corte"><Ic n="printer" />Imprimir</button>
+              <button className="icon-btn" title={corteAbierto ? 'Contraer' : 'Expandir'} onClick={() => setCorteAbierto(v => !v)}>
+                <Ic n={corteAbierto ? 'caret-up' : 'caret-down'} />
+              </button>
             </div>
           </div>
-          {lista.length === 0 ? (
+          {!corteAbierto ? null : lista.length === 0 ? (
             <div className="dim" style={{ fontSize: 12.5 }}>Sin ventas en este periodo.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -835,46 +842,6 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
         </div>
       )}
 
-      {apartados.length > 0 && (
-        <div className="card" style={{ marginBottom: 16, border: '1px solid rgba(200,161,74,0.25)' }}>
-          <div className="card-pad between" style={{ paddingBottom: 10, borderBottom: '1px solid var(--line-soft)' }}>
-            <div className="vc gap8">
-              <Ic n="calendar-check" style={{ color: 'var(--gold)' }} />
-              <span style={{ fontWeight: 600, fontSize: 14 }}>Apartados de citas</span>
-              <span className="badge pend">{apartados.length}</span>
-            </div>
-            <span className="muted" style={{ fontSize: 12 }}>Anticipos registrados desde Agenda · pendientes de cobro final</span>
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Ref.</th><th>Fecha</th><th>Hora</th><th>Clienta</th><th>Servicio</th>
-                <th className="num">Total cita</th><th className="num">Anticipo</th><th className="num">Saldo</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {apartados.map(v => {
-                const totalApt = totalVenta(v)
-                const saldoApt = saldo(v)
-                return (
-                  <tr key={v.id} onClick={() => setDetalle(v)}>
-                    <td className="num" style={{ fontWeight: 700, color: 'var(--gold)', fontSize: 12 }}>{v.ticket}</td>
-                    <td className="muted">{v.fecha}</td>
-                    <td className="num muted">{horaDe(v)}</td>
-                    <td style={{ fontWeight: 600 }}>{v.cliente}</td>
-                    <td className="muted">{v.lineas[0]?.nombre || '—'}</td>
-                    <td className="num">{mxn(totalApt)}</td>
-                    <td className="num" style={{ color: 'var(--st-conf)', fontWeight: 600 }}>{mxn(v.anticipo)}</td>
-                    <td className="num" style={{ color: 'var(--st-pend)', fontWeight: 600 }}>{mxn(saldoApt)}</td>
-                    <td><Ic n="caret-right" /></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       <div className="card">
         <table className="table">
           <thead>
@@ -944,6 +911,67 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
         </table>
         <Pager page={Math.min(page, totalPages)} totalPages={totalPages} onPage={setPage} />
       </div>
+
+      {/* Apartados de citas: se muestra debajo del listado principal (no
+          antes) — arriba se interponía con el Corte del periodo al
+          desglosar un día/rango. Colapsable para no ocupar pantalla cuando
+          no hace falta revisarlo con detalle. */}
+      {apartados.length > 0 && (
+        <div className="card" style={{ marginTop: 16, border: '1px solid rgba(200,161,74,0.25)' }}>
+          <div className="card-pad between" style={{ paddingBottom: apartadosAbierto ? 10 : 0, borderBottom: apartadosAbierto ? '1px solid var(--line-soft)' : 'none' }}>
+            <div className="vc gap8">
+              <Ic n="calendar-check" style={{ color: 'var(--gold)' }} />
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Apartados de citas</span>
+              <span className="badge pend">{apartados.length}</span>
+            </div>
+            <div className="vc gap10">
+              <span className="muted" style={{ fontSize: 12 }}>Anticipos registrados desde Agenda · pendientes de cobro final</span>
+              <button className="icon-btn" title={apartadosAbierto ? 'Contraer' : 'Expandir'} onClick={() => setApartadosAbierto(v => !v)}>
+                <Ic n={apartadosAbierto ? 'caret-up' : 'caret-down'} />
+              </button>
+            </div>
+          </div>
+          {apartadosAbierto && (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Ref.</th><th>Fecha</th><th>Hora</th><th>Clienta</th><th>Servicio</th>
+                  <th className="num">Total cita</th><th className="num">Anticipo</th><th className="num">Saldo</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {apartados.map(v => {
+                  const totalApt = totalVenta(v)
+                  const saldoApt = saldo(v)
+                  return (
+                    <tr key={v.id} onClick={() => setDetalle(v)}>
+                      <td className="num" style={{ fontWeight: 700, color: 'var(--gold)', fontSize: 12 }}>{v.ticket}</td>
+                      <td className="muted">{v.fecha}</td>
+                      <td className="num muted">{horaDe(v)}</td>
+                      <td style={{ fontWeight: 600 }}>{v.cliente}</td>
+                      <td className="muted">{v.lineas[0]?.nombre || '—'}</td>
+                      <td className="num">{mxn(totalApt)}</td>
+                      <td className="num" style={{ color: 'var(--st-conf)', fontWeight: 600 }}>{mxn(v.anticipo)}</td>
+                      <td className="num" style={{ color: 'var(--st-pend)', fontWeight: 600 }}>{mxn(saldoApt)}</td>
+                      <td>
+                        <div className="vc gap6" style={{ justifyContent: 'flex-end' }}>
+                          {puedeBorrar && (
+                            <button className="icon-btn" title="Eliminar apartado" style={{ width: 30, height: 30, color: 'var(--st-canc)' }}
+                              onClick={ev => { ev.stopPropagation(); setConfirmDel(v) }}>
+                              <Ic n="trash" size={14} />
+                            </button>
+                          )}
+                          <Ic n="caret-right" />
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {pos && <POSBuilder onClose={() => setPos(false)} onConfirm={registrarVenta} />}
       {detalle && <VentaDetalle v={detalle} onClose={() => setDetalle(null)} />}
