@@ -848,7 +848,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
           <table className="table">
             <thead>
               <tr>
-                <th>Ref.</th><th>Fecha</th><th>Clienta</th><th>Servicio</th>
+                <th>Ref.</th><th>Fecha</th><th>Hora</th><th>Clienta</th><th>Servicio</th>
                 <th className="num">Total cita</th><th className="num">Anticipo</th><th className="num">Saldo</th><th></th>
               </tr>
             </thead>
@@ -860,6 +860,7 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
                   <tr key={v.id} onClick={() => setDetalle(v)}>
                     <td className="num" style={{ fontWeight: 700, color: 'var(--gold)', fontSize: 12 }}>{v.ticket}</td>
                     <td className="muted">{v.fecha}</td>
+                    <td className="num muted">{horaDe(v)}</td>
                     <td style={{ fontWeight: 600 }}>{v.cliente}</td>
                     <td className="muted">{v.lineas[0]?.nombre || '—'}</td>
                     <td className="num">{mxn(totalApt)}</td>

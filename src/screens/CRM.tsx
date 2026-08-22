@@ -3,7 +3,7 @@ import { Avatar, EstadoBadge, ClienteBadge, Switch, toast, ConfirmModal, useModa
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
-import { mxn, helpers, normalizarTel as normalizarTelShared, normalizarBusqueda, telefonoValido, telefonoError, filtrarTel, formatTel, descargarCSV } from '../lib/helpers'
+import { mxn, helpers, normalizarTel as normalizarTelShared, normalizarBusqueda, telefonoValido, telefonoError, filtrarTel, formatTel, descargarCSV, ventaTS } from '../lib/helpers'
 import type { Clienta, EstadoClienta, FotoEntry } from '../types'
 
 function waUrl(tel: string, msg: string): string {
@@ -684,6 +684,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
   // Solo ventas reales de esta clienta
   const ventasCl = data.ventas.filter(v => c.id && v.clienteId === c.id).map(v => ({
     f: v.fecha,
+    hora: (() => { const t = ventaTS(v); return t == null ? '—' : new Date(t).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' }) })(),
     ticket: v.ticket,
     srv: v.lineas.map(l => (l.cant > 1 ? l.cant + '× ' : '') + l.nombre).join(', '),
     est: [...new Set(v.lineas.filter(l => l.est).map(l => {
@@ -802,7 +803,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
               ventasCl.length > 0 ? (
                 <table className="table" style={{ marginTop: -6 }}>
                   <thead>
-                    <tr><th>Fecha</th><th>Servicio / Productos</th><th>Estilista</th><th className="num">Total</th><th>Estado</th></tr>
+                    <tr><th>Fecha</th><th>Hora</th><th>Servicio / Productos</th><th>Estilista</th><th className="num">Total</th><th>Estado</th></tr>
                   </thead>
                   <tbody>
                     {ventasCl.map((h, i) => (
@@ -811,6 +812,7 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
                           {h.f}
                           {h.ticket && <span className="num" style={{ color: 'var(--gold)', marginLeft: 8, fontSize: 11.5 }}>{h.ticket}</span>}
                         </td>
+                        <td className="num muted">{h.hora}</td>
                         <td style={{ fontWeight: 600 }}>{h.srv}</td>
                         <td className="muted">{h.est}</td>
                         <td className="num" style={{ fontWeight: 600 }}>{mxn(h.total)}</td>
