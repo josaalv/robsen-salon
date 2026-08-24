@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { Usuario } from '../types'
 import { db } from './db'
 import { supabase } from './supabase'
+import { STORAGE_SUFFIX } from './env'
 
 interface AuthCtx {
   user: Usuario | null
@@ -21,7 +22,7 @@ const Ctx = createContext<AuthCtx>({
 // (evita que en un equipo compartido queden datos de la persona anterior).
 function clearLocalCaches() {
   try {
-    localStorage.removeItem('rb_data_v3')
+    localStorage.removeItem('rb_data_v3' + STORAGE_SUFFIX)
     localStorage.removeItem('rb_notif_leidas')
     localStorage.removeItem('rb_wa_contactados')
     localStorage.removeItem(CACHED_PROFILE_KEY)
@@ -32,7 +33,7 @@ function clearLocalCaches() {
 // para que un corte de red al validar el perfil (no un "sin acceso" real)
 // pueda usar este respaldo en vez de tirar a la persona al login teniendo ya
 // una sesión válida guardada.
-const CACHED_PROFILE_KEY = 'rb_cached_profile'
+const CACHED_PROFILE_KEY = 'rb_cached_profile' + STORAGE_SUFFIX
 
 function getCachedProfile(): Usuario | null {
   try {
