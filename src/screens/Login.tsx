@@ -104,7 +104,7 @@ export function ScreenLogin() {
     try {
       const { error: err } = await supabase.auth.resetPasswordForEmail(
         forgotEmail.trim().toLowerCase(),
-        { redirectTo: window.location.origin }
+        { redirectTo: window.location.origin + import.meta.env.BASE_URL }
       )
       if (err) throw err
       setForgotSent(true)
