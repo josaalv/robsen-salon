@@ -93,6 +93,56 @@ en vez de `https://robseninterno.com`:
    enlaces ya enviados antes del cambio siguen apuntando a donde apuntaban
    cuando se generaron.
 
+## Entorno de preview (`/preview/`)
+
+Para probar cambios de diseño/practicidad sin tocar producción, existe un
+segundo pipeline paralelo que despliega a `https://robseninterno.com/preview/`.
+
+**Flujo de trabajo:**
+
+1. Desarrolla y prueba tus cambios en la rama **`preview`** (push directo o
+   PR desde una rama de trabajo hacia `preview` — como prefieras).
+2. Cada `push` a `preview` dispara `.github/workflows/deploy-preview.yml`:
+   mismo build, pero con `VITE_BASE_PATH=/preview/`,
+   `VITE_SUPABASE_SCHEMA=preview` y `VITE_STORAGE_SUFFIX=_preview`, subido
+   por FTP a la subcarpeta `./preview/` en vez de la raíz.
+3. Cuando el cambio está listo, se aprueba y mergea `preview` → `main` (PR
+   normal) para que llegue a producción — **nada llega a producción sin
+   ese merge explícito**, ese es el "modelo de aprobación".
+
+**Aislamiento de código:** deploy en una subcarpeta aparte, nunca pisa la
+raíz del sitio ni la rama `main`. El `base` de Vite, el manifest del PWA y
+el scope del service worker se derivan de `VITE_BASE_PATH`, así que preview
+y producción nunca comparten caché de service worker aunque estén en el
+mismo dominio.
+
+**Aislamiento de datos:** en vez de un proyecto de Supabase aparte (el plan
+free solo permite 2 proyectos activos), preview usa un **schema** distinto
+(`preview`) dentro del mismo proyecto — mismas credenciales, mismo login
+(Supabase Auth es a nivel de proyecto, no de schema), pero tablas,
+políticas RLS y datos completamente separados de `public`. `VITE_STORAGE_SUFFIX`
+además evita que localStorage/IndexedDB se compartan entre pestañas de
+preview y producción abiertas en el mismo navegador.
+
+**Sincronización automática de datos (`public` → `preview`, un solo
+sentido):** cualquier alta/edición/borrado real en producción (operación
+rutinaria del negocio: una venta, una cita, una clienta nueva, etc.) se
+replica sola a `preview` vía triggers de base de datos
+(`supabase/migrations/058_sync_public_to_preview_triggers.sql`) — así
+preview nunca queda con datos viejos para probar. Regla de diseño no
+negociable: si la réplica hacia `preview` falla por lo que sea, **nunca**
+bloquea ni revierte la escritura real en producción (cada función de
+sincronización atrapa su propia excepción y solo deja un `WARNING` en los
+logs). Esto es soltar datos, no código — no pasa por ningún proceso de
+aprobación, es automático e inmediato.
+
+WhatsApp queda fuera del entorno de preview a propósito (depende de Edge
+Functions, que son inherentemente de producción).
+
+Ver `supabase/migrations/057_clone_public_to_preview_schema.sql` (creación
+del schema + semilla inicial) y `058_sync_public_to_preview_triggers.sql`
+(sincronización continua) para el detalle técnico completo.
+
 ## SPA routing al recargar
 
 La app usa rutas tipo `/agenda`, `/ventas`, etc. reflejadas en la URL del

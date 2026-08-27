@@ -2,7 +2,13 @@ node_modules/
 dist/
 .env.local
 .env
+.env.test
 *.local
 .DS_Store
 backups/
 *.dump
+playwright-report/
+test-results/
+.playwright/
+.playwright-cli/
+.claude/

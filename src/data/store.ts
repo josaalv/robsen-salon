@@ -4,6 +4,7 @@ import { defaultData } from './mockData'
 import { db } from '../lib/db'
 import { toast } from '../components/ui'
 import { enqueue, classifyError, getProtectedIds, subscribeOutbox, discardOutboxItem } from '../lib/outbox'
+import { STORAGE_SUFFIX } from '../lib/env'
 
 // El número de ticket real lo asigna el servidor (secuencia
 // ventas_ticket_seq dentro de crear_venta_con_lineas) — nunca se calcula del
@@ -22,7 +23,7 @@ function mergeProtected<T extends { id: string }>(serverList: T[], localList: T[
   return [...serverList.filter(r => !keptIds.has(r.id)), ...kept]
 }
 
-const STORAGE_KEY = 'rb_data_v3'
+const STORAGE_KEY = 'rb_data_v3' + STORAGE_SUFFIX
 
 interface Store {
   data: RBData

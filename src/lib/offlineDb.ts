@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import { STORAGE_SUFFIX } from './env'
 
 export type OutboxEntityType = 'cita' | 'clienta' | 'venta'
 export type OutboxOperation = 'upsert' | 'update' | 'delete'
@@ -30,7 +31,7 @@ class OfflineDatabase extends Dexie {
   outbox!: Table<OutboxItem, string>
 
   constructor() {
-    super('rb_offline')
+    super('rb_offline' + STORAGE_SUFFIX)
     this.version(1).stores({
       // Índices en entityType/status: el motor de sync recorre "pendientes
       // por tipo de entidad" y la bandeja de conflictos filtra por status.

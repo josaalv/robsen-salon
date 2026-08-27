@@ -12,6 +12,34 @@ const ROL_LABEL: Record<string, string> = {
 
 type Step = 'picker' | 'password' | 'forgot' | 'reset'
 
+// BASE_URL es '/' en producción y '/preview/' en el entorno de pruebas —
+// con eso basta para saber en cuál de los dos estamos y armar el enlace
+// de ida y vuelta (mismo dominio, ambos comparten sesión de Supabase Auth
+// pero cada uno con su propio schema/datos, ver docs/DEPLOY.md).
+const EN_PREVIEW = import.meta.env.BASE_URL !== '/'
+const URL_OTRO_ENTORNO = window.location.origin + (EN_PREVIEW ? '/' : '/preview/')
+
+function CambiarEntorno() {
+  return (
+    <a
+      href={URL_OTRO_ENTORNO}
+      style={{
+        position: 'absolute', top: 20, right: 20, zIndex: 2,
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '6px 12px', borderRadius: 999,
+        fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase',
+        textDecoration: 'none', whiteSpace: 'nowrap',
+        background: EN_PREVIEW ? 'rgba(200,161,74,0.15)' : 'var(--surface-2)',
+        border: `1px solid ${EN_PREVIEW ? 'var(--gold)' : 'var(--line-soft)'}`,
+        color: EN_PREVIEW ? 'var(--gold)' : 'var(--text-3)',
+      }}
+    >
+      <Ic n="flask" />
+      {EN_PREVIEW ? 'Volver al sistema' : 'Modo de prueba'}
+    </a>
+  )
+}
+
 export function ScreenLogin() {
   const { passwordRecovery, clearPasswordRecovery } = useAuth()
   const [usuarios, setUsuarios]   = useState<Usuario[]>([])
@@ -104,7 +132,7 @@ export function ScreenLogin() {
     try {
       const { error: err } = await supabase.auth.resetPasswordForEmail(
         forgotEmail.trim().toLowerCase(),
-        { redirectTo: window.location.origin }
+        { redirectTo: window.location.origin + import.meta.env.BASE_URL }
       )
       if (err) throw err
       setForgotSent(true)
@@ -160,6 +188,7 @@ export function ScreenLogin() {
 
       {/* ── Lado marca ─────────────────────────────────────────────────── */}
       <div className="book-aside">
+        <CambiarEntorno />
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(600px 420px at 75% 5%, rgba(200,161,74,0.12), transparent 60%)' }} />
         <div style={{ position:'relative', zIndex:1, flex:1, display:'flex', flexDirection:'column' }}>
           <div className="logo serif" style={{ fontStyle:'italic', fontSize:36, background:'var(--gold-grad)', WebkitBackgroundClip:'text', backgroundClip:'text', WebkitTextFillColor:'transparent' }}>
@@ -168,6 +197,11 @@ export function ScreenLogin() {
           <div style={{ fontSize:10, letterSpacing:'.38em', textTransform:'uppercase', color:'var(--text-3)', marginTop:8 }}>
             Salón &amp; Spa · Sistema interno
           </div>
+          {EN_PREVIEW && (
+            <div style={{ fontSize:10.5, fontWeight:600, color:'var(--gold)', marginTop:10, display:'flex', alignItems:'center', gap:6 }}>
+              <Ic n="flask" /> Estás en el entorno de prueba — nada de esto es real
+            </div>
+          )}
           <div style={{ fontSize:9, color:'var(--text-3)', opacity:0.45, marginTop:4, letterSpacing:'.06em' }}>v1.057</div>
           <div style={{ marginTop:'auto' }}>
             <h2 className="display" style={{ fontSize:32, lineHeight:1.14 }}>

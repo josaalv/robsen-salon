@@ -51,7 +51,14 @@ const NAV: NavGroup[] = [
 const ALL = NAV.flatMap(g => g.items)
 
 function initialRoute() {
-  const path = window.location.pathname.replace(/^\/+/, '')
+  // import.meta.env.BASE_URL refleja el `base` real del build ('/' en
+  // producción, '/preview/' en preview) — sin restarlo primero, cualquier
+  // URL con prefijo (ej. /preview/ventas) nunca hace match con ningún id
+  // de NAV y siempre cae a 'dashboard'.
+  const base = import.meta.env.BASE_URL
+  let pathname = window.location.pathname
+  if (pathname.startsWith(base)) pathname = pathname.slice(base.length)
+  const path = pathname.replace(/^\/+/, '')
   return ALL.some(i => i.id === path) ? path : 'dashboard'
 }
 
@@ -127,7 +134,12 @@ function AppShell() {
   useEffect(() => { window.scrollTo(0, 0); setMenuOpen(false); setTopPop(null); setSearchQ(''); setMobileNavOpen(false) }, [route])
 
   useEffect(() => {
-    const path = '/' + route
+    // Igual que initialRoute: la URL visible tiene que respetar el `base`
+    // real del build, si no un click dentro de /preview/ deja la barra de
+    // direcciones apuntando a la raíz del dominio principal (/ventas en vez
+    // de /preview/ventas) — y un F5 en esa URL carga el bundle equivocado.
+    const base = import.meta.env.BASE_URL.replace(/\/+$/, '')
+    const path = base + '/' + route
     if (window.location.pathname !== path) window.history.replaceState(null, '', path)
   }, [route])
 
