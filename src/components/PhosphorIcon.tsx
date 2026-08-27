@@ -37,6 +37,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   'crown-simple': Ph.CrownSimple,
   'heart': Ph.Heart,
   'sparkle': Ph.Sparkle,
+  'flask': Ph.Flask,
   'star': Ph.Star,
   'star-half': Ph.StarHalf,
   'chart-bar': Ph.ChartBar,
