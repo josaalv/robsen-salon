@@ -26,12 +26,14 @@ const ESTADO_MAP: Record<string, string> = {
   charged_back: "cancelado",
 };
 
-async function rest(path: string, init: RequestInit = {}) {
+async function rest(path: string, schema: string, init: RequestInit = {}) {
   return fetch(`${SUPA_URL}/rest/v1/${path}`, {
     ...init,
     headers: {
       "apikey": SERVICE, "Authorization": `Bearer ${SERVICE}`,
-      "Content-Type": "application/json", ...(init.headers || {}),
+      "Content-Type": "application/json",
+      "Accept-Profile": schema, "Content-Profile": schema,
+      ...(init.headers || {}),
     },
   });
 }
@@ -76,11 +78,17 @@ Deno.serve(async (req: Request) => {
     const pago = await payRes.json();
     const estado = ESTADO_MAP[pago.status] || "en_proceso";
     const referencia = String(pago.external_reference || "");
+    // El entorno viene del metadata que mp-crear-preferencia fijó al crear
+    // la preferencia — se lee de la respuesta de Mercado Pago (fuente de
+    // verdad), nunca de algo que mande el propio webhook, así que no se
+    // puede falsificar. Sin esto, un pago de prueba en preview terminaría
+    // actualizando (o creando) una fila en la tabla real de producción.
+    const schema = pago.metadata?.entorno === "preview" ? "preview" : "public";
 
     // Upsert por payment_id: si ya existe el registro (normal — se creó
     // 'pendiente' en mp-crear-preferencia), lo actualiza; si no existe
     // (pago iniciado por otra vía, o el insert original falló), lo crea.
-    const existente = await rest(`pagos_online?payment_id=eq.${encodeURIComponent(String(pago.id))}&select=id`);
+    const existente = await rest(`pagos_online?payment_id=eq.${encodeURIComponent(String(pago.id))}&select=id`, schema);
     const filas = existente.ok ? await existente.json() : [];
 
     const payloadActualizado = {
@@ -100,7 +108,7 @@ Deno.serve(async (req: Request) => {
 
     let writeRes: Response;
     if (filas.length > 0) {
-      writeRes = await rest(`pagos_online?id=eq.${filas[0].id}`, {
+      writeRes = await rest(`pagos_online?id=eq.${filas[0].id}`, schema, {
         method: "PATCH", headers: { "Prefer": "return=minimal" },
         body: JSON.stringify(payloadActualizado),
       });
@@ -109,16 +117,16 @@ Deno.serve(async (req: Request) => {
       // encontrarla por external_reference antes de crear una nueva, para
       // no duplicar el registro 'pendiente' que ya dejó mp-crear-preferencia.
       const porReferencia = referencia
-        ? await rest(`pagos_online?external_reference=eq.${encodeURIComponent(referencia)}&payment_id=is.null&select=id`)
+        ? await rest(`pagos_online?external_reference=eq.${encodeURIComponent(referencia)}&payment_id=is.null&select=id`, schema)
         : null;
       const filasRef = porReferencia?.ok ? await porReferencia.json() : [];
       if (filasRef.length > 0) {
-        writeRes = await rest(`pagos_online?id=eq.${filasRef[0].id}`, {
+        writeRes = await rest(`pagos_online?id=eq.${filasRef[0].id}`, schema, {
           method: "PATCH", headers: { "Prefer": "return=minimal" },
           body: JSON.stringify(payloadActualizado),
         });
       } else {
-        writeRes = await rest("pagos_online", {
+        writeRes = await rest("pagos_online", schema, {
           method: "POST", headers: { "Prefer": "return=minimal" },
           body: JSON.stringify({ ...payloadActualizado, external_reference: referencia || "desconocida", monto: pago.transaction_amount ?? 0 }),
         });

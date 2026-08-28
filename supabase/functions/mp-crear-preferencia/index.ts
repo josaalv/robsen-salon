@@ -24,12 +24,12 @@ function json(obj: unknown, status = 200) {
   });
 }
 
-async function rest(path: string, init: RequestInit = {}) {
+async function rest(path: string, schema: string, init: RequestInit = {}) {
   return fetch(`${SUPA_URL}/rest/v1/${path}`, {
     ...init,
     headers: {
       "apikey": SERVICE, "Authorization": `Bearer ${SERVICE}`,
-      "Content-Type": "application/json", ...(init.headers || {}),
+      "Content-Type": "application/json", "Content-Profile": schema, ...(init.headers || {}),
     },
   });
 }
@@ -43,6 +43,14 @@ Deno.serve(async (req: Request) => {
     const monto = Number(body.monto);
     const referencia = String(body.referencia || "").trim();
     const descripcion = String(body.descripcion || "Anticipo de cita — Robsen Salón & Spa").slice(0, 255);
+    // basePath viene del cliente ('/' en producción, '/preview/' en preview)
+    // — determina a qué schema escribir el registro pendiente y a dónde debe
+    // regresar Mercado Pago después de pagar. Sin esto, cualquier prueba en
+    // preview escribiría en la tabla de pagos_online real de producción y
+    // regresaría al dominio raíz en vez de /preview/.
+    const basePath = String(body.basePath || "/").replace(/\/+$/, "") + "/";
+    const entorno = basePath.includes("preview") ? "preview" : "produccion";
+    const schema = entorno === "preview" ? "preview" : "public";
 
     if (!referencia) return json({ error: "Falta 'referencia' (id de la cita/apartado)." }, 400);
     if (!Number.isFinite(monto) || monto <= 0) return json({ error: "'monto' debe ser un número mayor a cero." }, 400);
@@ -50,10 +58,11 @@ Deno.serve(async (req: Request) => {
     const preference = {
       items: [{ title: descripcion, quantity: 1, unit_price: monto, currency_id: "MXN" }],
       external_reference: referencia,
+      metadata: { entorno },
       back_urls: {
-        success: "https://robseninterno.com/booking?pago=exitoso",
-        failure: "https://robseninterno.com/booking?pago=fallido",
-        pending: "https://robseninterno.com/booking?pago=pendiente",
+        success: `https://robseninterno.com${basePath}booking?pago=exitoso`,
+        failure: `https://robseninterno.com${basePath}booking?pago=fallido`,
+        pending: `https://robseninterno.com${basePath}booking?pago=pendiente`,
       },
       auto_return: "approved",
       notification_url: `${SUPA_URL}/functions/v1/mp-webhook`,
@@ -71,7 +80,7 @@ Deno.serve(async (req: Request) => {
 
     // Deja un registro 'pendiente' desde ya — mp-webhook lo actualiza cuando
     // llegue el resultado real del pago (aprobado/rechazado/etc.).
-    const insertRes = await rest("pagos_online", {
+    const insertRes = await rest("pagos_online", schema, {
       method: "POST",
       headers: { "Prefer": "return=representation" },
       body: JSON.stringify({

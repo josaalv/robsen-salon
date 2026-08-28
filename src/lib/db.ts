@@ -418,8 +418,12 @@ export const db = {
   // una futura pantalla de "cobro virtual" interna.
   async crearPreferenciaPago(monto: number, referencia: string, descripcion?: string): Promise<{ preferenceId: string; checkoutUrl: string }> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
+    // basePath le dice a la función qué entorno la llamó ('/' o '/preview/')
+    // — sin esto, el pago de una prueba en preview escribiría en la tabla de
+    // pagos_online de producción y regresaría al usuario al dominio raíz en
+    // vez de /preview/ después de pagar.
     const { data, error } = await supabase.functions.invoke('mp-crear-preferencia', {
-      body: { monto, referencia, descripcion },
+      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL },
     })
     if (error) throw new Error(data?.error || error.message)
     if (data?.error) throw new Error(data.error)
