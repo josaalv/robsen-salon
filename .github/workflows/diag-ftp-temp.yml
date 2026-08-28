@@ -15,7 +15,7 @@ jobs:
         env:
           FTP_SERVER: ${{ secrets.HOSTINGER_FTP_SERVER }}
           FTP_USER: ${{ secrets.ROBSEN_FTP_USERNAME }}
-          FTP_PASS: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          FTP_PASS: ${{ secrets.ROBSEN_FTP_PASSWORD }}
         run: |
           lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" <<'EOF'
           set ssl:verify-certificate no
