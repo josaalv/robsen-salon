@@ -29,7 +29,9 @@ async function rest(path: string, schema: string, init: RequestInit = {}) {
     ...init,
     headers: {
       "apikey": SERVICE, "Authorization": `Bearer ${SERVICE}`,
-      "Content-Type": "application/json", "Content-Profile": schema, ...(init.headers || {}),
+      "Content-Type": "application/json",
+      "Accept-Profile": schema, "Content-Profile": schema,
+      ...(init.headers || {}),
     },
   });
 }
@@ -59,6 +61,38 @@ Deno.serve(async (req: Request) => {
 
     if (!referencia) return json({ error: "Falta 'referencia' (id de la cita/apartado)." }, 400);
     if (!Number.isFinite(monto) || monto <= 0) return json({ error: "'monto' debe ser un número mayor a cero." }, 400);
+
+    // Cuando esta preferencia viene de Booking (metadataExtra.cita), el
+    // monto/total NUNCA se toman en confianza del navegador — se recalculan
+    // aquí contra el precio real del servicio. Sin esto, cualquiera podría
+    // llamar esta función directo (la anon key es pública por diseño) con un
+    // 'monto' de un peso mientras el metadata dice que la cita vale $5,000,
+    // y terminar con una reserva real agendada como si el anticipo correcto
+    // se hubiera cobrado. No aplica al futuro "cobro virtual" interno, que
+    // no trae una cita asociada.
+    const citaMeta = metadataExtra.cita as Record<string, unknown> | undefined;
+    if (citaMeta?.servicio_id) {
+      const servRes = await rest(`servicios?id=eq.${encodeURIComponent(String(citaMeta.servicio_id))}&select=precio,anticipo,online,activo`, schema);
+      const servRows = servRes.ok ? await servRes.json() : [];
+      const serv = servRows[0];
+      if (!serv || serv.activo === false || serv.online === false) {
+        return json({ error: "Ese servicio ya no está disponible para agendar en línea." }, 400);
+      }
+      if (!serv.anticipo) {
+        return json({ error: "Ese servicio no requiere anticipo." }, 400);
+      }
+      const cfgRes = await rest(`config?id=eq.main&select=anticipo_pct`, schema);
+      const cfgRows = cfgRes.ok ? await cfgRes.json() : [];
+      const anticipoPct = Number(cfgRows[0]?.anticipo_pct ?? 35);
+      const precioReal = Number(serv.precio);
+      const anticipoEsperado = Math.round(precioReal * anticipoPct / 100);
+      if (Math.abs(anticipoEsperado - monto) > 1) {
+        return json({ error: "El monto del anticipo no coincide con el precio real del servicio." }, 400);
+      }
+      if (citaMeta.total !== undefined && Math.abs(Number(citaMeta.total) - precioReal) > 1) {
+        return json({ error: "El total de la cita no coincide con el precio real del servicio." }, 400);
+      }
+    }
 
     const preference = {
       items: [{ title: descripcion, quantity: 1, unit_price: monto, currency_id: "MXN" }],
