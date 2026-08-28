@@ -7,6 +7,15 @@ import { VitePWA } from 'vite-plugin-pwa'
 // absoluta (manifest, íconos) tiene que derivarse de esta misma variable o
 // el build de preview quedaría apuntando a los assets de producción.
 const BASE_PATH = process.env.VITE_BASE_PATH || '/'
+// El mismo build también se despliega como /agendar/ en robsen.com.mx (el
+// dominio público que ya conoce la clientela, separado del CRM interno) —
+// ahí nadie debería ver el manifest de instalación diciendo "CRM/ERP
+// interno": es la misma app, pero ese despliegue muestra únicamente
+// Booking.tsx.
+const APP_MODE = process.env.VITE_APP_MODE || 'interno'
+const MANIFEST_TEXT = APP_MODE === 'agendar'
+  ? { name: 'Agenda tu cita · Robsen Salón & Spa', short_name: 'Robsen — Agendar', description: 'Agenda tu cita en línea con Robsen Salón & Spa' }
+  : { name: 'Robsen Salón · Sistema interno', short_name: 'Robsen', description: 'CRM/ERP interno de Robsen Salón & Spa' }
 
 export default defineConfig({
   plugins: [
@@ -46,9 +55,7 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Robsen Salón · Sistema interno',
-        short_name: 'Robsen',
-        description: 'CRM/ERP interno de Robsen Salón & Spa',
+        ...MANIFEST_TEXT,
         start_url: BASE_PATH,
         scope: BASE_PATH,
         display: 'standalone',

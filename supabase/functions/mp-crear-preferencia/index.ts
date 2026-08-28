@@ -89,6 +89,14 @@ Deno.serve(async (req: Request) => {
     const basePath = String(body.basePath || "/").replace(/\/+$/, "") + "/";
     const entorno = basePath.includes("preview") ? "preview" : "produccion";
     const schema = entorno === "preview" ? "preview" : "public";
+    // El agendamiento público vive en dos dominios (robseninterno.com y,
+    // ahora, robsen.com.mx/agendar) — Mercado Pago necesita saber a cuál
+    // regresar después de pagar. origen viene del navegador, así que NUNCA
+    // se toma en confianza sin validar contra una lista fija: de lo
+    // contrario cualquiera podría pasar un dominio propio y usar esta
+    // función como redirector abierto justo después de "pagar".
+    const ORIGENES_VALIDOS = new Set(["https://robseninterno.com", "https://robsen.com.mx", "https://www.robsen.com.mx"]);
+    const origen = ORIGENES_VALIDOS.has(String(body.origen)) ? String(body.origen) : "https://robseninterno.com";
     const mpToken = entorno === "preview" ? MP_TOKEN_TEST : MP_TOKEN_PROD;
     if (!mpToken) {
       const faltante = entorno === "preview" ? "MERCADOPAGO_ACCESS_TOKEN_TEST" : "MERCADOPAGO_ACCESS_TOKEN";
@@ -143,9 +151,9 @@ Deno.serve(async (req: Request) => {
       external_reference: referencia,
       metadata: { entorno, ...metadataExtra },
       back_urls: {
-        success: `https://robseninterno.com${basePath}booking?pago=exitoso`,
-        failure: `https://robseninterno.com${basePath}booking?pago=fallido`,
-        pending: `https://robseninterno.com${basePath}booking?pago=pendiente`,
+        success: `${origen}${basePath}booking?pago=exitoso`,
+        failure: `${origen}${basePath}booking?pago=fallido`,
+        pending: `${origen}${basePath}booking?pago=pendiente`,
       },
       auto_return: "approved",
       // El entorno viaja también en la querystring del propio webhook (no

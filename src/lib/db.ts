@@ -434,9 +434,14 @@ export const db = {
     // basePath le dice a la función qué entorno la llamó ('/' o '/preview/')
     // — sin esto, el pago de una prueba en preview escribiría en la tabla de
     // pagos_online de producción y regresaría al usuario al dominio raíz en
-    // vez de /preview/ después de pagar.
+    // vez de /preview/ después de pagar. origen (el dominio real, ej.
+    // https://robsen.com.mx) es necesario aparte de basePath porque el
+    // agendamiento público ahora vive en dos dominios distintos con el
+    // mismo basePath de producción ('/') — sin el dominio real, Mercado
+    // Pago regresaría siempre a robseninterno.com sin importar desde dónde
+    // se inició el pago.
     const { data, error } = await supabase.functions.invoke('mp-crear-preferencia', {
-      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL, metadataExtra, recaptchaToken },
+      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL, origen: window.location.origin, metadataExtra, recaptchaToken },
     })
     if (error) throw new Error(data?.error || error.message)
     if (data?.error) throw new Error(data.error)

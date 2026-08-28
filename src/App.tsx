@@ -58,7 +58,13 @@ function pathFromUrl() {
   const base = import.meta.env.BASE_URL
   let pathname = window.location.pathname
   if (pathname.startsWith(base)) pathname = pathname.slice(base.length)
-  return pathname.replace(/^\/+/, '')
+  // También se quita la barra final: Apache redirige /booking a /booking/
+  // cuando ese path es un directorio real con su propio index.html (el caso
+  // de /agendar/booking/ en robsen.com.mx, servido así a propósito para no
+  // depender de una regla de reescritura que compita con el .htaccess de
+  // WordPress en el dominio raíz) — sin esto, 'booking/' nunca hace match
+  // con el id 'booking' de NAV.
+  return pathname.replace(/^\/+/, '').replace(/\/+$/, '')
 }
 
 function initialRoute() {
@@ -549,13 +555,27 @@ function NotifPop({ onClose, go }: any) {
   )
 }
 
+// El agendamiento público se retiró de aquí — vive en robsen.com.mx/agendar
+// (el dominio que ya conoce la clientela; este dominio suena, y es,
+// interno). Solo aplica a la producción real: BASE_URL === '/' es
+// específicamente el deploy raíz de robseninterno.com — ni preview
+// (BASE_URL '/preview/', sigue sirviendo Booking normal para pruebas) ni
+// el propio deploy de /agendar/ (BASE_URL '/agendar/', se redirigiría a
+// sí mismo en bucle si se comparara distinto) entran en esta condición.
+const BOOKING_PUBLICO_URL = 'https://robsen.com.mx/agendar/booking'
+
 function LoginGate() {
   const { user, loading, passwordRecovery } = useAuth()
   const [LoginScreen, setLoginScreen] = useState<React.ComponentType<any> | null>(null)
   const [BookingScreen, setBookingScreen] = useState<React.ComponentType<any> | null>(null)
   const publicBooking = isBookingRoute()
+  const redirigirBookingPublico = publicBooking && import.meta.env.BASE_URL === '/'
 
   useEffect(() => {
+    if (redirigirBookingPublico) {
+      window.location.replace(BOOKING_PUBLICO_URL + window.location.search)
+      return
+    }
     if (publicBooking) {
       import('./screens/Booking').then(m => setBookingScreen(() => m.ScreenBooking)).catch(() => {})
       return
@@ -569,7 +589,13 @@ function LoginGate() {
           <button className="btn gold" onClick={() => window.location.reload()}><Ic n="arrows-clockwise" />Reintentar</button>
         </div>
       )))
-  }, [publicBooking])
+  }, [publicBooking, redirigirBookingPublico])
+
+  if (redirigirBookingPublico) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Redirigiendo…</div>
+    )
+  }
 
   // Se evalúa antes que loading/user/passwordRecovery a propósito: quien
   // llega aquí desde un enlace público (Google/redes) nunca debe ver la
