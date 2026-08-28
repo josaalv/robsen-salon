@@ -8,13 +8,11 @@ import { test, expect, type Page } from '@playwright/test'
 // no ensuciar datos reales; dejan una cita/clienta de prueba reconocible
 // (nombre con prefijo "E2E") en el schema 'preview'.
 //
-// Limitación conocida de este repo: en el sandbox donde se escribieron
-// estas pruebas, Chromium no puede alcanzar dominios externos por HTTPS
-// (confirmado con una prueba de conectividad aparte) — así que no fue
-// posible correrlas y confirmar que pasan desde aquí. Están escritas y
-// revisadas contra la estructura real de Booking.tsx; hace falta correrlas
-// una vez desde un entorno con red normal (CI, o tu máquina) antes de
-// confiar en ellas como red de seguridad real.
+// Nota: se escribieron desde un sandbox donde Chromium no puede alcanzar
+// dominios externos por HTTPS, así que no se pudieron correr desde ahí —
+// se verificaron por primera vez en GitHub Actions (red real), lo que de
+// paso confirmó en vivo el resto de la auditoría: el pago con anticipo sí
+// redirige a Mercado Pago, y un F5 en /preview/booking ya no cae en login.
 const PREVIEW = (process.env.ROBSEN_PREVIEW_URL || 'https://robseninterno.com/preview/').replace(/\/+$/, '') + '/'
 
 async function irAAgendar(page: Page) {
@@ -52,11 +50,15 @@ test.describe('Agendamiento público — sin anticipo', () => {
     await page.getByTestId('prof-cualquiera').click()
     await page.getByRole('button', { name: 'Continuar' }).click()
 
-    await expect(page.getByText('Fecha y hora')).toBeVisible()
+    // getByRole('heading', ...) a propósito, no getByText: el nombre del
+    // paso también aparece en el indicador lateral de pasos (ej. "3Fecha y
+    // hora"), y con estos dos nombres coincide exactamente con el <h1> —
+    // getByText encuentra ambos y truena en "strict mode violation".
+    await expect(page.getByRole('heading', { name: 'Fecha y hora' })).toBeVisible()
     await elegirDiaYHora(page)
     await page.getByRole('button', { name: 'Continuar' }).click()
 
-    await expect(page.getByText('Tus datos')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Tus datos' })).toBeVisible()
     await page.getByPlaceholder('Tu nombre').fill('E2E Prueba Automatizada')
     await page.getByPlaceholder('33 1234 5678').fill('33 1234 5678')
 
