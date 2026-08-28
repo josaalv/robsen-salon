@@ -23,11 +23,9 @@ jobs:
           set net:timeout 20
           set net:max-retries 2
           set cmd:fail-exit no
-          echo "--- raíz de la cuenta (u796891002) ---"
-          cls -1 .
-          echo "--- public_html/ (si existe ahí) ---"
-          cls -1 public_html
-          echo "--- domains/ (si existe) ---"
-          cls -1 domains
+          echo "--- domains/robsen.com.mx/ ---"
+          cls -1 domains/robsen.com.mx
+          echo "--- domains/robsen.com.mx/public_html/ ---"
+          cls -1 domains/robsen.com.mx/public_html
           bye
           EOF
