@@ -9,7 +9,14 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const MP_TOKEN = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+// Dos credenciales separadas, nunca una sola compartida: una cuenta de
+// prueba de Mercado Pago y la cuenta real viven en espacios completamente
+// distintos (sus payment_id no se cruzan). Preview SIEMPRE usa la de
+// prueba — así nadie vuelve a cobrar dinero real sin querer probando en
+// /preview/. Producción exige la real; si falta, la función se niega a
+// cobrar en vez de caer de vuelta a la de prueba en silencio.
+const MP_TOKEN_PROD = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+const MP_TOKEN_TEST = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN_TEST");
 const RECAPTCHA_SECRET = Deno.env.get("RECAPTCHA_SECRET_KEY");
 // Llave de prueba oficial de Google (documentada en su FAQ de reCAPTCHA,
 // pública a propósito — no es secreta) — siempre da puntuación 0.9. Sin
@@ -68,7 +75,6 @@ async function verificarRecaptcha(token: unknown, accion: string, secret: string
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return json({});
-  if (!MP_TOKEN) return json({ error: "Falta el secreto MERCADOPAGO_ACCESS_TOKEN en Supabase." }, 500);
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -83,6 +89,11 @@ Deno.serve(async (req: Request) => {
     const basePath = String(body.basePath || "/").replace(/\/+$/, "") + "/";
     const entorno = basePath.includes("preview") ? "preview" : "produccion";
     const schema = entorno === "preview" ? "preview" : "public";
+    const mpToken = entorno === "preview" ? MP_TOKEN_TEST : MP_TOKEN_PROD;
+    if (!mpToken) {
+      const faltante = entorno === "preview" ? "MERCADOPAGO_ACCESS_TOKEN_TEST" : "MERCADOPAGO_ACCESS_TOKEN";
+      return json({ error: `Falta el secreto ${faltante} en Supabase.` }, 500);
+    }
     // metadataExtra (ej. los datos de la cita/clienta de Booking) viaja con
     // la preferencia y Mercado Pago lo regresa intacto en el webhook — así
     // el webhook puede agendar la cita del lado del servidor cuando el pago
@@ -137,12 +148,17 @@ Deno.serve(async (req: Request) => {
         pending: `https://robseninterno.com${basePath}booking?pago=pendiente`,
       },
       auto_return: "approved",
-      notification_url: `${SUPA_URL}/functions/v1/mp-webhook`,
+      // El entorno viaja también en la querystring del propio webhook (no
+      // solo en metadata): mp-webhook necesita saber CON QUÉ credencial
+      // verificar el pago con la API de Mercado Pago, y eso hay que
+      // decidirlo antes de poder leer metadata — la cuenta de prueba y la
+      // real son espacios separados, cada una solo ve sus propios pagos.
+      notification_url: `${SUPA_URL}/functions/v1/mp-webhook?entorno=${entorno}`,
     };
 
     const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${MP_TOKEN}`, "Content-Type": "application/json" },
+      headers: { "Authorization": `Bearer ${mpToken}`, "Content-Type": "application/json" },
       body: JSON.stringify(preference),
     });
     const mpData = await mpRes.json();

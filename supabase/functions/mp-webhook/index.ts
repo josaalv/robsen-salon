@@ -14,7 +14,15 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const MP_TOKEN = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+// Cuenta de prueba y cuenta real de Mercado Pago son espacios separados —
+// un payment_id de sandbox no existe para la cuenta real y viceversa. Se
+// necesita la credencial correcta para poder siquiera preguntarle a la API
+// de Mercado Pago por ese pago. mp-crear-preferencia manda el entorno en la
+// propia querystring del notification_url (ver ahí el porqué: no se puede
+// esperar a leer metadata, porque para leerla ya hace falta haber elegido
+// la credencial correcta).
+const MP_TOKEN_PROD = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+const MP_TOKEN_TEST = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN_TEST");
 
 const ESTADO_MAP: Record<string, string> = {
   approved: "aprobado",
@@ -39,7 +47,7 @@ async function rest(path: string, schema: string, init: RequestInit = {}) {
 }
 
 Deno.serve(async (req: Request) => {
-  if (!MP_TOKEN) return new Response("falta MERCADOPAGO_ACCESS_TOKEN", { status: 500 });
+  if (!MP_TOKEN_PROD && !MP_TOKEN_TEST) return new Response("falta MERCADOPAGO_ACCESS_TOKEN", { status: 500 });
 
   try {
     const url = new URL(req.url);
@@ -48,6 +56,11 @@ Deno.serve(async (req: Request) => {
     // ({ type: "payment", data: { id: "123" } }) — se aceptan ambas.
     let paymentId = url.searchParams.get("id") || url.searchParams.get("data.id");
     let topic = url.searchParams.get("topic") || url.searchParams.get("type");
+    // entorno viene de la querystring del notification_url que fijó
+    // mp-crear-preferencia (ver ahí el porqué). Preferencias creadas antes
+    // de este cambio no lo traen — para esas se intenta con ambas
+    // credenciales, empezando por la de producción.
+    const entornoParam = url.searchParams.get("entorno");
 
     if (req.method === "POST") {
       const body = await req.json().catch(() => null);
@@ -66,10 +79,23 @@ Deno.serve(async (req: Request) => {
 
     // Fuente de verdad real: la API de Mercado Pago, nunca el payload del
     // webhook. Esto es lo que hace imposible falsificar un "pago aprobado".
-    const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-      headers: { "Authorization": `Bearer ${MP_TOKEN}` },
-    });
-    if (!payRes.ok) {
+    // Se prueba primero la credencial que indica entornoParam; si no viene
+    // (preferencia vieja) o esa credencial no encuentra el pago (404 —
+    // pertenece a la otra cuenta), se reintenta con la otra credencial
+    // disponible antes de darlo por no verificable.
+    const ordenTokens = entornoParam === "preview"
+      ? [MP_TOKEN_TEST, MP_TOKEN_PROD]
+      : [MP_TOKEN_PROD, MP_TOKEN_TEST];
+    let payRes: Response | null = null;
+    for (const token of ordenTokens) {
+      if (!token) continue;
+      const intento = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (intento.ok) { payRes = intento; break; }
+      payRes = intento;
+    }
+    if (!payRes || !payRes.ok) {
       // 404 legítimo (id de prueba/otro ambiente) vs. error real de MP:
       // en cualquier caso, dejamos que Mercado Pago reintente si fue un
       // problema transitorio de su lado.
