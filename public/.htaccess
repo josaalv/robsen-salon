@@ -2,7 +2,15 @@ Options -MultiViews
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^ /index.html [L]
+# Sin "/" al inicio del destino a propósito: con la barra absoluta, esta
+# regla dentro de /preview/.htaccess reescribía hacia /index.html en la
+# RAÍZ del dominio (producción) en vez de /preview/index.html — cualquier
+# entrada directa a una ruta profunda bajo /preview/ (ej. /preview/booking,
+# o un F5 en /preview/ventas) terminaba sirviendo el bundle de producción.
+# Sin la barra, mod_rewrite resuelve el destino relativo al directorio del
+# .htaccess que lo procesa, así que un mismo archivo funciona igual en la
+# raíz (producción) y en /preview/.
+RewriteRule ^ index.html [L]
 
 # Control de caché. El index.html es el que decide qué bundles cargar: si el
 # navegador lo cachea, se queda con una versión vieja y no ve los cambios
