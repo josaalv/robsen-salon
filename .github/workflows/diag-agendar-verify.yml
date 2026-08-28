@@ -1,0 +1,33 @@
+name: Verificar /agendar/ en vivo (borrar después de usar)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/diag-agendar-verify.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: Verificar raíz de /agendar/ y el título
+        run: |
+          cat > check.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+          await page.goto('https://robsen.com.mx/agendar/', { waitUntil: 'load', timeout: 20000 });
+          await page.waitForTimeout(1500);
+          console.log('URL:', page.url());
+          console.log('Title:', await page.title());
+          const heading = await page.locator('h1').first().textContent().catch(() => '(sin h1)');
+          console.log('H1:', heading);
+          const loginVisible = await page.getByText(/contraseñ|iniciar sesión/i).count();
+          console.log('Elementos de login visibles:', loginVisible);
+          await browser.close();
+          EOF
+          node check.mjs
