@@ -24,4 +24,14 @@ RewriteRule ^ index.html [L]
   <FilesMatch "\.(js|css|woff2?|ttf|eot|png|jpe?g|gif|svg|webp|ico)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
+  <!-- sw.js y registerSW.js NO llevan hash en el nombre (a diferencia de
+       assets/index-ABC123.js) — la regla de arriba los atrapaba también y
+       los cacheaba un año como "immutable". Eso es lo que explicaba que un
+       deploy nuevo no se notara en un navegador con visitas previas: el
+       propio archivo que decide si hay una versión nueva podía venir de
+       caché. Esta regla va DESPUÉS a propósito, para pisar la de arriba
+       solo en estos dos archivos. -->
+  <FilesMatch "^(sw|registerSW)\.js$">
+    Header set Cache-Control "no-cache, must-revalidate, max-age=0"
+  </FilesMatch>
 </IfModule>
