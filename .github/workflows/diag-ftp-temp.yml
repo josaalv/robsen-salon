@@ -1,7 +1,9 @@
 name: Diagnóstico FTP temporal (borrar después de usar)
 
 on:
-  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diag-ftp-temp.yml'
 
 jobs:
   ls:
