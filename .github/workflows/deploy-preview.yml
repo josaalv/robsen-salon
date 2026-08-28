@@ -79,3 +79,34 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  schema-parity-check:
+    # H-06 de la auditoría: nada avisaba si una migración nueva contra
+    # 'public' se quedaba sin espejear en 'preview' — así pasó con H-04
+    # (las RPCs de booking público solo existían en 'public', preview
+    # fallaba con "No se pudo agendar la cita"). Corre independiente del
+    # deploy — no lo bloquea, solo avisa si algo divergió.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar cliente de Postgres 17
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17
+      - name: Comparar funciones y tablas entre preview y public
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::Falta el secret SUPABASE_DB_URL — se omite la verificación de paridad de esquema."
+            exit 0
+          fi
+          RESULT=$(/usr/lib/postgresql/17/bin/psql "$DATABASE_URL" -t -A -F' | ' -f scripts/check-schema-parity.sql)
+          if [ -n "$RESULT" ]; then
+            echo "::error::Los esquemas 'public' y 'preview' divergieron — algo se aplicó a uno y no al otro:"
+            echo "$RESULT"
+            exit 1
+          fi
+          echo "Sin divergencias entre 'public' y 'preview'."
