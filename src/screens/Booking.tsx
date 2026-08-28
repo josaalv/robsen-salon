@@ -67,7 +67,7 @@ export function ScreenBooking() {
   // el wizard desde cero (ver PublicBookingRoute en App.tsx, que monta esta
   // pantalla sin exigir sesión).
   const [resumenPago, setResumenPago] = useState<null | {
-    estado: 'cargando' | 'aprobado' | 'pendiente' | 'en_proceso' | 'rechazado' | 'cancelado'
+    estado: 'cargando' | 'aprobado' | 'aprobado_sin_agendar' | 'pendiente' | 'en_proceso' | 'rechazado' | 'cancelado'
     reserva: ReservaGuardada | null
   }>(null)
 
@@ -87,7 +87,12 @@ export function ScreenBooking() {
       for (let i = 0; i < 6 && !cancelado; i++) {
         const r = await db.consultarEstadoPagoPublico(reserva.citaId)
         if (r && (r.estado === 'aprobado' || r.estado === 'rechazado' || r.estado === 'cancelado')) {
-          if (!cancelado) { setResumenPago({ estado: r.estado as any, reserva }); localStorage.removeItem(RESERVA_KEY) }
+          // Caso raro pero de dinero real: el pago se aprobó pero agendar
+          // falló del lado del servidor (ej. alguien más tomó ese horario
+          // mientras se pagaba) — no se le puede decir "reserva confirmada"
+          // a alguien cuya cita nunca se creó.
+          const estadoFinal = r.estado === 'aprobado' && r.reservaError ? 'aprobado_sin_agendar' : r.estado
+          if (!cancelado) { setResumenPago({ estado: estadoFinal as any, reserva }); localStorage.removeItem(RESERVA_KEY) }
           return
         }
         await new Promise(res => setTimeout(res, 2000))
@@ -202,18 +207,19 @@ export function ScreenBooking() {
     const citaId = 'cf' + Date.now()
     setSubmitting(true)
     setSubmitError('')
+    const cita = {
+      id: citaId, h: hora, dur: srv.dur, srv: srv.nombre, servicioId: srv.id, est: estId,
+      fecha, total: srv.precio, ant: anticipo, notas: clienteNotas.trim() || undefined,
+    }
+    const clienta = { nombre: clienteNombre.trim(), tel: clienteTel.trim() || undefined, email: clienteEmail.trim() || undefined }
     try {
-      await db.crearReservaPublica(
-        {
-          id: citaId, h: hora, dur: srv.dur, srv: srv.nombre, servicioId: srv.id, est: estId,
-          fecha, total: srv.precio, ant: anticipo, notas: clienteNotas.trim() || undefined,
-        },
-        { nombre: clienteNombre.trim(), tel: clienteTel.trim() || undefined, email: clienteEmail.trim() || undefined }
-      )
-
       if (anticipo > 0) {
+        // No se agenda todavía: la cita/clienta viajan en el metadata de la
+        // preferencia y solo se crean del lado del servidor cuando Mercado
+        // Pago confirme el pago de verdad (mp-webhook) — así nadie se queda
+        // con un horario "apartado" sin haberlo pagado.
         const { checkoutUrl } = await db.crearPreferenciaPago(
-          anticipo, citaId, `Anticipo · ${srv.nombre} · ${cfg.nombre}`
+          anticipo, citaId, `Anticipo · ${srv.nombre} · ${cfg.nombre}`, { cita, clienta }
         )
         const reserva: ReservaGuardada = {
           citaId, servicio: srv.nombre,
@@ -224,6 +230,7 @@ export function ScreenBooking() {
         window.location.href = checkoutUrl
         return
       }
+      await db.crearReservaPublica(cita, clienta)
       next()
     } catch {
       setSubmitError('No se pudo agendar la cita. Verifica tu conexión e intenta de nuevo.')
@@ -243,11 +250,12 @@ export function ScreenBooking() {
     const { estado, reserva } = resumenPago
     const copy: { icon: string; titulo: string; texto: string; color: string } = {
       cargando: { icon: 'spinner', titulo: 'Confirmando tu pago…', texto: 'Un momento, estamos verificando tu anticipo con Mercado Pago.', color: 'var(--text-3)' },
-      aprobado: { icon: 'check-circle', titulo: '¡Reserva confirmada!', texto: 'Tu anticipo quedó registrado. Nuestro equipo confirmará los últimos detalles por WhatsApp.', color: 'var(--gold)' },
-      pendiente: { icon: 'clock', titulo: 'Pago en revisión', texto: 'Tu pago sigue procesándose. Te avisaremos por WhatsApp en cuanto se confirme — no hace falta que hagas nada más.', color: 'var(--text-2)' },
-      en_proceso: { icon: 'clock', titulo: 'Pago en revisión', texto: 'Tu pago sigue procesándose. Te avisaremos por WhatsApp en cuanto se confirme — no hace falta que hagas nada más.', color: 'var(--text-2)' },
-      rechazado: { icon: 'x-circle', titulo: 'El pago no se pudo procesar', texto: 'Tu reserva quedó guardada, pero el anticipo no se completó. Contáctanos para intentar de nuevo o resolverlo por otro medio.', color: 'var(--st-canc)' },
-      cancelado: { icon: 'x-circle', titulo: 'Pago cancelado', texto: 'El anticipo no se completó. Si fue un error, puedes intentar agendar de nuevo.', color: 'var(--st-canc)' },
+      aprobado: { icon: 'check-circle', titulo: '¡Reserva confirmada!', texto: 'Tu anticipo quedó registrado y tu cita ya está agendada. Nuestro equipo confirmará los últimos detalles por WhatsApp.', color: 'var(--gold)' },
+      aprobado_sin_agendar: { icon: 'warning-circle', titulo: 'Tu pago se realizó, pero necesitamos confirmarte a mano', texto: 'Tu anticipo se cobró correctamente, pero no pudimos apartar ese horario en automático (puede que alguien más lo haya tomado justo mientras pagabas). Nos pondremos en contacto contigo por WhatsApp para reagendar — tu pago está seguro.', color: 'var(--st-pend)' },
+      pendiente: { icon: 'clock', titulo: 'Pago en revisión', texto: 'Tu pago sigue procesándose. En cuanto se confirme, tu cita queda agendada y te avisamos por WhatsApp — no hace falta que hagas nada más.', color: 'var(--text-2)' },
+      en_proceso: { icon: 'clock', titulo: 'Pago en revisión', texto: 'Tu pago sigue procesándose. En cuanto se confirme, tu cita queda agendada y te avisamos por WhatsApp — no hace falta que hagas nada más.', color: 'var(--text-2)' },
+      rechazado: { icon: 'x-circle', titulo: 'El pago no se pudo procesar', texto: 'El anticipo no se completó, así que ese horario no quedó apartado. Puedes intentar agendar de nuevo cuando quieras.', color: 'var(--st-canc)' },
+      cancelado: { icon: 'x-circle', titulo: 'Pago cancelado', texto: 'El anticipo no se completó, así que ese horario no quedó apartado. Si fue un error, puedes intentar agendar de nuevo.', color: 'var(--st-canc)' },
     }[estado]
 
     return (

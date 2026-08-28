@@ -51,6 +51,11 @@ Deno.serve(async (req: Request) => {
     const basePath = String(body.basePath || "/").replace(/\/+$/, "") + "/";
     const entorno = basePath.includes("preview") ? "preview" : "produccion";
     const schema = entorno === "preview" ? "preview" : "public";
+    // metadataExtra (ej. los datos de la cita/clienta de Booking) viaja con
+    // la preferencia y Mercado Pago lo regresa intacto en el webhook — así
+    // el webhook puede agendar la cita del lado del servidor cuando el pago
+    // se apruebe de verdad, sin depender de que el navegador siga abierto.
+    const metadataExtra = body.metadataExtra && typeof body.metadataExtra === "object" ? body.metadataExtra : {};
 
     if (!referencia) return json({ error: "Falta 'referencia' (id de la cita/apartado)." }, 400);
     if (!Number.isFinite(monto) || monto <= 0) return json({ error: "'monto' debe ser un número mayor a cero." }, 400);
@@ -58,7 +63,7 @@ Deno.serve(async (req: Request) => {
     const preference = {
       items: [{ title: descripcion, quantity: 1, unit_price: monto, currency_id: "MXN" }],
       external_reference: referencia,
-      metadata: { entorno },
+      metadata: { entorno, ...metadataExtra },
       back_urls: {
         success: `https://robseninterno.com${basePath}booking?pago=exitoso`,
         failure: `https://robseninterno.com${basePath}booking?pago=fallido`,

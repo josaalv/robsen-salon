@@ -406,24 +406,28 @@ export const db = {
     if (error) { console.error('[db.crearReservaPublica]', error.message); throw error }
     return { citaId: data.cita_id, clientaId: data.clienta_id }
   },
-  async consultarEstadoPagoPublico(referencia: string): Promise<{ estado: string; monto: number } | null> {
+  async consultarEstadoPagoPublico(referencia: string): Promise<{ estado: string; monto: number; reservaError?: string | null } | null> {
     if (!supabase) return null
     const { data, error } = await supabase.rpc('consultar_estado_pago_publico', { p_referencia: referencia })
     if (error) { console.error('[db.consultarEstadoPagoPublico]', error.message); return null }
-    return data ?? null
+    if (!data) return null
+    return { estado: data.estado, monto: data.monto, reservaError: data.reserva_error }
   },
   // Crea el cobro en Mercado Pago (Checkout Pro) para un anticipo — referencia
   // es el id de la cita/apartado, no algo que se le ocurra al frontend.
   // Genérico a propósito: sirve igual para el anticipo de Booking que para
-  // una futura pantalla de "cobro virtual" interna.
-  async crearPreferenciaPago(monto: number, referencia: string, descripcion?: string): Promise<{ preferenceId: string; checkoutUrl: string }> {
+  // una futura pantalla de "cobro virtual" interna. metadataExtra viaja con
+  // la preferencia y regresa intacto en el webhook cuando Mercado Pago
+  // confirma el pago — Booking lo usa para pasar los datos de la cita/
+  // clienta, que solo se agendan de verdad si el pago se aprueba.
+  async crearPreferenciaPago(monto: number, referencia: string, descripcion?: string, metadataExtra?: Record<string, unknown>): Promise<{ preferenceId: string; checkoutUrl: string }> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     // basePath le dice a la función qué entorno la llamó ('/' o '/preview/')
     // — sin esto, el pago de una prueba en preview escribiría en la tabla de
     // pagos_online de producción y regresaría al usuario al dominio raíz en
     // vez de /preview/ después de pagar.
     const { data, error } = await supabase.functions.invoke('mp-crear-preferencia', {
-      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL },
+      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL, metadataExtra },
     })
     if (error) throw new Error(data?.error || error.message)
     if (data?.error) throw new Error(data.error)

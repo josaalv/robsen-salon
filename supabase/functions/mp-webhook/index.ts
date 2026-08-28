@@ -88,8 +88,13 @@ Deno.serve(async (req: Request) => {
     // Upsert por payment_id: si ya existe el registro (normal — se creó
     // 'pendiente' en mp-crear-preferencia), lo actualiza; si no existe
     // (pago iniciado por otra vía, o el insert original falló), lo crea.
-    const existente = await rest(`pagos_online?payment_id=eq.${encodeURIComponent(String(pago.id))}&select=id`, schema);
+    const existente = await rest(`pagos_online?payment_id=eq.${encodeURIComponent(String(pago.id))}&select=id,estado`, schema);
     const filas = existente.ok ? await existente.json() : [];
+    // Idempotencia: Mercado Pago puede reenviar el mismo aviso varias veces
+    // (o nosotros mismos devolver 500 y provocar un reintento). Si esta fila
+    // YA estaba 'aprobado' antes de este aviso, la cita ya se agendó — no
+    // hay que volver a intentarlo (fallaría con un id duplicado).
+    let estadoPrevio: string | null = filas[0]?.estado ?? null;
 
     const payloadActualizado = {
       payment_id: String(pago.id),
@@ -117,9 +122,10 @@ Deno.serve(async (req: Request) => {
       // encontrarla por external_reference antes de crear una nueva, para
       // no duplicar el registro 'pendiente' que ya dejó mp-crear-preferencia.
       const porReferencia = referencia
-        ? await rest(`pagos_online?external_reference=eq.${encodeURIComponent(referencia)}&payment_id=is.null&select=id`, schema)
+        ? await rest(`pagos_online?external_reference=eq.${encodeURIComponent(referencia)}&payment_id=is.null&select=id,estado`, schema)
         : null;
       const filasRef = porReferencia?.ok ? await porReferencia.json() : [];
+      estadoPrevio = filasRef[0]?.estado ?? null;
       if (filasRef.length > 0) {
         writeRes = await rest(`pagos_online?id=eq.${filasRef[0].id}`, schema, {
           method: "PATCH", headers: { "Prefer": "return=minimal" },
@@ -137,6 +143,31 @@ Deno.serve(async (req: Request) => {
       const errBody = await writeRes.text();
       console.error("mp-webhook: fallo al guardar", errBody);
       return new Response("fallo al guardar el estado del pago", { status: 500 });
+    }
+
+    // La cita de Booking solo se agenda AQUÍ, al confirmar el pago de
+    // verdad — nunca antes. metadata.cita/clienta viajan desde
+    // mp-crear-preferencia; si no están (ej. un futuro "cobro virtual" sin
+    // cita asociada), no hay nada que agendar. estadoPrevio evita repetir
+    // esto si Mercado Pago reenvía el mismo aviso de aprobado dos veces.
+    if (estado === "aprobado" && estadoPrevio !== "aprobado" && pago.metadata?.cita && pago.metadata?.clienta) {
+      const rpcRes = await rest("rpc/crear_reserva_publica", schema, {
+        method: "POST",
+        body: JSON.stringify({ p_cita: pago.metadata.cita, p_clienta: pago.metadata.clienta }),
+      });
+      if (!rpcRes.ok) {
+        // El pago SÍ quedó registrado como aprobado arriba — eso no se
+        // deshace. Si agendar falla (ej. alguien más tomó ese horario
+        // mientras se pagaba), se deja constancia en detalle para que el
+        // equipo lo agende a mano y contacte a la clienta; no tiene caso
+        // que Mercado Pago siga reintentando el mismo webhook por esto.
+        const errBody = await rpcRes.text();
+        console.error("mp-webhook: pago aprobado pero no se pudo agendar", errBody);
+        await rest(`pagos_online?payment_id=eq.${encodeURIComponent(String(pago.id))}`, schema, {
+          method: "PATCH", headers: { "Prefer": "return=minimal" },
+          body: JSON.stringify({ detalle: { ...payloadActualizado.detalle, reserva_error: errBody } }),
+        });
+      }
     }
 
     return new Response("ok", { status: 200 });
