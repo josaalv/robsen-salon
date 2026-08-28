@@ -43,6 +43,40 @@ function generateSlots(start: number, end: number, slotMin: number): string[] {
 
 const MESES_SHORT_B = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
+// reCAPTCHA v3 (H-12 de la auditoría): sin VITE_RECAPTCHA_SITE_KEY
+// configurada, estas funciones no hacen nada (recaptchaToken llega null) —
+// el agendamiento sigue funcionando igual, solo sin la capa de protección
+// contra spam hasta que se agregue la llave.
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined
+let recaptchaCargando: Promise<void> | null = null
+
+function cargarRecaptcha(): Promise<void> {
+  if (!RECAPTCHA_SITE_KEY) return Promise.resolve()
+  if ((window as any).grecaptcha) return Promise.resolve()
+  if (!recaptchaCargando) {
+    recaptchaCargando = new Promise(resolve => {
+      const s = document.createElement('script')
+      s.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`
+      s.onload = () => resolve()
+      s.onerror = () => resolve() // si falla cargar, se sigue sin recaptcha — nunca bloquea el agendamiento
+      document.head.appendChild(s)
+    })
+  }
+  return recaptchaCargando
+}
+
+async function obtenerRecaptchaToken(accion: string): Promise<string | null> {
+  if (!RECAPTCHA_SITE_KEY) return null
+  await cargarRecaptcha()
+  const g = (window as any).grecaptcha
+  if (!g) return null
+  return new Promise(resolve => {
+    g.ready(() => {
+      g.execute(RECAPTCHA_SITE_KEY, { action: accion }).then(resolve).catch(() => resolve(null))
+    })
+  })
+}
+
 export function ScreenBooking() {
   // Booking es una pantalla pública real (sin sesión) — a propósito no usa
   // useStore()/loadFromSupabase (esas rutas mezclan datos que 'anon' no
@@ -60,6 +94,7 @@ export function ScreenBooking() {
     Promise.all([db.getConfig(), db.getServicios(), db.getEstilistas()])
       .then(([c, s, e]) => { if (c) setCfg(c); setServicios(s); setEstilistas(e) })
       .finally(() => setCargandoBase(false))
+    cargarRecaptcha() // adelantado, para que ya esté listo al llegar al botón de enviar
   }, [])
 
   // Resumen post-pago: si volvemos de Mercado Pago (?pago=exitoso|fallido|
@@ -218,8 +253,9 @@ export function ScreenBooking() {
         // preferencia y solo se crean del lado del servidor cuando Mercado
         // Pago confirme el pago de verdad (mp-webhook) — así nadie se queda
         // con un horario "apartado" sin haberlo pagado.
+        const recaptchaToken = await obtenerRecaptchaToken('booking_pago')
         const { checkoutUrl } = await db.crearPreferenciaPago(
-          anticipo, citaId, `Anticipo · ${srv.nombre} · ${cfg.nombre}`, { cita, clienta }
+          anticipo, citaId, `Anticipo · ${srv.nombre} · ${cfg.nombre}`, { cita, clienta }, recaptchaToken
         )
         const reserva: ReservaGuardada = {
           citaId, servicio: srv.nombre,
@@ -230,7 +266,8 @@ export function ScreenBooking() {
         window.location.href = checkoutUrl
         return
       }
-      await db.crearReservaPublica(cita, clienta)
+      const recaptchaToken = await obtenerRecaptchaToken('booking_publico')
+      await db.crearReservaPublica(cita, clienta, recaptchaToken)
       next()
     } catch {
       setSubmitError('No se pudo agendar la cita. Verifica tu conexión e intenta de nuevo.')

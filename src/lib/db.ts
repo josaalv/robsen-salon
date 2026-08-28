@@ -391,19 +391,28 @@ export const db = {
     if (error) { console.error('[db.disponibilidadPublica]', error.message); return [] }
     return data ?? []
   },
+  // Pasa por la función booking-crear-reserva (no por RPC directo) — la RPC
+  // ya no es llamable con la anon key (H-12: cualquiera podía automatizar
+  // la creación de citas/clientas falsas, gratis). La función verifica
+  // reCAPTCHA del lado del servidor antes de agendar de verdad.
   async crearReservaPublica(cita: {
     id: string; h: string; dur: number; srv: string; servicioId?: string; est: string
     fecha: string; total: number; ant: number; notas?: string
-  }, clienta: { nombre: string; tel?: string; email?: string }): Promise<{ citaId: string; clientaId: string }> {
+  }, clienta: { nombre: string; tel?: string; email?: string }, recaptchaToken?: string | null): Promise<{ citaId: string; clientaId: string }> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
-    const { data, error } = await supabase.rpc('crear_reserva_publica', {
-      p_cita: {
-        id: cita.id, h: cita.h, dur: cita.dur, srv: cita.srv, servicio_id: cita.servicioId ?? null,
-        est: cita.est, fecha: cita.fecha, total: cita.total, ant: cita.ant, notas: cita.notas ?? null,
+    const { data, error } = await supabase.functions.invoke('booking-crear-reserva', {
+      body: {
+        cita: {
+          id: cita.id, h: cita.h, dur: cita.dur, srv: cita.srv, servicio_id: cita.servicioId ?? null,
+          est: cita.est, fecha: cita.fecha, total: cita.total, ant: cita.ant, notas: cita.notas ?? null,
+        },
+        clienta: { nombre: clienta.nombre, tel: clienta.tel ?? null, email: clienta.email ?? null },
+        basePath: import.meta.env.BASE_URL,
+        recaptchaToken,
       },
-      p_clienta: { nombre: clienta.nombre, tel: clienta.tel ?? null, email: clienta.email ?? null },
     })
-    if (error) { console.error('[db.crearReservaPublica]', error.message); throw error }
+    if (error) throw new Error(data?.error || error.message)
+    if (data?.error) throw new Error(data.error)
     return { citaId: data.cita_id, clientaId: data.clienta_id }
   },
   async consultarEstadoPagoPublico(referencia: string): Promise<{ estado: string; monto: number; reservaError?: string | null } | null> {
@@ -420,14 +429,14 @@ export const db = {
   // la preferencia y regresa intacto en el webhook cuando Mercado Pago
   // confirma el pago — Booking lo usa para pasar los datos de la cita/
   // clienta, que solo se agendan de verdad si el pago se aprueba.
-  async crearPreferenciaPago(monto: number, referencia: string, descripcion?: string, metadataExtra?: Record<string, unknown>): Promise<{ preferenceId: string; checkoutUrl: string }> {
+  async crearPreferenciaPago(monto: number, referencia: string, descripcion?: string, metadataExtra?: Record<string, unknown>, recaptchaToken?: string | null): Promise<{ preferenceId: string; checkoutUrl: string }> {
     if (!supabase) throw new Error('Sin conexión a Supabase')
     // basePath le dice a la función qué entorno la llamó ('/' o '/preview/')
     // — sin esto, el pago de una prueba en preview escribiría en la tabla de
     // pagos_online de producción y regresaría al usuario al dominio raíz en
     // vez de /preview/ después de pagar.
     const { data, error } = await supabase.functions.invoke('mp-crear-preferencia', {
-      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL, metadataExtra },
+      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL, metadataExtra, recaptchaToken },
     })
     if (error) throw new Error(data?.error || error.message)
     if (data?.error) throw new Error(data.error)

@@ -10,6 +10,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const MP_TOKEN = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
+const RECAPTCHA_SECRET = Deno.env.get("RECAPTCHA_SECRET_KEY");
 
 function json(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj, null, 2), {
@@ -34,6 +35,27 @@ async function rest(path: string, schema: string, init: RequestInit = {}) {
       ...(init.headers || {}),
     },
   });
+}
+
+// Sin RECAPTCHA_SECRET_KEY configurada, no bloquea (se activa sola en
+// cuanto se agregue la llave). Solo se exige para preferencias que vienen
+// de Booking (traen cita) — el "cobro virtual" interno no pasa por aquí.
+async function verificarRecaptcha(token: unknown, accion: string): Promise<boolean> {
+  if (!RECAPTCHA_SECRET) return true;
+  if (typeof token !== "string" || !token) return false;
+  try {
+    const res = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ secret: RECAPTCHA_SECRET, response: token }),
+    });
+    const data = await res.json();
+    return data.success === true
+      && (data.score === undefined || data.score >= 0.5)
+      && (!data.action || data.action === accion);
+  } catch {
+    return false;
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -92,6 +114,8 @@ Deno.serve(async (req: Request) => {
       if (citaMeta.total !== undefined && Math.abs(Number(citaMeta.total) - precioReal) > 1) {
         return json({ error: "El total de la cita no coincide con el precio real del servicio." }, 400);
       }
+      const humano = await verificarRecaptcha(body.recaptchaToken, "booking_pago");
+      if (!humano) return json({ error: "No se pudo verificar la solicitud. Recarga la página e intenta de nuevo." }, 400);
     }
 
     const preference = {
