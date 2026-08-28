@@ -1,0 +1,77 @@
+name: Deploy Agendar to robsen.com.mx
+
+# Agendamiento público, desplegado como sección /agendar/ del dominio que ya
+# conoce la clientela (robsen.com.mx, WordPress) en vez de robseninterno.com
+# (que suena — y es — un dominio interno; mandarle ese link al público no
+# generaba confianza). Mismo código, mismo backend de Supabase de siempre
+# (datos reales, no hay entorno de preview aquí) — solo cambia a dónde se
+# sube el build. Nunca toca el hosting de WordPress: /agendar/ es una
+# subcarpeta nueva y separada dentro de su mismo public_html.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy-agendar.yml'
+
+concurrency:
+  group: robsen-deploy-agendar
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm install
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_RECAPTCHA_SITE_KEY: ${{ secrets.VITE_RECAPTCHA_SITE_KEY }}
+          VITE_BASE_PATH: /agendar/
+          VITE_APP_MODE: agendar
+
+      # /agendar/booking se sirve como directorio real con su propio
+      # index.html — no como una ruta que dependa de una regla de
+      # reescritura tipo SPA-fallback. El dominio raíz ya tiene su propio
+      # .htaccess de WordPress con una regla catch-all (cualquier ruta que
+      # no sea un archivo/directorio real cae a su index.php); apoyarnos en
+      # una reescritura para una ruta virtual bajo /agendar/ competiría con
+      # esa regla de forma impredecible. Con un archivo real, Apache la
+      # sirve directo sin que WordPress se entere.
+      - name: Duplicar index.html como /booking/index.html (ruta real, no virtual)
+        run: mkdir -p dist/booking && cp dist/index.html dist/booking/index.html
+
+      - name: Instalar lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
+      - name: Subir a robsen.com.mx por FTP (lftp mirror) — subcarpeta /agendar/
+        env:
+          FTP_SERVER: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          FTP_USER: ${{ secrets.ROBSEN_FTP_USERNAME }}
+          FTP_PASS: ${{ secrets.ROBSEN_FTP_PASSWORD }}
+        run: |
+          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" <<'EOF'
+          set ssl:verify-certificate no
+          set ftp:ssl-allow no
+          set net:timeout 20
+          set net:max-retries 2
+          set mirror:parallel-transfer-count 3
+          cd domains/robsen.com.mx/public_html
+          mkdir -p agendar
+          mirror --reverse --verbose dist/ agendar/
+          bye
+          EOF

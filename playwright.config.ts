@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { existsSync } from 'node:fs'
 
 // Pruebas E2E contra el sitio real (robseninterno.com) — no hay entorno de
 // staging separado, así que estas pruebas deben ser de solo lectura /
@@ -7,8 +8,16 @@ import { defineConfig, devices } from '@playwright/test'
 // en el nombre de la prueba.
 //
 // Credenciales de prueba: nunca hardcodeadas — vienen de variables de
-// entorno (ver .env.test.example). El navegador usa el Chromium ya
-// instalado en este entorno (no dispara una descarga).
+// entorno (ver .env.test.example).
+//
+// executablePath solo se fija si existe: es la ruta del Chromium
+// preinstalado en el sandbox de desarrollo interactivo (evita que dispare
+// una descarga ahí) — en GitHub Actions ese archivo no existe (ahí
+// `npx playwright install` deja el suyo en la ruta default), y forzar esa
+// ruta de todas formas hacía que las pruebas fallaran de inmediato con
+// "executable doesn't exist" en cada corrida de CI.
+const CHROMIUM_SANDBOX_PATH = '/opt/pw-browsers/chromium'
+const chromiumExecutablePath = existsSync(CHROMIUM_SANDBOX_PATH) ? CHROMIUM_SANDBOX_PATH : undefined
 export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
@@ -32,7 +41,7 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        launchOptions: { executablePath: '/opt/pw-browsers/chromium' },
+        ...(chromiumExecutablePath ? { launchOptions: { executablePath: chromiumExecutablePath } } : {}),
       },
     },
   ],

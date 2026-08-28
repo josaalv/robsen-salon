@@ -381,6 +381,73 @@ export const db = {
     if (error) { console.error('[db.deleteCita]', error.message); throw error }
   },
 
+  // — Agendamiento público (Booking.tsx, sin sesión) —
+  // Los tres RPC de abajo son las únicas puertas que 'anon' tiene hacia
+  // citas/clientas (ver 060_booking_publico.sql) — nunca un select directo
+  // a esas tablas, que expondría nombre/teléfono de toda la base de clientas.
+  async disponibilidadPublica(fecha: string, estilistaId?: string | null): Promise<{ h: string; dur: number; est: string }[]> {
+    if (!supabase) return []
+    const { data, error } = await supabase.rpc('disponibilidad_publica', { p_fecha: fecha, p_estilista_id: estilistaId ?? null })
+    if (error) { console.error('[db.disponibilidadPublica]', error.message); return [] }
+    return data ?? []
+  },
+  // Pasa por la función booking-crear-reserva (no por RPC directo) — la RPC
+  // ya no es llamable con la anon key (H-12: cualquiera podía automatizar
+  // la creación de citas/clientas falsas, gratis). La función verifica
+  // reCAPTCHA del lado del servidor antes de agendar de verdad.
+  async crearReservaPublica(cita: {
+    id: string; h: string; dur: number; srv: string; servicioId?: string; est: string
+    fecha: string; total: number; ant: number; notas?: string
+  }, clienta: { nombre: string; tel?: string; email?: string }, recaptchaToken?: string | null): Promise<{ citaId: string; clientaId: string }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('booking-crear-reserva', {
+      body: {
+        cita: {
+          id: cita.id, h: cita.h, dur: cita.dur, srv: cita.srv, servicio_id: cita.servicioId ?? null,
+          est: cita.est, fecha: cita.fecha, total: cita.total, ant: cita.ant, notas: cita.notas ?? null,
+        },
+        clienta: { nombre: clienta.nombre, tel: clienta.tel ?? null, email: clienta.email ?? null },
+        basePath: import.meta.env.BASE_URL,
+        recaptchaToken,
+      },
+    })
+    if (error) throw new Error(data?.error || error.message)
+    if (data?.error) throw new Error(data.error)
+    return { citaId: data.cita_id, clientaId: data.clienta_id }
+  },
+  async consultarEstadoPagoPublico(referencia: string): Promise<{ estado: string; monto: number; reservaError?: string | null } | null> {
+    if (!supabase) return null
+    const { data, error } = await supabase.rpc('consultar_estado_pago_publico', { p_referencia: referencia })
+    if (error) { console.error('[db.consultarEstadoPagoPublico]', error.message); return null }
+    if (!data) return null
+    return { estado: data.estado, monto: data.monto, reservaError: data.reserva_error }
+  },
+  // Crea el cobro en Mercado Pago (Checkout Pro) para un anticipo — referencia
+  // es el id de la cita/apartado, no algo que se le ocurra al frontend.
+  // Genérico a propósito: sirve igual para el anticipo de Booking que para
+  // una futura pantalla de "cobro virtual" interna. metadataExtra viaja con
+  // la preferencia y regresa intacto en el webhook cuando Mercado Pago
+  // confirma el pago — Booking lo usa para pasar los datos de la cita/
+  // clienta, que solo se agendan de verdad si el pago se aprueba.
+  async crearPreferenciaPago(monto: number, referencia: string, descripcion?: string, metadataExtra?: Record<string, unknown>, recaptchaToken?: string | null): Promise<{ preferenceId: string; checkoutUrl: string }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    // basePath le dice a la función qué entorno la llamó ('/' o '/preview/')
+    // — sin esto, el pago de una prueba en preview escribiría en la tabla de
+    // pagos_online de producción y regresaría al usuario al dominio raíz en
+    // vez de /preview/ después de pagar. origen (el dominio real, ej.
+    // https://robsen.com.mx) es necesario aparte de basePath porque el
+    // agendamiento público ahora vive en dos dominios distintos con el
+    // mismo basePath de producción ('/') — sin el dominio real, Mercado
+    // Pago regresaría siempre a robseninterno.com sin importar desde dónde
+    // se inició el pago.
+    const { data, error } = await supabase.functions.invoke('mp-crear-preferencia', {
+      body: { monto, referencia, descripcion, basePath: import.meta.env.BASE_URL, origen: window.location.origin, metadataExtra, recaptchaToken },
+    })
+    if (error) throw new Error(data?.error || error.message)
+    if (data?.error) throw new Error(data.error)
+    return { preferenceId: data.preference_id, checkoutUrl: data.checkout_url }
+  },
+
   // — Ventas —
   async getVentas(): Promise<Venta[]> {
     if (!supabase) return []

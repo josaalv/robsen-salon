@@ -28,6 +28,12 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Llave de prueba oficial de Google (pública, documentada en su FAQ
+          # de reCAPTCHA — no la real): siempre aprueba con puntuación 0.9.
+          # Preview la necesita para que las pruebas E2E de CI (H-13) no
+          # choquen para siempre contra la protección real anti-bot, que
+          # detecta correctamente a Playwright como automatizado.
+          VITE_RECAPTCHA_SITE_KEY: 6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI
           VITE_SUPABASE_SCHEMA: preview
           VITE_STORAGE_SUFFIX: _preview
           VITE_BASE_PATH: /preview/
@@ -51,3 +57,62 @@ jobs:
           mirror --reverse --verbose ./dist/ ./preview/
           bye
           EOF
+
+  e2e-tests:
+    # Corre después de cada deploy a preview — el flujo de agendamiento
+    # público hasta ahora solo se probaba a mano (auditoría de ago. 2026,
+    # hallazgo H-13). Si algo como el bug de .htaccess/service worker de esa
+    # sesión vuelve a pasar, esto se pone en rojo solo, sin depender de que
+    # alguien lo note agendando una cita de prueba.
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Esperar a que el FTP/CDN propague el deploy
+        run: sleep 20
+      - run: npx playwright test tests/booking.spec.ts
+        env:
+          ROBSEN_PREVIEW_URL: https://robseninterno.com/preview/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  schema-parity-check:
+    # H-06 de la auditoría: nada avisaba si una migración nueva contra
+    # 'public' se quedaba sin espejear en 'preview' — así pasó con H-04
+    # (las RPCs de booking público solo existían en 'public', preview
+    # fallaba con "No se pudo agendar la cita"). Corre independiente del
+    # deploy — no lo bloquea, solo avisa si algo divergió.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar cliente de Postgres 17
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17
+      - name: Comparar funciones y tablas entre preview y public
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::Falta el secret SUPABASE_DB_URL — se omite la verificación de paridad de esquema."
+            exit 0
+          fi
+          RESULT=$(/usr/lib/postgresql/17/bin/psql "$DATABASE_URL" -t -A -F' | ' -f scripts/check-schema-parity.sql)
+          if [ -n "$RESULT" ]; then
+            echo "::error::Los esquemas 'public' y 'preview' divergieron — algo se aplicó a uno y no al otro:"
+            echo "$RESULT"
+            exit 1
+          fi
+          echo "Sin divergencias entre 'public' y 'preview'."

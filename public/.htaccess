@@ -2,7 +2,15 @@ Options -MultiViews
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^ /index.html [L]
+# Sin "/" al inicio del destino a propósito: con la barra absoluta, esta
+# regla dentro de /preview/.htaccess reescribía hacia /index.html en la
+# RAÍZ del dominio (producción) en vez de /preview/index.html — cualquier
+# entrada directa a una ruta profunda bajo /preview/ (ej. /preview/booking,
+# o un F5 en /preview/ventas) terminaba sirviendo el bundle de producción.
+# Sin la barra, mod_rewrite resuelve el destino relativo al directorio del
+# .htaccess que lo procesa, así que un mismo archivo funciona igual en la
+# raíz (producción) y en /preview/.
+RewriteRule ^ index.html [L]
 
 # Control de caché. El index.html es el que decide qué bundles cargar: si el
 # navegador lo cachea, se queda con una versión vieja y no ve los cambios
@@ -15,5 +23,15 @@ RewriteRule ^ /index.html [L]
   </FilesMatch>
   <FilesMatch "\.(js|css|woff2?|ttf|eot|png|jpe?g|gif|svg|webp|ico)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <!-- sw.js y registerSW.js NO llevan hash en el nombre (a diferencia de
+       assets/index-ABC123.js) — la regla de arriba los atrapaba también y
+       los cacheaba un año como "immutable". Eso es lo que explicaba que un
+       deploy nuevo no se notara en un navegador con visitas previas: el
+       propio archivo que decide si hay una versión nueva podía venir de
+       caché. Esta regla va DESPUÉS a propósito, para pisar la de arriba
+       solo en estos dos archivos. -->
+  <FilesMatch "^(sw|registerSW)\.js$">
+    Header set Cache-Control "no-cache, must-revalidate, max-age=0"
   </FilesMatch>
 </IfModule>

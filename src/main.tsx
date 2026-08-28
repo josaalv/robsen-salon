@@ -18,9 +18,23 @@ import './styles/main.css'
 // justo en el momento exacto de un deploy, ventana muy angosta dado lo
 // poco frecuente que se despliega.
 if ('serviceWorker' in navigator) {
+  // 'controllerchange' también se dispara la PRIMERA vez que un service
+  // worker toma control de una página (de "sin controlador" a "con
+  // controlador"), no solo cuando reemplaza a uno viejo — clientsClaim()
+  // hace justo eso. Si alguien entra por primera vez a este navegador y ya
+  // está a la mitad del formulario de Booking cuando esa primera
+  // activación termina (puede tardar unos segundos, instalando el
+  // precache), se le recargaba la página y perdía lo que llevaba escrito
+  // — sin necesidad, porque en ese caso no había nada viejo que refrescar.
+  // Se distingue guardando si YA había un controlador al cargar: si no
+  // había ninguno, este cambio es esa primera activación (no se recarga);
+  // si ya había uno, es una actualización real reemplazando contenido
+  // viejo (sí se recarga, que es el caso que este listener existe para
+  // resolver).
+  const yaTeniaControlador = !!navigator.serviceWorker.controller
   let recargando = false
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (recargando) return
+    if (recargando || !yaTeniaControlador) return
     recargando = true
     window.location.reload()
   })

@@ -50,7 +50,7 @@ const NAV: NavGroup[] = [
 ]
 const ALL = NAV.flatMap(g => g.items)
 
-function initialRoute() {
+function pathFromUrl() {
   // import.meta.env.BASE_URL refleja el `base` real del build ('/' en
   // producción, '/preview/' en preview) — sin restarlo primero, cualquier
   // URL con prefijo (ej. /preview/ventas) nunca hace match con ningún id
@@ -58,8 +58,26 @@ function initialRoute() {
   const base = import.meta.env.BASE_URL
   let pathname = window.location.pathname
   if (pathname.startsWith(base)) pathname = pathname.slice(base.length)
-  const path = pathname.replace(/^\/+/, '')
+  // También se quita la barra final: Apache redirige /booking a /booking/
+  // cuando ese path es un directorio real con su propio index.html (el caso
+  // de /agendar/booking/ en robsen.com.mx, servido así a propósito para no
+  // depender de una regla de reescritura que compita con el .htaccess de
+  // WordPress en el dominio raíz) — sin esto, 'booking/' nunca hace match
+  // con el id 'booking' de NAV.
+  return pathname.replace(/^\/+/, '').replace(/\/+$/, '')
+}
+
+function initialRoute() {
+  const path = pathFromUrl()
   return ALL.some(i => i.id === path) ? path : 'dashboard'
+}
+
+// El agendamiento en línea es la única pantalla pensada para público
+// anónimo (clientas reales, sin cuenta) — se detecta por URL, ANTES de
+// cualquier chequeo de sesión, para que jamás dependa de estar autenticado
+// ni pueda caer en la pantalla de login por una sesión vencida/inexistente.
+function isBookingRoute() {
+  return pathFromUrl() === 'booking'
 }
 
 function AppShell() {
@@ -537,11 +555,31 @@ function NotifPop({ onClose, go }: any) {
   )
 }
 
+// El agendamiento público se retiró de aquí — vive en robsen.com.mx/agendar
+// (el dominio que ya conoce la clientela; este dominio suena, y es,
+// interno). Solo aplica a la producción real: BASE_URL === '/' es
+// específicamente el deploy raíz de robseninterno.com — ni preview
+// (BASE_URL '/preview/', sigue sirviendo Booking normal para pruebas) ni
+// el propio deploy de /agendar/ (BASE_URL '/agendar/', se redirigiría a
+// sí mismo en bucle si se comparara distinto) entran en esta condición.
+const BOOKING_PUBLICO_URL = 'https://robsen.com.mx/agendar/booking'
+
 function LoginGate() {
   const { user, loading, passwordRecovery } = useAuth()
   const [LoginScreen, setLoginScreen] = useState<React.ComponentType<any> | null>(null)
+  const [BookingScreen, setBookingScreen] = useState<React.ComponentType<any> | null>(null)
+  const publicBooking = isBookingRoute()
+  const redirigirBookingPublico = publicBooking && import.meta.env.BASE_URL === '/'
 
   useEffect(() => {
+    if (redirigirBookingPublico) {
+      window.location.replace(BOOKING_PUBLICO_URL + window.location.search)
+      return
+    }
+    if (publicBooking) {
+      import('./screens/Booking').then(m => setBookingScreen(() => m.ScreenBooking)).catch(() => {})
+      return
+    }
     import('./screens/Login')
       .then(m => setLoginScreen(() => m.ScreenLogin))
       .catch(() => setLoginScreen(() => () => (
@@ -551,7 +589,37 @@ function LoginGate() {
           <button className="btn gold" onClick={() => window.location.reload()}><Ic n="arrows-clockwise" />Reintentar</button>
         </div>
       )))
-  }, [])
+  }, [publicBooking, redirigirBookingPublico])
+
+  if (redirigirBookingPublico) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Redirigiendo…</div>
+    )
+  }
+
+  // Se evalúa antes que loading/user/passwordRecovery a propósito: quien
+  // llega aquí desde un enlace público (Google/redes) nunca debe ver la
+  // pantalla de acceso, sin importar si tiene sesión, si expiró o si nunca
+  // la tuvo. Solo se ofrece "Volver al panel" si YA hay sesión de staff.
+  if (publicBooking) {
+    return (
+      <div style={{ position:'relative' }}>
+        {!loading && !passwordRecovery && user && (
+          <button
+            className="btn ghost sm"
+            style={{ position:'fixed', top:20, right:20, zIndex:50 }}
+            onClick={() => { window.location.href = import.meta.env.BASE_URL }}
+          >
+            <Ic n="arrow-left" /> Volver al panel
+          </button>
+        )}
+        {BookingScreen ? <BookingScreen /> : (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
+        )}
+        <ToastHost />
+      </div>
+    )
+  }
 
   if (loading) return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
   // Un enlace de recuperación de contraseña deja una sesión válida (así
