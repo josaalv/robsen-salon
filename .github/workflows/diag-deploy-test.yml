@@ -11,21 +11,18 @@ jobs:
     steps:
       - name: Instalar lftp
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
-      - name: Subir archivo único de prueba a agendar-test/
+      - name: Borrar agendar-test/ — ya verificado, no debe quedar en el sitio real
         env:
           FTP_SERVER: ${{ secrets.HOSTINGER_FTP_SERVER }}
           FTP_USER: ${{ secrets.ROBSEN_FTP_USERNAME }}
           FTP_PASS: ${{ secrets.ROBSEN_FTP_PASSWORD }}
         run: |
-          echo "prueba-agendar-$(date +%s)-$RANDOM" > marca.txt
-          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" <<EOF
+          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" <<'EOF'
           set ssl:verify-certificate no
           set ftp:ssl-allow no
           set net:timeout 20
           set net:max-retries 2
           cd domains/robsen.com.mx/public_html
-          mkdir -p agendar-test
-          put marca.txt -o agendar-test/marca.txt
+          rm -r agendar-test
           bye
           EOF
-          cat marca.txt
