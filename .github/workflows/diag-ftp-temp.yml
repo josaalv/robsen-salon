@@ -22,13 +22,14 @@ jobs:
           set ftp:ssl-allow no
           set net:timeout 20
           set net:max-retries 2
-          echo "--- raíz de la cuenta ---"
-          cls -1 .
-          echo "--- domains/ (si existe) ---"
-          cls -1 domains 2>/dev/null || echo "(no existe domains/)"
-          echo "--- domains/robsen.com.mx/ (si existe) ---"
-          cls -1 domains/robsen.com.mx 2>/dev/null || echo "(no existe)"
-          echo "--- domains/robsen.com.mx/public_html/ (si existe) ---"
-          cls -1 domains/robsen.com.mx/public_html 2>/dev/null || echo "(no existe)"
+          set cmd:fail-exit no
+          echo "--- domains/ ---"
+          cls -1 domains
+          echo "--- domains/robsen.com.mx/ ---"
+          cls -1 domains/robsen.com.mx
+          echo "--- domains/robsen.com.mx/public_html/ ---"
+          cls -1 domains/robsen.com.mx/public_html
+          echo "--- public_html/ (raíz de la cuenta) ---"
+          cls -1 public_html
           bye
           EOF
