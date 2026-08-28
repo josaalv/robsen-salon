@@ -85,12 +85,16 @@ Deno.serve(async (req: Request) => {
 
     const payloadActualizado = {
       payment_id: String(pago.id),
-      preference_id: pago.order?.id ? String(pago.order.id) : undefined,
+      // pago.order.id es el id del merchant_order — un espacio de ids
+      // distinto al de preference_id (que ya quedó fijado desde
+      // mp-crear-preferencia). No se toca aquí para no pisarlo con el
+      // valor equivocado; se guarda aparte en detalle por si sirve de
+      // referencia.
       external_reference: referencia || undefined,
       monto: pago.transaction_amount,
       estado,
       raw_status: pago.status,
-      detalle: { status_detail: pago.status_detail, payment_method_id: pago.payment_method_id },
+      detalle: { status_detail: pago.status_detail, payment_method_id: pago.payment_method_id, order_id: pago.order?.id },
       actualizado_en: new Date().toISOString(),
     }
 
