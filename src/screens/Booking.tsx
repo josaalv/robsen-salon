@@ -352,7 +352,7 @@ export function ScreenBooking() {
               <p className="muted" style={{ fontSize: 13.5, marginBottom: 22 }}>Selecciona el servicio que deseas agendar.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto', paddingRight: 6 }}>
                 {online.map(s => (
-                  <div key={s.id} className={'opt-card' + (srv?.id === s.id ? ' sel' : '')} onClick={() => { setSrv(s); setProf(null) }}>
+                  <div key={s.id} data-testid="servicio-opt" data-anticipo={s.anticipo ? '1' : '0'} className={'opt-card' + (srv?.id === s.id ? ' sel' : '')} onClick={() => { setSrv(s); setProf(null) }}>
                     <div className="f1">
                       <div style={{ fontWeight: 600, fontSize: 14.5 }}>{s.nombre}</div>
                       <div className="vc gap12 mt6" style={{ fontSize: 12, color: 'var(--text-3)' }}>
@@ -375,7 +375,7 @@ export function ScreenBooking() {
               <h1 className="display" style={{ fontSize: 27, margin: '0 0 4px' }}>Elige a tu estilista</h1>
               <p className="muted" style={{ fontSize: 13.5, marginBottom: 22 }}>Para tu {srv.nombre}. Puedes dejar que asignemos a la mejor disponible.</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className={'opt-card' + (prof === 'any' ? ' sel' : '')} onClick={() => setProf('any')}>
+                <div data-testid="prof-cualquiera" className={'opt-card' + (prof === 'any' ? ' sel' : '')} onClick={() => setProf('any')}>
                   <div className="avatar" style={{ background: 'rgba(200,161,74,0.12)', color: 'var(--gold)', border: '1px solid var(--line)' }}><Ic n="sparkle" /></div>
                   <div className="f1">
                     <div style={{ fontWeight: 600, fontSize: 14.5 }}>Sin preferencia</div>
@@ -404,7 +404,7 @@ export function ScreenBooking() {
               <p className="muted" style={{ fontSize: 13.5, marginBottom: 22 }}>Selecciona el día y horario de tu preferencia.</p>
               <div className="vc gap8" style={{ marginBottom: 20, flexWrap: 'wrap' }}>
                 {nextDays.map((d, i) => (
-                  <div key={i} className={'timeslot' + (diaIdx === i ? ' sel' : '')} style={{ minWidth: 64 }} onClick={() => { setDiaIdx(i); setHora(null) }}>
+                  <div key={i} data-testid="dia-chip" className={'timeslot' + (diaIdx === i ? ' sel' : '')} style={{ minWidth: 64 }} onClick={() => { setDiaIdx(i); setHora(null) }}>
                     <div style={{ fontSize: 11, fontWeight: 600, opacity: .8 }}>{d.label}</div>
                     <div className="serif" style={{ fontSize: 18 }}>{d.n}</div>
                   </div>
@@ -417,7 +417,7 @@ export function ScreenBooking() {
                 {slots.map(s => {
                   const dis = off.includes(s)
                   return (
-                    <div key={s} className={'timeslot' + (hora === s ? ' sel' : '') + (dis ? ' off' : '')} onClick={() => !dis && setHora(s)}>
+                    <div key={s} data-testid="hora-slot" className={'timeslot' + (hora === s ? ' sel' : '') + (dis ? ' off' : '')} onClick={() => !dis && setHora(s)}>
                       {s}
                     </div>
                   )
@@ -531,6 +531,7 @@ export function ScreenBooking() {
             )}
             {step === 4 && (
               <button
+                data-testid="submit-cita"
                 className="btn gold"
                 disabled={!step4Ok || submitting}
                 style={{ opacity: step4Ok && !submitting ? 1 : .4, pointerEvents: step4Ok && !submitting ? 'auto' : 'none' }}
