@@ -28,7 +28,12 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_RECAPTCHA_SITE_KEY: ${{ secrets.VITE_RECAPTCHA_SITE_KEY }}
+          # Llave de prueba oficial de Google (pública, documentada en su FAQ
+          # de reCAPTCHA — no la real): siempre aprueba con puntuación 0.9.
+          # Preview la necesita para que las pruebas E2E de CI (H-13) no
+          # choquen para siempre contra la protección real anti-bot, que
+          # detecta correctamente a Playwright como automatizado.
+          VITE_RECAPTCHA_SITE_KEY: 6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI
           VITE_SUPABASE_SCHEMA: preview
           VITE_STORAGE_SUFFIX: _preview
           VITE_BASE_PATH: /preview/
