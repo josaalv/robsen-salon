@@ -46,6 +46,16 @@ if ('serviceWorker' in navigator) {
   }).catch(() => {})
 }
 
+// index.html trae un <title> estático — correcto para el CRM interno, pero
+// el mismo build también se despliega como /agendar/ en robsen.com.mx
+// (agendamiento público), donde la pestaña del navegador no debería decir
+// "Sistema interno". Vite no soporta variables de entorno dentro de
+// index.html sin exigirlas en TODOS los builds, así que se corrige en
+// runtime en vez de tocar el HTML.
+if (import.meta.env.VITE_APP_MODE === 'agendar') {
+  document.title = 'Agenda tu cita · Robsen Salón & Spa'
+}
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 })

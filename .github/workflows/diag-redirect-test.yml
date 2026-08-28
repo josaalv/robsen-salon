@@ -1,0 +1,31 @@
+name: Prueba temporal de redirect de booking (borrar después de usar)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/diag-redirect-test.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Verificar redirect real de robseninterno.com/booking
+        run: |
+          cat > check.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+          await page.goto('https://robseninterno.com/booking?pago=exitoso', { waitUntil: 'load', timeout: 20000 });
+          await page.waitForURL(/robsen\.com\.mx\/agendar\/booking/, { timeout: 10000 });
+          console.log('URL final:', page.url());
+          console.log('Title final:', await page.title());
+          await browser.close();
+          EOF
+          node check.mjs
