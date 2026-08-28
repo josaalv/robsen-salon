@@ -50,7 +50,7 @@ const NAV: NavGroup[] = [
 ]
 const ALL = NAV.flatMap(g => g.items)
 
-function initialRoute() {
+function pathFromUrl() {
   // import.meta.env.BASE_URL refleja el `base` real del build ('/' en
   // producción, '/preview/' en preview) — sin restarlo primero, cualquier
   // URL con prefijo (ej. /preview/ventas) nunca hace match con ningún id
@@ -58,8 +58,20 @@ function initialRoute() {
   const base = import.meta.env.BASE_URL
   let pathname = window.location.pathname
   if (pathname.startsWith(base)) pathname = pathname.slice(base.length)
-  const path = pathname.replace(/^\/+/, '')
+  return pathname.replace(/^\/+/, '')
+}
+
+function initialRoute() {
+  const path = pathFromUrl()
   return ALL.some(i => i.id === path) ? path : 'dashboard'
+}
+
+// El agendamiento en línea es la única pantalla pensada para público
+// anónimo (clientas reales, sin cuenta) — se detecta por URL, ANTES de
+// cualquier chequeo de sesión, para que jamás dependa de estar autenticado
+// ni pueda caer en la pantalla de login por una sesión vencida/inexistente.
+function isBookingRoute() {
+  return pathFromUrl() === 'booking'
 }
 
 function AppShell() {
@@ -540,8 +552,14 @@ function NotifPop({ onClose, go }: any) {
 function LoginGate() {
   const { user, loading, passwordRecovery } = useAuth()
   const [LoginScreen, setLoginScreen] = useState<React.ComponentType<any> | null>(null)
+  const [BookingScreen, setBookingScreen] = useState<React.ComponentType<any> | null>(null)
+  const publicBooking = isBookingRoute()
 
   useEffect(() => {
+    if (publicBooking) {
+      import('./screens/Booking').then(m => setBookingScreen(() => m.ScreenBooking)).catch(() => {})
+      return
+    }
     import('./screens/Login')
       .then(m => setLoginScreen(() => m.ScreenLogin))
       .catch(() => setLoginScreen(() => () => (
@@ -551,7 +569,31 @@ function LoginGate() {
           <button className="btn gold" onClick={() => window.location.reload()}><Ic n="arrows-clockwise" />Reintentar</button>
         </div>
       )))
-  }, [])
+  }, [publicBooking])
+
+  // Se evalúa antes que loading/user/passwordRecovery a propósito: quien
+  // llega aquí desde un enlace público (Google/redes) nunca debe ver la
+  // pantalla de acceso, sin importar si tiene sesión, si expiró o si nunca
+  // la tuvo. Solo se ofrece "Volver al panel" si YA hay sesión de staff.
+  if (publicBooking) {
+    return (
+      <div style={{ position:'relative' }}>
+        {!loading && !passwordRecovery && user && (
+          <button
+            className="btn ghost sm"
+            style={{ position:'fixed', top:20, right:20, zIndex:50 }}
+            onClick={() => { window.location.href = import.meta.env.BASE_URL }}
+          >
+            <Ic n="arrow-left" /> Volver al panel
+          </button>
+        )}
+        {BookingScreen ? <BookingScreen /> : (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
+        )}
+        <ToastHost />
+      </div>
+    )
+  }
 
   if (loading) return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--text-3)' }}>Cargando…</div>
   // Un enlace de recuperación de contraseña deja una sesión válida (así

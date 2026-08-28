@@ -1,12 +1,35 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Avatar } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
-import { useStore } from '../data/store'
+import { db } from '../lib/db'
 import { mxn, telefonoValido, telefonoError, filtrarTel } from '../lib/helpers'
-import type { Servicio, Estilista } from '../types'
+import type { Servicio, Estilista, SalonConfig } from '../types'
 
 const DIAS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const HOY = new Date()
+
+const CONFIG_DEFAULT: SalonConfig = {
+  agendaStart: 9, agendaEnd: 20, slotMin: 15, diasAbiertos: [true, true, true, true, true, true, false],
+  nombre: 'Robsen Salón & Spa', direccion: '', tel: '', whatsapp: '',
+  anticipoPct: 35, requerirAnticipo: true, iva: 0,
+  metodospago: { efectivo: true, tarjeta: true, transferencia: true, credito: false },
+  acento: '#C8A14A', comisiones: {}, escalaComisiones: [],
+} as SalonConfig
+
+// Lo que se guarda justo antes de salir a Mercado Pago, para reconstruir el
+// resumen cuando la persona regresa — en ese momento ya no hay React state
+// (fue una navegación completa fuera del sitio), solo localStorage.
+interface ReservaGuardada {
+  citaId: string
+  servicio: string
+  estilistaNombre: string
+  fecha: string
+  hora: string
+  total: number
+  anticipo: number
+  clienteNombre: string
+}
+const RESERVA_KEY = 'rb_booking_pendiente'
 
 function generateSlots(start: number, end: number, slotMin: number): string[] {
   const slots: string[] = []
@@ -18,9 +41,62 @@ function generateSlots(start: number, end: number, slotMin: number): string[] {
   return slots
 }
 
+const MESES_SHORT_B = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
 export function ScreenBooking() {
-  const { data, upsertCitaFutura, upsertClienta } = useStore()
-  const cfg = data.config
+  // Booking es una pantalla pública real (sin sesión) — a propósito no usa
+  // useStore()/loadFromSupabase (esas rutas mezclan datos que 'anon' no
+  // puede leer, como usuarios/ventas). Trae solo lo que necesita, con sus
+  // propias llamadas — servicios/estilistas/config ya son de lectura anónima
+  // (ver 017_close_open_policies.sql); disponibilidad y creación de la
+  // reserva pasan por RPCs acotados (ver 060_booking_publico.sql) que nunca
+  // exponen la tabla de clientas completa.
+  const [cfg, setCfg] = useState<SalonConfig>(CONFIG_DEFAULT)
+  const [servicios, setServicios] = useState<Servicio[]>([])
+  const [estilistas, setEstilistas] = useState<Estilista[]>([])
+  const [cargandoBase, setCargandoBase] = useState(true)
+
+  useEffect(() => {
+    Promise.all([db.getConfig(), db.getServicios(), db.getEstilistas()])
+      .then(([c, s, e]) => { if (c) setCfg(c); setServicios(s); setEstilistas(e) })
+      .finally(() => setCargandoBase(false))
+  }, [])
+
+  // Resumen post-pago: si volvemos de Mercado Pago (?pago=exitoso|fallido|
+  // pendiente), se muestra un resumen — nunca la pantalla de login, y nunca
+  // el wizard desde cero (ver PublicBookingRoute en App.tsx, que monta esta
+  // pantalla sin exigir sesión).
+  const [resumenPago, setResumenPago] = useState<null | {
+    estado: 'cargando' | 'aprobado' | 'pendiente' | 'en_proceso' | 'rechazado' | 'cancelado'
+    reserva: ReservaGuardada | null
+  }>(null)
+
+  useEffect(() => {
+    const pago = new URLSearchParams(window.location.search).get('pago')
+    if (!pago) return
+    const raw = localStorage.getItem(RESERVA_KEY)
+    const reserva = raw ? (JSON.parse(raw) as ReservaGuardada) : null
+    setResumenPago({ estado: 'cargando', reserva })
+    if (!reserva) { setResumenPago({ estado: pago === 'exitoso' ? 'aprobado' : 'pendiente', reserva: null }); return }
+
+    let cancelado = false
+    ;(async () => {
+      // El webhook de Mercado Pago puede tardar unos segundos en llegar —
+      // se reintenta unas cuantas veces antes de dejar "pendiente" como
+      // último estado conocido (nunca se inventa un resultado).
+      for (let i = 0; i < 6 && !cancelado; i++) {
+        const r = await db.consultarEstadoPagoPublico(reserva.citaId)
+        if (r && (r.estado === 'aprobado' || r.estado === 'rechazado' || r.estado === 'cancelado')) {
+          if (!cancelado) { setResumenPago({ estado: r.estado as any, reserva }); localStorage.removeItem(RESERVA_KEY) }
+          return
+        }
+        await new Promise(res => setTimeout(res, 2000))
+      }
+      if (!cancelado) setResumenPago({ estado: 'pendiente', reserva })
+    })()
+    return () => { cancelado = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [step, setStep] = useState(1)
   const [srv, setSrv] = useState<Servicio | null>(null)
@@ -52,9 +128,9 @@ export function ScreenBooking() {
   const [diaIdx, setDiaIdx] = useState(0)
   const selectedDay = nextDays[diaIdx] || nextDays[0]
 
-  const online = data.servicios.filter(s => s.online && s.activo !== false)
+  const online = servicios.filter(s => s.online && s.activo !== false)
   const profs: Estilista[] = srv
-    ? srv.prof.map(id => data.estilistas.find(e => e.id === id)).filter((e): e is Estilista => Boolean(e))
+    ? srv.prof.map(id => estilistas.find(e => e.id === id)).filter((e): e is Estilista => Boolean(e))
     : []
 
   const anticipo = srv?.anticipo ? Math.round(srv.precio * cfg.anticipoPct / 100) : 0
@@ -64,39 +140,41 @@ export function ScreenBooking() {
     [cfg.agendaStart, cfg.agendaEnd, cfg.slotMin]
   )
 
-  const MESES_SHORT_B = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-
-  // Blocked slots: bloquea por duración, no solo inicio
-  const off = useMemo(() => {
-    if (!selectedDay) return []
+  // Horarios ocupados: vía disponibilidad_publica (solo hora/duración/
+  // estilista, nunca datos de la clienta) en vez de leer citasFuturas del
+  // store global, que 'anon' no puede ver.
+  const [off, setOff] = useState<string[]>([])
+  useEffect(() => {
+    if (!selectedDay) { setOff([]); return }
     const y = selectedDay.date.getFullYear()
     const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
     const dy = String(selectedDay.date.getDate()).padStart(2, '0')
     const fechaStr = `${y}-${mo}-${dy}`
-    // "any" siempre termina asignando srv.prof[0] (ver submitCita) — el bloqueo debe
-    // reflejar la agenda de esa estilista específica, no la de todo el equipo.
     const estParaChecar = prof === 'any' ? (srv?.prof[0] || null) : prof
-    const ocupadas = data.citasFuturas.filter(c => c.fecha === fechaStr && (!estParaChecar || c.est === estParaChecar))
-    const bloqueados = new Set<string>()
-    ocupadas.forEach(c => {
-      const [hh, mm] = c.h.split(':').map(Number)
-      const startMin = hh * 60 + mm
-      slots.forEach(s => {
-        const [sh, sm] = s.split(':').map(Number)
-        const sMin = sh * 60 + sm
-        if (sMin >= startMin && sMin < startMin + c.dur) bloqueados.add(s)
+    let cancelado = false
+    db.disponibilidadPublica(fechaStr, estParaChecar).then(rows => {
+      if (cancelado) return
+      const bloqueados = new Set<string>()
+      rows.forEach(r => {
+        const [hh, mm] = r.h.split(':').map(Number)
+        const startMin = hh * 60 + mm
+        slots.forEach(s => {
+          const [sh, sm] = s.split(':').map(Number)
+          const sMin = sh * 60 + sm
+          if (sMin >= startMin && sMin < startMin + r.dur) bloqueados.add(s)
+        })
       })
+      if (srv) {
+        const cierreMin = cfg.agendaEnd * 60
+        slots.forEach(s => {
+          const [sh, sm] = s.split(':').map(Number)
+          if (sh * 60 + sm + srv.dur > cierreMin) bloqueados.add(s)
+        })
+      }
+      setOff(Array.from(bloqueados))
     })
-    // Bloquea también los horarios donde el servicio terminaría después del cierre
-    if (srv) {
-      const cierreMin = cfg.agendaEnd * 60
-      slots.forEach(s => {
-        const [sh, sm] = s.split(':').map(Number)
-        if (sh * 60 + sm + srv.dur > cierreMin) bloqueados.add(s)
-      })
-    }
-    return Array.from(bloqueados)
-  }, [selectedDay, data.citasFuturas, prof, slots, srv, cfg.agendaEnd])
+    return () => { cancelado = true }
+  }, [selectedDay, prof, slots, srv, cfg.agendaEnd])
 
   const steps: [string, string][] = [
     ['Servicio', 'scissors'],
@@ -119,42 +197,32 @@ export function ScreenBooking() {
     const y = selectedDay.date.getFullYear()
     const mo = String(selectedDay.date.getMonth() + 1).padStart(2, '0')
     const dy = String(selectedDay.date.getDate()).padStart(2, '0')
-    const telLimpio = clienteTel.trim() || undefined
-    const emailLimpio = clienteEmail.trim() || undefined
+    const fecha = `${y}-${mo}-${dy}`
     const estId = prof === 'any' ? (srv.prof[0] || 'e1') : prof
+    const citaId = 'cf' + Date.now()
     setSubmitting(true)
     setSubmitError('')
     try {
-      await upsertCitaFutura({
-        id: 'cf' + Date.now(),
-        h: hora,
-        dur: srv.dur,
-        cl: clienteNombre.trim(),
-        tel: telLimpio,
-        email: emailLimpio,
-        srv: srv.nombre,
-        servicioId: srv.id,
-        est: estId,
-        estado: 'pend',
-        total: srv.precio,
-        ant: anticipo,
-        notas: clienteNotas.trim() || undefined,
-        fecha: `${y}-${mo}-${dy}`,
-      })
-      // Registrar o actualizar clienta en CRM
-      const nombreLimpio = clienteNombre.trim()
-      const existe = data.clientas.find(c =>
-        c.nombre.toLowerCase() === nombreLimpio.toLowerCase() ||
-        (telLimpio && c.tel.replace(/\D/g,'') === telLimpio.replace(/\D/g,''))
+      await db.crearReservaPublica(
+        {
+          id: citaId, h: hora, dur: srv.dur, srv: srv.nombre, servicioId: srv.id, est: estId,
+          fecha, total: srv.precio, ant: anticipo, notas: clienteNotas.trim() || undefined,
+        },
+        { nombre: clienteNombre.trim(), tel: clienteTel.trim() || undefined, email: clienteEmail.trim() || undefined }
       )
-      if (!existe && nombreLimpio) {
-        const ini = nombreLimpio.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-        upsertClienta({
-          id: 'cl' + Date.now(), nombre: nombreLimpio,
-          tel: telLimpio || '', email: emailLimpio, estado: 'Nueva', ultima: '',
-          ticket: 0, fav: srv.nombre, est: estId,
-          visitas: 0, gasto: 0, ini, cumple: '', ciclo: 4,
-        }).catch(() => {})
+
+      if (anticipo > 0) {
+        const { checkoutUrl } = await db.crearPreferenciaPago(
+          anticipo, citaId, `Anticipo · ${srv.nombre} · ${cfg.nombre}`
+        )
+        const reserva: ReservaGuardada = {
+          citaId, servicio: srv.nombre,
+          estilistaNombre: prof === 'any' ? 'Sin preferencia' : (estilistas.find(e => e.id === estId)?.nombre || ''),
+          fecha, hora, total: srv.precio, anticipo, clienteNombre: clienteNombre.trim(),
+        }
+        localStorage.setItem(RESERVA_KEY, JSON.stringify(reserva))
+        window.location.href = checkoutUrl
+        return
       }
       next()
     } catch {
@@ -168,6 +236,58 @@ export function ScreenBooking() {
     setStep(1); setSrv(null); setProf(null); setHora(null)
     setClienteNombre(''); setClienteTel(''); setClienteEmail(''); setClienteNotas('')
     setDiaIdx(0)
+  }
+
+  // ── Resumen post-pago (reemplaza todo el wizard) ──────────────────────
+  if (resumenPago) {
+    const { estado, reserva } = resumenPago
+    const copy: { icon: string; titulo: string; texto: string; color: string } = {
+      cargando: { icon: 'spinner', titulo: 'Confirmando tu pago…', texto: 'Un momento, estamos verificando tu anticipo con Mercado Pago.', color: 'var(--text-3)' },
+      aprobado: { icon: 'check-circle', titulo: '¡Reserva confirmada!', texto: 'Tu anticipo quedó registrado. Nuestro equipo confirmará los últimos detalles por WhatsApp.', color: 'var(--gold)' },
+      pendiente: { icon: 'clock', titulo: 'Pago en revisión', texto: 'Tu pago sigue procesándose. Te avisaremos por WhatsApp en cuanto se confirme — no hace falta que hagas nada más.', color: 'var(--text-2)' },
+      en_proceso: { icon: 'clock', titulo: 'Pago en revisión', texto: 'Tu pago sigue procesándose. Te avisaremos por WhatsApp en cuanto se confirme — no hace falta que hagas nada más.', color: 'var(--text-2)' },
+      rechazado: { icon: 'x-circle', titulo: 'El pago no se pudo procesar', texto: 'Tu reserva quedó guardada, pero el anticipo no se completó. Contáctanos para intentar de nuevo o resolverlo por otro medio.', color: 'var(--st-canc)' },
+      cancelado: { icon: 'x-circle', titulo: 'Pago cancelado', texto: 'El anticipo no se completó. Si fue un error, puedes intentar agendar de nuevo.', color: 'var(--st-canc)' },
+    }[estado]
+
+    return (
+      <div className="book-wrap">
+        <div className="book-aside">
+          <div style={{ position:'absolute', inset:0, background:'radial-gradient(600px 400px at 80% 0%, rgba(200,161,74,0.10), transparent 60%)' }} />
+          <div style={{ position:'relative', zIndex:1, flex:1, display:'flex', flexDirection:'column' }}>
+            <div className="logo serif" style={{ fontStyle:'italic', fontSize:34, background:'var(--gold-grad)', WebkitBackgroundClip:'text', backgroundClip:'text', WebkitTextFillColor:'transparent' }}>{cfg.nombre}</div>
+            <div style={{ fontSize:10, letterSpacing:'.36em', textTransform:'uppercase', color:'var(--text-3)', marginTop:8 }}>{cfg.direccion}</div>
+          </div>
+        </div>
+        <div className="book-main" style={{ alignItems:'center', justifyContent:'center' }}>
+          <div style={{ maxWidth: 460, width:'100%', textAlign:'center' }}>
+            <div style={{ width: 76, height: 76, borderRadius: '50%', margin: '0 auto', background: estado === 'aprobado' ? 'var(--gold-grad)' : 'var(--surface-2)', border: estado === 'aprobado' ? 'none' : '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: estado === 'aprobado' ? '#241c0c' : copy.color, fontSize: 34 }}>
+              <Ic n={copy.icon} />
+            </div>
+            <h1 className="display" style={{ fontSize: 27, margin: '22px 0 8px' }}>{copy.titulo}</h1>
+            <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.6, marginBottom: reserva ? 22 : 0 }}>{copy.texto}</p>
+
+            {reserva && (
+              <div className="card" style={{ textAlign: 'left', padding: 18, marginTop: 6 }}>
+                <div className="vc gap8" style={{ fontSize: 13.5, marginBottom: 8 }}><Ic n="scissors" />{reserva.servicio}</div>
+                <div className="vc gap8" style={{ fontSize: 13.5, marginBottom: 8, color: 'var(--text-2)' }}><Ic n="user" />{reserva.estilistaNombre || 'Sin preferencia'}</div>
+                <div className="vc gap8" style={{ fontSize: 13.5, marginBottom: 8, color: 'var(--text-2)' }}><Ic n="calendar-blank" />{reserva.fecha} · {reserva.hora}</div>
+                <div className="between" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 13 }}>Anticipo</span>
+                  <span className="num gold-text serif" style={{ fontSize: 18, fontWeight: 600 }}>{mxn(reserva.anticipo)}</span>
+                </div>
+              </div>
+            )}
+
+            {(estado === 'aprobado' || estado === 'rechazado' || estado === 'cancelado') && (
+              <button className="btn gold w100 mt24" style={{ justifyContent: 'center' }} onClick={() => { window.location.href = window.location.pathname; }}>
+                Agendar otra cita
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -209,6 +329,12 @@ export function ScreenBooking() {
       {/* Main */}
       <div className="book-main">
         <div style={{ maxWidth: 640, width: '100%', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {cargandoBase ? (
+            <div className="vc" style={{ gap: 10, color: 'var(--text-3)', fontSize: 13, justifyContent: 'center', flex: 1 }}>
+              <Ic n="spinner" /> Cargando…
+            </div>
+          ) : (
+          <>
           <div className="eyebrow">Paso {Math.min(step, 5)} de 5</div>
 
           {/* Step 1: Service selection */}
@@ -333,7 +459,7 @@ export function ScreenBooking() {
                 <div className="card gold-edge mt18" style={{ padding: 18 }}>
                   <div className="vc gap12"><span style={{ color: 'var(--gold)' }}><Ic n="hand-coins" /></span><span style={{ fontWeight: 600 }}>Anticipo para apartar tu lugar</span></div>
                   <p className="muted" style={{ fontSize: 12.5, marginTop: 10, lineHeight: 1.55 }}>
-                    Este servicio requiere un anticipo de <b className="gold-text">{mxn(anticipo)}</b> ({cfg.anticipoPct}%), que se descuenta del total. El resto lo pagas en el salón.
+                    Este servicio requiere un anticipo de <b className="gold-text">{mxn(anticipo)}</b> ({cfg.anticipoPct}%), que se descuenta del total. Se cobra en línea de forma segura al continuar — el resto lo pagas en el salón.
                   </p>
                 </div>
               )}
@@ -345,7 +471,7 @@ export function ScreenBooking() {
             </div>
           )}
 
-          {/* Step 5: Confirmation */}
+          {/* Step 5: Confirmation (sin anticipo — con anticipo, se redirige a Mercado Pago) */}
           {step === 5 && (
             <div className="center" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingTop: 20 }}>
               <div style={{ width: 76, height: 76, borderRadius: '50%', background: 'var(--gold-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#241c0c', fontSize: 36, boxShadow: '0 16px 50px -16px var(--gold-glow)' }}>
@@ -366,7 +492,7 @@ export function ScreenBooking() {
                   <span className="vc gap8" style={{ fontSize: 13 }}><Ic n="scissors" />{srv.nombre}</span>
                   {prof && (
                     <span className="vc gap8" style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                      <Ic n="user" />{prof === 'any' ? 'Sin preferencia' : data.estilistas.find(e => e.id === prof)?.nombre.split(' ')[0]}
+                      <Ic n="user" />{prof === 'any' ? 'Sin preferencia' : estilistas.find(e => e.id === prof)?.nombre.split(' ')[0]}
                     </span>
                   )}
                   {hora && selectedDay && (
@@ -402,7 +528,7 @@ export function ScreenBooking() {
                 style={{ opacity: step4Ok && !submitting ? 1 : .4, pointerEvents: step4Ok && !submitting ? 'auto' : 'none' }}
                 onClick={submitCita}
               >
-                <Ic n="check" />{submitting ? 'Enviando…' : (anticipo > 0 ? `Solicitar cita · anticipo ${mxn(anticipo)}` : 'Solicitar cita')}
+                <Ic n="check" />{submitting ? (anticipo > 0 ? 'Redirigiendo a pago…' : 'Enviando…') : (anticipo > 0 ? `Pagar anticipo · ${mxn(anticipo)}` : 'Solicitar cita')}
               </button>
             )}
             {step === 5 && (
@@ -411,6 +537,8 @@ export function ScreenBooking() {
               </button>
             )}
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>

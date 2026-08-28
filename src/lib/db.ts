@@ -381,6 +381,51 @@ export const db = {
     if (error) { console.error('[db.deleteCita]', error.message); throw error }
   },
 
+  // — Agendamiento público (Booking.tsx, sin sesión) —
+  // Los tres RPC de abajo son las únicas puertas que 'anon' tiene hacia
+  // citas/clientas (ver 060_booking_publico.sql) — nunca un select directo
+  // a esas tablas, que expondría nombre/teléfono de toda la base de clientas.
+  async disponibilidadPublica(fecha: string, estilistaId?: string | null): Promise<{ h: string; dur: number; est: string }[]> {
+    if (!supabase) return []
+    const { data, error } = await supabase.rpc('disponibilidad_publica', { p_fecha: fecha, p_estilista_id: estilistaId ?? null })
+    if (error) { console.error('[db.disponibilidadPublica]', error.message); return [] }
+    return data ?? []
+  },
+  async crearReservaPublica(cita: {
+    id: string; h: string; dur: number; srv: string; servicioId?: string; est: string
+    fecha: string; total: number; ant: number; notas?: string
+  }, clienta: { nombre: string; tel?: string; email?: string }): Promise<{ citaId: string; clientaId: string }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.rpc('crear_reserva_publica', {
+      p_cita: {
+        id: cita.id, h: cita.h, dur: cita.dur, srv: cita.srv, servicio_id: cita.servicioId ?? null,
+        est: cita.est, fecha: cita.fecha, total: cita.total, ant: cita.ant, notas: cita.notas ?? null,
+      },
+      p_clienta: { nombre: clienta.nombre, tel: clienta.tel ?? null, email: clienta.email ?? null },
+    })
+    if (error) { console.error('[db.crearReservaPublica]', error.message); throw error }
+    return { citaId: data.cita_id, clientaId: data.clienta_id }
+  },
+  async consultarEstadoPagoPublico(referencia: string): Promise<{ estado: string; monto: number } | null> {
+    if (!supabase) return null
+    const { data, error } = await supabase.rpc('consultar_estado_pago_publico', { p_referencia: referencia })
+    if (error) { console.error('[db.consultarEstadoPagoPublico]', error.message); return null }
+    return data ?? null
+  },
+  // Crea el cobro en Mercado Pago (Checkout Pro) para un anticipo — referencia
+  // es el id de la cita/apartado, no algo que se le ocurra al frontend.
+  // Genérico a propósito: sirve igual para el anticipo de Booking que para
+  // una futura pantalla de "cobro virtual" interna.
+  async crearPreferenciaPago(monto: number, referencia: string, descripcion?: string): Promise<{ preferenceId: string; checkoutUrl: string }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('mp-crear-preferencia', {
+      body: { monto, referencia, descripcion },
+    })
+    if (error) throw new Error(data?.error || error.message)
+    if (data?.error) throw new Error(data.error)
+    return { preferenceId: data.preference_id, checkoutUrl: data.checkout_url }
+  },
+
   // — Ventas —
   async getVentas(): Promise<Venta[]> {
     if (!supabase) return []
