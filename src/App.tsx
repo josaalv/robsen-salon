@@ -76,7 +76,16 @@ function initialRoute() {
 // anónimo (clientas reales, sin cuenta) — se detecta por URL, ANTES de
 // cualquier chequeo de sesión, para que jamás dependa de estar autenticado
 // ni pueda caer en la pantalla de login por una sesión vencida/inexistente.
+//
+// El build de /agendar/ en robsen.com.mx es el mismo bundle completo del
+// CRM (no uno aparte) — sin este caso especial, solo /agendar/booking
+// mostraba el formulario público y CUALQUIER otra ruta ahí (empezando por
+// la raíz, /agendar/) caía en la pantalla de login normal del sistema
+// interno. Justo lo que se quería evitar al mover el agendamiento a este
+// dominio: que ahí no aparezca nunca nada del sistema interno, sin
+// importar la ruta exacta que alguien escriba.
 function isBookingRoute() {
+  if (import.meta.env.VITE_APP_MODE === 'agendar') return true
   return pathFromUrl() === 'booking'
 }
 
