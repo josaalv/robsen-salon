@@ -192,16 +192,30 @@ export function ScreenBooking() {
     const fechaStr = `${y}-${mo}-${dy}`
     const estParaChecar = prof === 'any' ? (srv?.prof[0] || null) : prof
     let cancelado = false
+    // Comparación de intervalos completa: un horario candidato también se
+    // bloquea si, con la duración del servicio que se está agendando, su
+    // propio intervalo [inicio, inicio+dur) se mete en el de una cita ya
+    // existente — no solo cuando el candidato empieza dentro de esa cita.
+    // Antes solo se checaba "sMin >= startMin && sMin < startMin+dur",
+    // que deja pasar un candidato ANTERIOR a una cita existente cuya
+    // duración lo hace terminar después de que esa cita empieza (ej. cita
+    // a las 18:00 de 40 min bloqueaba 18:00 pero no 17:30, aunque un
+    // servicio de 40 min a las 17:30 termina 18:10 — se traslapa 10 min).
+    // Bug real encontrado en producción: el pago se cobraba y luego el
+    // servidor (con su propio chequeo, correcto) rechazaba la cita por
+    // choque de horario, dejando el caso de "reserva_error".
+    const durNueva = srv?.dur ?? 0
     db.disponibilidadPublica(fechaStr, estParaChecar).then(rows => {
       if (cancelado) return
       const bloqueados = new Set<string>()
       rows.forEach(r => {
         const [hh, mm] = r.h.split(':').map(Number)
         const startMin = hh * 60 + mm
+        const endMin = startMin + r.dur
         slots.forEach(s => {
           const [sh, sm] = s.split(':').map(Number)
           const sMin = sh * 60 + sm
-          if (sMin >= startMin && sMin < startMin + r.dur) bloqueados.add(s)
+          if (sMin < endMin && startMin < sMin + durNueva) bloqueados.add(s)
         })
       })
       if (srv) {
