@@ -1,0 +1,44 @@
+name: Verificar /agendar-preview/ en vivo (borrar después de usar)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/diag-agendar-preview-verify.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: Verificar /agendar-preview/ (booking real, no login, y /agendar real intacto)
+        run: |
+          cat > check.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+
+          await page.goto('https://robsen.com.mx/agendar-preview/', { waitUntil: 'load', timeout: 20000 });
+          await page.waitForTimeout(1500);
+          console.log('--- agendar-preview raíz ---');
+          console.log('Title:', await page.title());
+          console.log('H1:', await page.locator('h1').first().textContent().catch(() => '(sin h1)'));
+
+          await page.goto('https://robsen.com.mx/agendar-preview/booking', { waitUntil: 'load', timeout: 20000 });
+          await page.waitForTimeout(1500);
+          console.log('--- agendar-preview/booking ---');
+          console.log('URL final:', page.url());
+          console.log('H1:', await page.locator('h1').first().textContent().catch(() => '(sin h1)'));
+
+          await page.goto('https://robsen.com.mx/agendar/', { waitUntil: 'load', timeout: 20000 });
+          await page.waitForTimeout(1500);
+          console.log('--- agendar/ (producción real, debe seguir intacto) ---');
+          console.log('Title:', await page.title());
+          console.log('H1:', await page.locator('h1').first().textContent().catch(() => '(sin h1)'));
+
+          await browser.close();
+          EOF
+          node check.mjs
