@@ -1,0 +1,77 @@
+name: Deploy Agendar Preview to robsen.com.mx
+
+# Entorno de pruebas para el sitio público de agendamiento — equivalente a
+# deploy-preview.yml (el /preview/ del CRM interno), pero para
+# robsen.com.mx/agendar. Mismo disparador (push a la rama 'preview'), mismo
+# schema aislado de Supabase ('preview'), misma llave de prueba de
+# reCAPTCHA. Se sube a /agendar-preview/ — nunca toca /agendar/ (el sitio
+# real) ni requiere DNS aparte, mismo dominio y misma cuenta FTP que ya usa
+# deploy-agendar.yml.
+on:
+  push:
+    branches: [preview]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'agendar.html'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy-agendar-preview.yml'
+
+concurrency:
+  group: robsen-deploy-agendar-preview
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm install
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Misma llave de prueba oficial de Google que ya usa
+          # deploy-preview.yml — sin esto, cualquier prueba automatizada
+          # (o manual repetida) chocaría con la detección real de bots.
+          VITE_RECAPTCHA_SITE_KEY: 6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI
+          VITE_SUPABASE_SCHEMA: preview
+          VITE_STORAGE_SUFFIX: _preview
+          VITE_BASE_PATH: /agendar-preview/
+          VITE_APP_MODE: agendar
+
+      - name: Renombrar agendar.html a index.html
+        run: mv dist/agendar.html dist/index.html
+
+      - name: Duplicar index.html como /booking/index.html (ruta real, no virtual)
+        run: mkdir -p dist/booking && cp dist/index.html dist/booking/index.html
+
+      - name: Instalar lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
+      - name: Subir a robsen.com.mx por FTP (lftp mirror) — subcarpeta /agendar-preview/
+        env:
+          FTP_SERVER: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          FTP_USER: ${{ secrets.ROBSEN_FTP_USERNAME }}
+          FTP_PASS: ${{ secrets.ROBSEN_FTP_PASSWORD }}
+        run: |
+          lftp -u "$FTP_USER,$FTP_PASS" "$FTP_SERVER" <<'EOF'
+          set ssl:verify-certificate no
+          set ftp:ssl-allow no
+          set net:timeout 20
+          set net:max-retries 2
+          set mirror:parallel-transfer-count 3
+          cd domains/robsen.com.mx/public_html
+          mkdir -p agendar-preview
+          mirror --reverse --verbose dist/ agendar-preview/
+          bye
+          EOF

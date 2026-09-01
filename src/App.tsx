@@ -72,20 +72,16 @@ function initialRoute() {
   return ALL.some(i => i.id === path) ? path : 'dashboard'
 }
 
-// El agendamiento en línea es la única pantalla pensada para público
-// anónimo (clientas reales, sin cuenta) — se detecta por URL, ANTES de
-// cualquier chequeo de sesión, para que jamás dependa de estar autenticado
-// ni pueda caer en la pantalla de login por una sesión vencida/inexistente.
-//
-// El build de /agendar/ en robsen.com.mx es el mismo bundle completo del
-// CRM (no uno aparte) — sin este caso especial, solo /agendar/booking
-// mostraba el formulario público y CUALQUIER otra ruta ahí (empezando por
-// la raíz, /agendar/) caía en la pantalla de login normal del sistema
-// interno. Justo lo que se quería evitar al mover el agendamiento a este
-// dominio: que ahí no aparezca nunca nada del sistema interno, sin
-// importar la ruta exacta que alguien escriba.
+// El agendamiento en línea (vista embebida, solo dentro del CRM autenticado
+// — ver el ítem de NAV 'booking' más abajo) es la única pantalla de este
+// bundle pensada también para público anónimo, así que se detecta por URL
+// ANTES de cualquier chequeo de sesión: nunca debe depender de estar
+// autenticado ni caer en la pantalla de login por una sesión vencida o
+// inexistente. El sitio público real (robsen.com.mx/agendar) ya NO corre
+// este bundle — tiene su propio entry point (main-agendar.tsx) que nunca
+// carga App.tsx ni nada del CRM, así que ahí "que se abra el sistema" no es
+// posible por construcción, no por este chequeo.
 function isBookingRoute() {
-  if (import.meta.env.VITE_APP_MODE === 'agendar') return true
   return pathFromUrl() === 'booking'
 }
 
@@ -566,11 +562,10 @@ function NotifPop({ onClose, go }: any) {
 
 // El agendamiento público se retiró de aquí — vive en robsen.com.mx/agendar
 // (el dominio que ya conoce la clientela; este dominio suena, y es,
-// interno). Solo aplica a la producción real: BASE_URL === '/' es
-// específicamente el deploy raíz de robseninterno.com — ni preview
-// (BASE_URL '/preview/', sigue sirviendo Booking normal para pruebas) ni
-// el propio deploy de /agendar/ (BASE_URL '/agendar/', se redirigiría a
-// sí mismo en bucle si se comparara distinto) entran en esta condición.
+// interno), en su propio build aparte (main-agendar.tsx). Solo aplica a la
+// producción real de este bundle: BASE_URL === '/' es específicamente el
+// deploy raíz de robseninterno.com — preview (BASE_URL '/preview/') sigue
+// sirviendo Booking normal, sin redirigir, para poder seguir probando ahí.
 const BOOKING_PUBLICO_URL = 'https://robsen.com.mx/agendar/booking'
 
 function LoginGate() {
