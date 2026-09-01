@@ -45,6 +45,7 @@ const NAV: NavGroup[] = [
   { grupo: 'Sistema', items: [
     { id:'ajustes',    label:'Ajustes',              icon:'gear-six',             title:'Ajustes',               sub:'Configuración y permisos' },
     { id:'conflictos', label:'Conflictos',           icon:'warning-circle',       title:'Conflictos de sincronización', sub:'Cambios sin conexión que no se sincronizaron solos' },
+    { id:'pagos-pendientes', label:'Pagos pendientes', icon:'hand-coins',         title:'Pagos pendientes de agendar', sub:'Anticipos cobrados en línea sin cita agendada' },
     { id:'booking',    label:'Agendamiento en línea',icon:'calendar-plus',        title:'',                      sub:'' },
   ]},
 ]
@@ -105,6 +106,16 @@ function AppShell() {
     const cargar = () => db.getWaMensajes().then(cola => {
       setWaPend(cola.filter(m => m.estado === 'pendiente_aprobacion').length)
     }).catch(() => {})
+    cargar()
+    const id = setInterval(cargar, 60000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Badge de "Pagos pendientes" (H-15): anticipos cobrados en línea cuya
+  // cita no se pudo agendar sola.
+  const [pagosPendCount, setPagosPendCount] = useState(0)
+  useEffect(() => {
+    const cargar = () => db.getPagosConError().then(x => setPagosPendCount(x.length)).catch(() => {})
     cargar()
     const id = setInterval(cargar, 60000)
     return () => clearInterval(id)
@@ -227,6 +238,7 @@ function AppShell() {
           case 'whatsapp':  mod = await import('./screens/whatsapp'); setScreen(() => mod.ScreenWhatsApp);  break
           case 'ajustes':   mod = await import('./screens/Ajustes');   setScreen(() => mod.ScreenAjustes);   break
           case 'conflictos': mod = await import('./screens/ConflictosInbox'); setScreen(() => mod.ScreenConflictosInbox); break
+          case 'pagos-pendientes': mod = await import('./screens/PagosPendientes'); setScreen(() => mod.ScreenPagosPendientes); break
           case 'booking':   mod = await import('./screens/Booking');   setScreen(() => mod.ScreenBooking);   break
           default: setScreen(null)
         }
@@ -281,7 +293,7 @@ function AppShell() {
               <React.Fragment key={g.grupo}>
                 <div className="nav-label">{g.grupo}</div>
                 {items.map(it => {
-                  const badge = it.id === 'whatsapp' ? waPend : it.id === 'conflictos' ? outboxConflict : it.badge
+                  const badge = it.id === 'whatsapp' ? waPend : it.id === 'conflictos' ? outboxConflict : it.id === 'pagos-pendientes' ? pagosPendCount : it.badge
                   return (
                     <div key={it.id} className={'nav-item' + (effRoute === it.id ? ' active' : '')} onClick={() => setRoute(it.id)}>
                       <Ic n={it.icon} />{it.label}
