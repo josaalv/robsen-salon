@@ -83,6 +83,15 @@ jobs:
           set mirror:parallel-transfer-count 3
           cd domains/robsen.com.mx/public_html
           mkdir -p agendar
-          mirror --reverse --verbose dist/ agendar/
+          # --delete borra en agendar/ lo que ya no está en dist/ — necesario
+          # porque el build cambió de "bundle completo del CRM" a uno
+          # aislado (ver commit del build independiente): sin esto, los
+          # chunks viejos (Dashboard-*.js, Ventas-*.js, etc.) se quedarían
+          # huérfanos ahí para siempre. Seguro solo porque agendar/ es una
+          # subcarpeta dedicada exclusivamente a este build — a diferencia
+          # del mirror de deploy.yml (a la raíz de la cuenta, que también
+          # tiene domains/, .git/ y otros archivos ajenos al build), acá no
+          # hay nada más que lftp pueda borrar por error.
+          mirror --reverse --verbose --delete dist/ agendar/
           bye
           EOF

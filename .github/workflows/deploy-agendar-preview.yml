@@ -72,6 +72,9 @@ jobs:
           set mirror:parallel-transfer-count 3
           cd domains/robsen.com.mx/public_html
           mkdir -p agendar-preview
-          mirror --reverse --verbose dist/ agendar-preview/
+          # --delete: ver el mismo comentario en deploy-agendar.yml — seguro
+          # aquí porque agendar-preview/ es una subcarpeta dedicada, sin
+          # nada más que lftp pueda borrar por error.
+          mirror --reverse --verbose --delete dist/ agendar-preview/
           bye
           EOF
