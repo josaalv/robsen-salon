@@ -447,6 +447,32 @@ export const db = {
     if (data?.error) throw new Error(data.error)
     return { preferenceId: data.preference_id, checkoutUrl: data.checkout_url }
   },
+  // H-15: pago aprobado pero la cita no se pudo agendar sola (ej. alguien
+  // más tomó el horario mientras se pagaba) — antes solo se veía
+  // consultando la base a mano. RPC en vez de select directo: filtrar por
+  // una clave dentro de un jsonb desde el cliente es frágil, mejor
+  // resuelto una sola vez en SQL.
+  async getPagosConError(): Promise<{
+    id: string; referencia: string; monto: number; reservaError: string
+    clienteNombre?: string; clienteTel?: string; servicio?: string; fechaCita?: string; horaCita?: string
+    creadoEn: string; actualizadoEn: string | null
+  }[]> {
+    if (!supabase) return []
+    const { data, error } = await supabase.rpc('listar_pagos_con_error')
+    if (error) { console.error('[db.getPagosConError]', error.message); return [] }
+    return (data || []).map((p: any) => ({
+      id: p.id, referencia: p.external_reference, monto: Number(p.monto),
+      reservaError: p.detalle?.reserva_error || '',
+      clienteNombre: p.detalle?.cliente_nombre, clienteTel: p.detalle?.cliente_tel,
+      servicio: p.detalle?.servicio, fechaCita: p.detalle?.fecha_cita, horaCita: p.detalle?.hora_cita,
+      creadoEn: p.creado_en, actualizadoEn: p.actualizado_en,
+    }))
+  },
+  async marcarPagoErrorResuelto(id: string): Promise<void> {
+    if (!supabase) return
+    const { error } = await supabase.rpc('marcar_pago_error_resuelto', { p_id: id })
+    if (error) throw new Error(error.message)
+  },
 
   // — Ventas —
   async getVentas(): Promise<Venta[]> {

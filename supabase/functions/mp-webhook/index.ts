@@ -189,9 +189,24 @@ Deno.serve(async (req: Request) => {
         // que Mercado Pago siga reintentando el mismo webhook por esto.
         const errBody = await rpcRes.text();
         console.error("mp-webhook: pago aprobado pero no se pudo agendar", errBody);
+        // H-15: sin esto, la pantalla de "pagos con error" (listar_pagos_con_error)
+        // solo tenía el id de la cita y el monto — nada con qué el equipo
+        // pudiera de verdad contactar a la clienta por WhatsApp como
+        // promete el mensaje de confirmación. metadata.cita/clienta ya
+        // están disponibles aquí mismo, solo faltaba guardarlos.
         await rest(`pagos_online?payment_id=eq.${encodeURIComponent(String(pago.id))}`, schema, {
           method: "PATCH", headers: { "Prefer": "return=minimal" },
-          body: JSON.stringify({ detalle: { ...payloadActualizado.detalle, reserva_error: errBody } }),
+          body: JSON.stringify({
+            detalle: {
+              ...payloadActualizado.detalle,
+              reserva_error: errBody,
+              cliente_nombre: pago.metadata.clienta?.nombre,
+              cliente_tel: pago.metadata.clienta?.tel,
+              servicio: pago.metadata.cita?.srv,
+              fecha_cita: pago.metadata.cita?.fecha,
+              hora_cita: pago.metadata.cita?.h,
+            },
+          }),
         });
       }
     }
