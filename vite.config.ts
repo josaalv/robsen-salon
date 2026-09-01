@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { resolve } from 'node:path'
 
 // BASE_PATH: '/' en producción; '/preview/' en el deploy de preview (mismo
 // dominio, subcarpeta aparte — ver docs/DEPLOY.md). Todo lo que sea una URL
@@ -16,6 +17,16 @@ const APP_MODE = process.env.VITE_APP_MODE || 'interno'
 const MANIFEST_TEXT = APP_MODE === 'agendar'
   ? { name: 'Agenda tu cita · Robsen Salón & Spa', short_name: 'Robsen — Agendar', description: 'Agenda tu cita en línea con Robsen Salón & Spa' }
   : { name: 'Robsen Salón · Sistema interno', short_name: 'Robsen', description: 'CRM/ERP interno de Robsen Salón & Spa' }
+// En modo agendar se compila agendar.html (main-agendar.tsx → solo
+// Booking.tsx) en vez de index.html (main.tsx → App.tsx, el CRM completo) —
+// esto es lo que de verdad separa robsen.com.mx/agendar del sistema
+// interno: no comparten build, el código del CRM no existe en ese bundle.
+// El archivo de salida se sigue llamando dist/agendar.html (Vite nombra el
+// HTML de salida según el archivo fuente, no según una clave de
+// rollupOptions.input) — el propio workflow de deploy lo renombra a
+// index.html antes de subirlo, para que Apache lo sirva como la página por
+// default del directorio sin configuración extra.
+const ENTRY_HTML = APP_MODE === 'agendar' ? 'agendar.html' : 'index.html'
 
 export default defineConfig({
   plugins: [
@@ -71,4 +82,9 @@ export default defineConfig({
   ],
   server: { port: 3000 },
   base: BASE_PATH,
+  build: {
+    rollupOptions: {
+      input: resolve(__dirname, ENTRY_HTML),
+    },
+  },
 })
