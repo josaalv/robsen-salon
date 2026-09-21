@@ -64,7 +64,7 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
       ${v.anticipo > 0 ? `<div class="r"><span>Anticipo</span><span>-${mxn(v.anticipo)}</span></div>` : ''}
       <div class="r" style="font-weight:bold;font-size:15px;margin-top:6px"><span>TOTAL</span><span>${mxn(ventaCalc.total(v))}</span></div>
       <div class="r" style="margin-top:4px;font-size:11px"><span>Pago: ${v.pago}</span><span>${v.estado === 'parcial' ? 'Saldo: ' + mxn(ventaCalc.saldo(v)) : 'Pagado'}</span></div>
-      ${v.pagos && v.pagos.length ? v.pagos.map(p => `<div class="r" style="font-size:11px;color:#555"><span>· ${p.metodo}</span><span>${mxn(p.monto)}</span></div>`).join('') : ''}
+      ${v.pagos && v.pagos.length ? v.pagos.map((p, i) => `<div class="r" style="font-size:11px;color:#555"><span>· ${v.citaId && v.saldoCobradoEn ? (i === 0 ? 'Anticipo' : 'Saldo') + ' — ' : ''}${p.metodo}</span><span>${mxn(p.monto)}</span></div>`).join('') : ''}
       <div class="hr"></div>
       <div class="c" style="font-size:11px">¡Gracias por tu visita! 💛</div>
     </body></html>`
@@ -154,17 +154,30 @@ function VentaDetalle({ v, onClose }: { v: Venta; onClose: () => void }) {
             </span>
           </div>
 
-          {v.pagos && v.pagos.length > 0 && (
-            <div className="card" style={{ background: 'var(--surface)', padding: 14, marginBottom: 14 }}>
-              <div className="eyebrow" style={{ marginBottom: 8 }}>Pago mixto</div>
-              {v.pagos.map((p, i) => (
-                <div key={i} className="between" style={{ fontSize: 12.5, marginTop: i ? 6 : 0 }}>
-                  <span className="muted">{p.metodo}</span>
-                  <span className="num" style={{ fontWeight: 600 }}>{mxn(p.monto)}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {v.pagos && v.pagos.length > 0 && (() => {
+            // Una cita con apartado completada: la primera línea de `pagos`
+            // es siempre el anticipo (con su fecha/método original) y el
+            // resto es el saldo (ver confirmarVenta en Agenda.tsx) — se
+            // etiqueta cada una para que quede claro qué se cobró cuándo,
+            // en vez de mostrar un "pago mixto" genérico.
+            const esApartado = !!v.citaId && !!v.saldoCobradoEn
+            return (
+              <div className="card" style={{ background: 'var(--surface)', padding: 14, marginBottom: 14 }}>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>{esApartado ? 'Anticipo + saldo' : 'Pago mixto'}</div>
+                {v.pagos.map((p, i) => (
+                  <div key={i} className="between" style={{ fontSize: 12.5, marginTop: i ? 6 : 0 }}>
+                    <span className="muted">{esApartado ? `${i === 0 ? 'Anticipo' : 'Saldo'} · ${p.metodo}` : p.metodo}</span>
+                    <span className="num" style={{ fontWeight: 600 }}>{mxn(p.monto)}</span>
+                  </div>
+                ))}
+                {esApartado && (
+                  <div className="dim" style={{ fontSize: 11, marginTop: 8 }}>
+                    Saldo cobrado el {new Date(v.saldoCobradoEn!).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {v.estado === 'parcial' && (
             <div className="card" style={{ background: 'rgba(200,161,74,0.06)', border: '1px solid var(--line)', padding: 14, marginBottom: 14 }}>

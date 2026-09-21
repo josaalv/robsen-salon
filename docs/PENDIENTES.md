@@ -69,3 +69,34 @@ verdad, etc.) — dar este mismo paso a paso, no uno nuevo improvisado.
      token faltante o inválido.
    - Solo después de eso, dar por bueno que `/agendar` puede cobrar de
      verdad.
+
+### Pendiente relacionado: apartados en línea no generan venta local
+
+Al corregir (2026-09) el corte de caja para apartados cobrados en
+mostrador (ver `completar_venta_apartado` en
+`supabase/migrations/068_completar_venta_apartado.sql` y
+`completarApartado` en `src/data/store.ts`), quedó identificado — pero
+sin resolver todavía, a propósito, porque las credenciales reales de
+Mercado Pago siguen pausadas (arriba) — el mismo problema para los
+anticipos cobrados **en línea** desde `/agendar`:
+
+- Una cita agendada y pagada en línea vía Mercado Pago hoy solo guarda el
+  monto del anticipo en `citas.ant` — **no** crea un registro en `ventas`
+  (a diferencia de un apartado de mostrador, que sí pasa por
+  `crear_venta_con_lineas` y aparece en "Apartados de citas" en Ventas).
+- Por eso ese dinero no aparece en el corte de caja del día en que
+  Mercado Pago lo cobró — solo se ve cuando alguien completa la cita en
+  el POS, y en ese momento se atribuiría al método que se elija ahí
+  (mostrador), no a "Mercado Pago", si no se corrige.
+- `src/screens/Agenda.tsx` (formulario de cita) ya evita el peor síntoma
+  mientras tanto: no crea un apartado local automáticamente para un
+  anticipo que llegó por otra vía y no fue tocado en el formulario (ver
+  comentario "antOriginal" en `guardar()`), así no se le atribuye al
+  personal de mostrador un dinero que nunca cobraron.
+- **Cuando se retomen las credenciales reales de Mercado Pago:** falta
+  que `mp-webhook` (Edge Function) cree su propio registro de venta con
+  `estado: 'apartado'` y `pago: 'Mercado Pago'` (o similar) en el momento
+  en que confirma el pago — igual que hace Agenda.tsx para un apartado de
+  mostrador — para que ese anticipo aparezca en "Apartados de citas" y el
+  corte lo cuente el día real en que se cobró, no el día en que se
+  complete la cita en el salón.
