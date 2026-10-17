@@ -17,20 +17,31 @@ function json(obj: unknown, status = 200) {
   });
 }
 
+// Misma normalización que wa-enviar/wa-responder — un número de 10 dígitos
+// capturado a la mexicana necesita el 52 antepuesto para quedar en E.164;
+// sin esto el mensaje sale con un "+" pegado a 10 dígitos sueltos (número
+// inválido, sin lada de ningún país).
+function normTel(raw: string): string {
+  const d = String(raw || "").replace(/\D/g, "");
+  if (d.length === 10) return "+52" + d;
+  if (d.length === 11 && d.startsWith("1")) return "+52" + d.slice(1);
+  return "+" + d;
+}
+
 Deno.serve(async (req: Request) => {
   try {
     const apiKey = Deno.env.get("YCLOUD_API_KEY");
     if (!apiKey) return json({ error: "Falta el secreto YCLOUD_API_KEY en Supabase." }, 500);
 
     const body = await req.json().catch(() => ({}));
-    const to = String(body.to || "").replace(/\D/g, "");
-    if (!to) return json({ error: "Falta el número destino en el campo 'to'." }, 400);
+    const to = normTel(String(body.to || ""));
+    if (to.length < 13) return json({ error: "Falta o es inválido el número destino en el campo 'to'." }, 400);
 
     // vars: ["Ana", "Corte", ...] — parámetros posicionales {{1}}, {{2}}…
     // del body de la plantilla.
     const payload = {
       from: FROM,
-      to: "+" + to,
+      to,
       type: "template",
       template: {
         name: body.template || "confirmacion_cita",
