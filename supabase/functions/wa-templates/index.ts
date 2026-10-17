@@ -74,6 +74,24 @@ const CATALOGO: Tpl[] = [
     example: ["Ana", "75", "servicio"],
     footer: "Robsen Salón & Spa",
   },
+  // Completa los disparadores automáticos por estado de cita: ya había para
+  // creación (confirmacion_cita) y cierre (post_visita), faltaban estos dos
+  // — ver wa_trigger_cita_cancelada/wa_trigger_cita_no_asistio en
+  // 069_wa_triggers_cancelacion_no_asistio.sql.
+  {
+    name: "cita_cancelada",
+    category: "UTILITY",
+    body: "Hola {{1}} 💛 Tu cita de {{2}} del {{3}} a las {{4}} quedó cancelada. Si fue un error o quieres reagendar, escríbenos por aquí.",
+    example: ["Ana", "Corte y peinado", "14 Ago", "4:00 pm"],
+    footer: "Robsen Salón & Spa",
+  },
+  {
+    name: "cita_no_asistio",
+    category: "UTILITY",
+    body: "Hola {{1}}, notamos que no pudiste llegar a tu cita de {{2}} de hoy. Esperamos que todo esté bien — si quieres reagendar, aquí estamos 💛",
+    example: ["Ana", "Corte y peinado"],
+    footer: "Robsen Salón & Spa",
+  },
 ];
 
 function json(obj: unknown, status = 200) {
@@ -117,8 +135,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "create") {
+      // body.names opcional: ["cita_cancelada", ...] — para someter solo
+      // plantillas nuevas sin reenviar las que ya están aprobadas.
+      const names: string[] | undefined = Array.isArray(body.names) ? body.names : undefined;
+      const lista = names ? CATALOGO.filter(t => names.includes(t.name)) : CATALOGO;
       const results = [];
-      for (const t of CATALOGO) results.push(await createTemplate(apiKey, t));
+      for (const t of lista) results.push(await createTemplate(apiKey, t));
       return json({ submitted: results }, 200);
     }
 
