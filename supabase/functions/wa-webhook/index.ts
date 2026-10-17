@@ -25,11 +25,22 @@ const STATUS_MAP: Record<string, string> = {
 // procesa un evento sin esta verificación — es un endpoint público, sin JWT,
 // y escribe en la base con service role.
 async function verificarFirma(rawBody: string, header: string | null): Promise<boolean> {
-  if (!WEBHOOK_SECRET || !header) return false;
+  // DIAGNÓSTICO TEMPORAL (quitar una vez que el webhook quede verificado en
+  // vivo) — todas las llamadas reales de YCloud venían regresando 403 y no
+  // había forma de saber, solo desde los logs, en qué paso fallaba sin esto.
+  if (!WEBHOOK_SECRET) { console.error("[wa-webhook] falta YCLOUD_WEBHOOK_SECRET"); return false; }
+  if (!header) { console.error("[wa-webhook] sin header YCloud-Signature"); return false; }
   const partes = Object.fromEntries(header.split(",").map(p => p.trim().split("=", 2))) as { t?: string; s?: string };
-  if (!partes.t || !partes.s || !/^\d+$/.test(partes.t)) return false;
+  if (!partes.t || !partes.s || !/^\d+$/.test(partes.t)) {
+    console.error("[wa-webhook] header con formato inesperado:", header);
+    return false;
+  }
   // Tolerancia de 5 min contra reproducción de un payload viejo.
-  if (Math.abs(Date.now() / 1000 - Number(partes.t)) > 300) return false;
+  const desfaseSeg = Date.now() / 1000 - Number(partes.t);
+  if (Math.abs(desfaseSeg) > 300) {
+    console.error("[wa-webhook] timestamp fuera de tolerancia, desfase(s)=", desfaseSeg);
+    return false;
+  }
 
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(WEBHOOK_SECRET),
@@ -38,7 +49,10 @@ async function verificarFirma(rawBody: string, header: string | null): Promise<b
   const firma = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${partes.t}.${rawBody}`));
   const firmaHex = Array.from(new Uint8Array(firma)).map(b => b.toString(16).padStart(2, "0")).join("");
 
-  if (firmaHex.length !== partes.s.length) return false;
+  if (firmaHex.length !== partes.s.length || firmaHex !== partes.s) {
+    console.error("[wa-webhook] firma no coincide — calculada:", firmaHex, "recibida:", partes.s, "secretLen:", WEBHOOK_SECRET.length);
+    return false;
+  }
   let diff = 0;
   for (let i = 0; i < firmaHex.length; i++) diff |= firmaHex.charCodeAt(i) ^ partes.s.charCodeAt(i);
   return diff === 0;
