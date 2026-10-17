@@ -45,6 +45,11 @@ interface Store {
   addVenta: (v: Venta) => Promise<void>
   updateVenta: (id: string, patch: Partial<Venta>) => Promise<void>
   deleteVenta: (id: string) => Promise<void>
+  completarApartado: (ventaId: string, args: {
+    lineas: LineaVenta[]; clienteId: string; desc: number
+    pago: string; pagos?: { metodo: string; monto: number }[]
+    saldoCobradoMonto: number
+  }) => Promise<Venta>
   venderProducto: (productoId: string, cant: number, clienta: string, pago: string, estId: string | null) => Promise<void>
   upsertUsuario: (u: Partial<Usuario> & { id: string }) => Promise<void>
   deleteUsuario: (id: string) => void
@@ -572,6 +577,75 @@ export const useStore = create<Store>()(
         if (syncClienta) {
           try { await db.upsertClienta(syncClienta) }
           catch (e) { console.error('[deleteVenta:syncClienta]', e) }
+        }
+      },
+
+      // Completa una cita con apartado (cobra el saldo, cierra el ticket) SIN
+      // borrar la venta original y crear una nueva — ver
+      // completar_venta_apartado en 068_completar_venta_apartado.sql. La
+      // venta conserva su `fecha` (el día del anticipo) y el corte de caja ya
+      // sabe separar ese día del día del saldo (saldoCobradoEn/Monto) — así
+      // el anticipo no se pierde ni se cuenta dos veces con el método
+      // equivocado. A diferencia de addVenta/deleteVenta, esta acción NO se
+      // encola para reintentar sin conexión: es una operación de caja en el
+      // momento (el personal está frente al POS con la clienta) y reintentar
+      // horas después con datos de stock potencialmente distintos es más
+      // riesgoso que simplemente pedir reintentar cuando vuelva la señal.
+      completarApartado: async (ventaId, args) => {
+        const previous = {
+          ventas: get().data.ventas,
+          clientas: get().data.clientas,
+        }
+        const apartado = previous.ventas.find(v => v.id === ventaId)
+        if (!apartado) throw new Error('Apartado no encontrado')
+
+        const optimista: Venta = {
+          ...apartado,
+          clienteId: args.clienteId,
+          desc: args.desc,
+          pago: args.pago,
+          pagos: args.pagos,
+          estado: 'pagada',
+          lineas: args.lineas,
+          saldoCobradoEn: new Date().toISOString(),
+          saldoCobradoMonto: args.saldoCobradoMonto,
+        }
+
+        let syncClienta: Clienta | null = null
+        if (args.clienteId) {
+          const idx = previous.clientas.findIndex(c => c.id === args.clienteId)
+          if (idx >= 0) {
+            const cl = previous.clientas[idx]
+            const totalVenta = args.lineas.reduce((s, l) => s + l.precio * l.cant, 0) - (args.desc || 0)
+            const newVisitas = cl.visitas + 1
+            const newGasto = cl.gasto + totalVenta
+            syncClienta = {
+              ...cl, visitas: newVisitas, gasto: newGasto,
+              ticket: Math.round(newGasto / newVisitas),
+              ultima: new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' + new Date().getFullYear(),
+            }
+          }
+        }
+
+        set(s => ({
+          data: {
+            ...s.data,
+            ventas: s.data.ventas.map(v => v.id === ventaId ? optimista : v),
+            clientas: syncClienta ? s.data.clientas.map(c => c.id === syncClienta!.id ? syncClienta! : c) : s.data.clientas,
+          },
+        }))
+
+        try {
+          const synced = await db.completarVentaApartado(ventaId, args)
+          set(s => ({ data: { ...s.data, ventas: s.data.ventas.map(v => v.id === ventaId ? synced : v) } }))
+          if (syncClienta) {
+            try { await db.upsertClienta(syncClienta) }
+            catch (e) { console.error('[completarApartado:syncClienta]', e) }
+          }
+          return synced
+        } catch (err) {
+          set(s => ({ data: { ...s.data, ...previous } }))
+          throw err
         }
       },
 

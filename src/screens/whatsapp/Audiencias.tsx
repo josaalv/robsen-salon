@@ -278,11 +278,26 @@ export function Audiencias({ plantillas, cola, cargando, setCola, recargar, onAb
       await recargar()
       toast(`${elegidas.length} mensaje${elegidas.length>1?'s':''} agregado${elegidas.length>1?'s':''} a la cola de aprobación (arriba, en Automatización).`)
       setSel(new Set())
+      setConfirmEnvio(false)
     } catch {
       toast('No se pudo encolar el envío en lote. Intenta de nuevo.')
     } finally {
       setEnviandoLote(false)
     }
+  }
+
+  // Envío masivo: pedir una confirmación explícita antes de encolar a partir
+  // de UMBRAL_MASIVO destinatarias — para una selección chica (2-4) no vale
+  // la pena el paso extra, pero mandar a decenas de clientas por accidente
+  // (un clic de más, sin darse cuenta de cuántas quedaron seleccionadas) es
+  // justo el error que esto evita. El primer clic solo arma la confirmación
+  // (muestra el conteo real); hace falta un segundo clic para que salga.
+  const UMBRAL_MASIVO = 5
+  const [confirmEnvio, setConfirmEnvio] = useState(false)
+  useEffect(() => { setConfirmEnvio(false) }, [sel])
+  const handleEnviarLote = () => {
+    if (sel.size >= UMBRAL_MASIVO && !confirmEnvio) { setConfirmEnvio(true); return }
+    enviarLote()
   }
 
   const exportarCSV = () => {
@@ -408,9 +423,14 @@ export function Audiencias({ plantillas, cola, cargando, setCola, recargar, onAb
                   <button className="btn ghost sm" onClick={marcarLoteContactadas}>
                     <Ic n="check-circle" size={13}/>Marcar contactadas
                   </button>
-                  <button className="btn gold sm" disabled={enviandoLote} onClick={enviarLote}>
-                    <Ic n={enviandoLote?'spinner':'paper-plane-tilt'} size={13}/>
-                    {enviandoLote?'Encolando…':`Encolar envío (${sel.size})`}
+                  <button
+                    className={confirmEnvio ? 'btn sm' : 'btn gold sm'}
+                    style={confirmEnvio ? { background: 'var(--st-canc)', color: '#fff', border: 'none' } : undefined}
+                    disabled={enviandoLote}
+                    onClick={handleEnviarLote}
+                  >
+                    <Ic n={enviandoLote ? 'spinner' : confirmEnvio ? 'warning-circle' : 'paper-plane-tilt'} size={13}/>
+                    {enviandoLote ? 'Encolando…' : confirmEnvio ? `¿Mandar a ${sel.size}? Confirmar` : `Encolar envío (${sel.size})`}
                   </button>
                 </div>
               )}

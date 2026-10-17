@@ -7,6 +7,10 @@ import { db } from '../lib/db'
 import { supabase } from '../lib/supabase'
 import { telefonoValido, telefonoError, filtrarTel, rolAllow, rolPuede } from '../lib/helpers'
 import type { Usuario, SlotMinutos, RolUsuario } from '../types'
+// Markdown crudo, no un texto copiado aparte — así "Guía de uso" en el
+// sistema y docs/USO-OPERATIVO.md (lo que lee un dev) son siempre el mismo
+// archivo, nunca se pueden desincronizar.
+import guiaUsoMd from '../../docs/USO-OPERATIVO.md?raw'
 
 function SettingRow({ title, desc, children, last }: { title: string; desc?: string; children: React.ReactNode; last?: boolean }) {
   return (
@@ -1032,12 +1036,77 @@ function AjustesApariencia() {
   )
 }
 
+// ─── Guía de uso ──────────────────────────────────────────────────────────────
+// Convierte el markdown de docs/USO-OPERATIVO.md a JSX simple — no es un
+// parser general, solo cubre lo que ese archivo de verdad usa (#, ##,
+// **negritas**, `código`, listas numeradas) para no meter una librería
+// nueva solo por esto.
+function lineaConInlines(texto: string, key: React.Key): React.ReactNode {
+  const partes = texto.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean)
+  return (
+    <React.Fragment key={key}>
+      {partes.map((p, i) => {
+        if (p.startsWith('**') && p.endsWith('**')) return <strong key={i}>{p.slice(2, -2)}</strong>
+        if (p.startsWith('`') && p.endsWith('`')) return <code key={i} style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 4, fontSize: '.9em' }}>{p.slice(1, -1)}</code>
+        return p
+      })}
+    </React.Fragment>
+  )
+}
+
+function AjustesGuia() {
+  const bloques: React.ReactNode[] = []
+  let parrafo: string[] = []
+  let lista: string[] = []
+  let k = 0
+
+  const cerrarParrafo = () => {
+    if (!parrafo.length) return
+    bloques.push(<p key={k++} style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-2)', margin: '0 0 14px' }}>{lineaConInlines(parrafo.join(' '), k)}</p>)
+    parrafo = []
+  }
+  const cerrarLista = () => {
+    if (!lista.length) return
+    bloques.push(
+      <ol key={k++} style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-2)', margin: '0 0 14px', paddingLeft: 20 }}>
+        {lista.map((item, i) => <li key={i} style={{ marginBottom: 6 }}>{lineaConInlines(item, i)}</li>)}
+      </ol>
+    )
+    lista = []
+  }
+
+  for (const raw of guiaUsoMd.split('\n')) {
+    const linea = raw.trim()
+    if (!linea) { cerrarParrafo(); cerrarLista(); continue }
+    if (linea.startsWith('# ')) { cerrarParrafo(); cerrarLista(); continue } // título ya lo pone la pantalla
+    if (linea.startsWith('## ')) {
+      cerrarParrafo(); cerrarLista()
+      bloques.push(<h3 key={k++} style={{ fontFamily: 'var(--serif)', fontSize: 17, margin: '22px 0 10px', color: 'var(--gold)' }}>{linea.slice(3)}</h3>)
+      continue
+    }
+    const num = /^\d+\.\s+(.*)/.exec(linea)
+    if (num) { cerrarParrafo(); lista.push(num[1]); continue }
+    cerrarLista()
+    parrafo.push(linea)
+  }
+  cerrarParrafo(); cerrarLista()
+
+  return (
+    <div className="card card-pad">
+      <div className="eyebrow" style={{ marginBottom: 4 }}>Para todo el equipo</div>
+      <h3 style={{ fontFamily: 'var(--serif)', fontSize: 19, margin: '0 0 16px' }}>Cómo hacer las tareas del día a día</h3>
+      {bloques}
+    </div>
+  )
+}
+
 // ─── Pantalla principal ───────────────────────────────────────────────────────
 export function ScreenAjustes({ onNavigate: _onNavigate, user }: { onNavigate: (r: string) => void; user: any }) {
   const esGestion = user.rol === 'admin' || user.rol === 'gerente'
 
   const allTabs = [
     ['Mi perfil',       'user',             true],
+    ['Guía de uso',     'book-open',        true],
     ['Salón',           'storefront',       esGestion],
     ['Agenda',          'calendar-blank',   esGestion],
     ['Comisiones',      'percent',          esGestion],
@@ -1052,6 +1121,7 @@ export function ScreenAjustes({ onNavigate: _onNavigate, user }: { onNavigate: (
   const renderTab = () => {
     switch (tab) {
       case 'Mi perfil':        return <AjustesPerfil user={user} />
+      case 'Guía de uso':      return <AjustesGuia />
       case 'Salón':            return <AjustesSalon />
       case 'Agenda':           return <AjustesAgenda />
       case 'Comisiones':       return <AjustesComisiones />

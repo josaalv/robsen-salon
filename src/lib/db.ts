@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { fechaLocalIso } from './helpers'
-import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja, WaMensaje, WaPlantilla } from '../types'
+import type { Cita, Clienta, Estilista, Servicio, Producto, Venta, LineaVenta, Movimiento, Plantilla, Usuario, SalonConfig, RBData, Bloqueo, Gasto, CierreCaja, WaMensaje, WaPlantilla } from '../types'
 
 const BUCKET = 'media'
 const BUCKET_PRIVADO = 'fotos-clientas'
@@ -519,6 +519,33 @@ export const db = {
       if (error) { console.error('[db.updateVenta]', error.message); throw error }
     }
   },
+  // Completa una venta de apartado EN SU LUGAR (sin borrarla y recrearla) —
+  // ver completar_venta_apartado en 068_completar_venta_apartado.sql. La
+  // venta conserva su `fecha` original (el día en que se cobró el
+  // anticipo): es la clave de la que depende el corte de caja para no
+  // atribuir el anticipo al día — y al método — en que se cobra el saldo.
+  async completarVentaApartado(ventaId: string, args: {
+    lineas: LineaVenta[]; clienteId: string; desc: number
+    pago: string; pagos?: { metodo: string; monto: number }[]
+    saldoCobradoMonto: number
+  }): Promise<Venta> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.rpc('completar_venta_apartado', {
+      p_venta_id: ventaId,
+      p_lineas: args.lineas.map(l => ({
+        tipo: l.tipo, nombre: l.nombre, producto_id: l.productoId ?? null,
+        est: l.est ?? null, cant: l.cant, precio: l.precio, com: l.com,
+        com_monto: l.comMonto ?? null,
+      })),
+      p_cliente_id: args.clienteId || null,
+      p_descuento: args.desc,
+      p_pago: args.pago,
+      p_pagos: args.pagos && args.pagos.length ? args.pagos : null,
+      p_saldo_cobrado_monto: args.saldoCobradoMonto,
+    })
+    if (error) { console.error('[db.completarVentaApartado]', error.message); throw error }
+    return mapVenta(data.venta, data.lineas)
+  },
   async getVentaByCitaId(citaId: string): Promise<Venta | null> {
     if (!supabase) return null
     const { data: vRow } = await supabase.from('ventas').select('*').eq('cita_id', citaId).maybeSingle()
@@ -772,6 +799,24 @@ export const db = {
     const { data, error } = await supabase.from('wa_mensajes')
       .select('*').order('created_at', { ascending: false }).limit(limite)
     if (error) { console.error('[db.getWaMensajes]', error.message); return [] }
+    return (data ?? []).map(mapWaMensaje)
+  },
+  // Hilo completo de UNA clienta (pestaña WhatsApp en su perfil, CRM.tsx) —
+  // a diferencia de getWaMensajes (los últimos 300 de TODO el salón), esto
+  // no se puede perder entre el ruido de otras conversaciones. Filtra por
+  // clienta_id (lo que ya traen los triggers/webhook, ver
+  // 070_resolver_clienta_por_tel.sql) con el teléfono como respaldo —
+  // mensajes viejos de antes de ese cambio solo tienen tel.
+  async getWaMensajesPorClienta(clientaId: string, tel?: string): Promise<WaMensaje[]> {
+    if (!supabase) return []
+    const tel10 = (tel || '').replace(/\D/g, '').slice(-10)
+    let query = supabase.from('wa_mensajes').select('*').order('created_at', { ascending: true }).limit(200)
+    if (clientaId && tel10) query = query.or(`clienta_id.eq.${clientaId},tel.ilike.%${tel10}`)
+    else if (clientaId) query = query.eq('clienta_id', clientaId)
+    else if (tel10) query = query.ilike('tel', `%${tel10}`)
+    else return []
+    const { data, error } = await query
+    if (error) { console.error('[db.getWaMensajesPorClienta]', error.message); return [] }
     return (data ?? []).map(mapWaMensaje)
   },
   async insertWaMensajes(rows: Omit<WaMensaje, 'id' | 'createdAt'>[]): Promise<void> {

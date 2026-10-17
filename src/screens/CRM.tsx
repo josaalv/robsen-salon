@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Avatar, EstadoBadge, ClienteBadge, Switch, toast, ConfirmModal, useModalKeys, Pager } from '../components/ui'
+import { Avatar, EstadoBadge, ClienteBadge, Switch, Seg, toast, ConfirmModal, useModalKeys, Pager } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
+import { useAuth } from '../lib/auth'
+import { roles as rolesConfig } from '../data/mockData'
 import { db } from '../lib/db'
-import { mxn, helpers, normalizarTel as normalizarTelShared, normalizarBusqueda, telefonoValido, telefonoError, filtrarTel, formatTel, descargarCSV, ventaTS } from '../lib/helpers'
-import type { Clienta, EstadoClienta, FotoEntry } from '../types'
+import { mxn, helpers, rolPuede, normalizarTel as normalizarTelShared, normalizarBusqueda, telefonoValido, telefonoError, filtrarTel, formatTel, descargarCSV, ventaTS } from '../lib/helpers'
+import type { Clienta, EstadoClienta, FotoEntry, WaMensaje } from '../types'
 
 function waUrl(tel: string, msg: string): string {
   const digits = tel.replace(/\D/g, '')
@@ -667,6 +669,86 @@ function AntesDesTab({ c }: { c: Clienta }) {
   )
 }
 
+// ─── Pestaña WhatsApp dentro del perfil ──────────────────────────────────────
+// Versión ligera del hilo completo de Conversaciones.tsx — solo texto (sin
+// adjuntar archivos ni borrar mensajes, eso se queda en la bandeja general),
+// pensada para resolver "¿qué le hemos dicho a esta clienta?" sin salir del
+// perfil. Cuando la ventana de 24h está cerrada se explica por qué no se
+// puede mandar texto libre ahí mismo — es la duda más común de recepción.
+function ClientaWhatsAppTab({ c }: { c: Clienta }) {
+  const [mensajes, setMensajes] = useState<WaMensaje[] | null>(null)
+  const [texto, setTexto] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const cargar = () => db.getWaMensajesPorClienta(c.id, c.tel).then(setMensajes)
+  useEffect(() => { cargar() }, [c.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (mensajes === null) return <div className="dim" style={{ padding: '24px 0', textAlign: 'center' }}>Cargando…</div>
+
+  if (mensajes.length === 0) return (
+    <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-4)' }}>
+      <Ic n="chat-circle-dots" size={32} style={{ display: 'block', margin: '0 auto 10px', opacity: .4 }} />
+      <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Sin mensajes todavía</div>
+      <div style={{ fontSize: 12.5 }}>Los recordatorios automáticos y la conversación con esta clienta aparecerán aquí</div>
+    </div>
+  )
+
+  const ultimoEntrante = [...mensajes].reverse().find(m => m.creadoPor === 'clienta')
+  const ventanaAbierta = !!ultimoEntrante && (Date.now() - new Date(ultimoEntrante.createdAt).getTime()) < 24 * 60 * 60 * 1000
+
+  const enviar = async () => {
+    if (!texto.trim() || enviando || !c.tel) return
+    setEnviando(true)
+    try {
+      await db.responderWa(c.tel, texto.trim())
+      setTexto('')
+      await cargar()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudo enviar. Intenta de nuevo.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', marginBottom: 14 }}>
+        {mensajes.map(m => {
+          const deClienta = m.creadoPor === 'clienta'
+          return (
+            <div key={m.id} style={{ alignSelf: deClienta ? 'flex-start' : 'flex-end', maxWidth: 380 }}>
+              <div style={{ background: deClienta ? 'var(--surface-2)' : 'var(--gold-soft)', borderRadius: 10, padding: '8px 12px' }}>
+                {m.cuerpo && <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{m.cuerpo}</div>}
+                <div className="dim" style={{ fontSize: 10, marginTop: 3 }}>
+                  {new Date(m.createdAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {ventanaAbierta ? (
+        <div className="vc gap8">
+          <input
+            className="input f1" placeholder="Escribe una respuesta…" value={texto}
+            onChange={e => setTexto(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') enviar() }}
+          />
+          <button className="btn gold sm" disabled={!texto.trim() || enviando} onClick={enviar}>
+            <Ic n={enviando ? 'spinner' : 'paper-plane-tilt'} />{enviando ? 'Enviando…' : 'Enviar'}
+          </button>
+        </div>
+      ) : (
+        <div className="dim" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+          Pasaron más de 24h desde su último mensaje — no se puede mandar texto libre aquí
+          (regla de WhatsApp, no del sistema). Para contactarla de nuevo hay que usar una
+          plantilla aprobada desde CRM → WhatsApp → Audiencias.
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Perfil de clienta ───────────────────────────────────────────────────────
 function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEditCl }: {
   c: Clienta
@@ -678,8 +760,10 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
   setEditCl: (c: Partial<Clienta> | null) => void
 }) {
   const { data } = useStore()
+  const { user } = useAuth()
   const [tab, setTab] = useState('Historial')
   const e = data.estilistas.find(est => est.id === c.est) || data.estilistas[0]
+  const puedeWhatsapp = !!user && rolPuede(user.rol, 'whatsapp', data.config, rolesConfig)
 
   // Solo ventas reales de esta clienta
   const ventasCl = data.ventas.filter(v => c.id && v.clienteId === c.id).map(v => ({
@@ -725,16 +809,15 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
             <ClienteBadge estado={c.estado} />
             <div className="vc gap8 mt14" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
               <button className="btn gold sm" onClick={() => onNavigate('agenda')}><Ic n="calendar-plus" />Agendar</button>
-              <button
-                className="btn sm"
-                style={{ background: '#25D366', color: '#fff', border: 'none' }}
-                onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 `)}
-              >
-                <Ic n="whatsapp-logo" />Mensaje
-              </button>
-              <button className="btn ghost sm" onClick={() => onNavigate('whatsapp')} title="Ver historial y automatización de WhatsApp de esta clienta">
-                <Ic n="chats-circle" />Ver en Seguimiento
-              </button>
+              {!puedeWhatsapp && (
+                <button
+                  className="btn sm"
+                  style={{ background: '#25D366', color: '#fff', border: 'none' }}
+                  onClick={() => abrirWA(c.tel, `Hola ${c.nombre.split(' ')[0]} 💛 `)}
+                >
+                  <Ic n="whatsapp-logo" />Mensaje
+                </button>
+              )}
             </div>
           </div>
           <hr className="hr" />
@@ -793,7 +876,10 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
         {/* Tabs */}
         <div className="card">
           <div className="tabs" style={{ padding: '0 8px' }}>
-            {['Historial', 'Fórmulas de color', 'Preferencias', 'Antes / Después'].map(t => (
+            {[
+              'Historial', 'Fórmulas de color', 'Preferencias', 'Antes / Después',
+              ...(puedeWhatsapp ? ['WhatsApp'] : []),
+            ].map(t => (
               <div key={t} className={'tab' + (tab === t ? ' active' : '')} onClick={() => setTab(t)}>{t}</div>
             ))}
           </div>
@@ -842,6 +928,10 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
               <AntesDesTab c={c} />
             )}
 
+            {tab === 'WhatsApp' && puedeWhatsapp && (
+              <ClientaWhatsAppTab c={c} />
+            )}
+
           </div>
         </div>
       </div>
@@ -852,6 +942,8 @@ function ClientaPerfil({ c, onBack, onEdit, onDelete, onNavigate, editCl, setEdi
 // ─── Pantalla principal CRM ─────────────────────────────────────────────────
 export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   const { data, deleteClienta, upsertClienta } = useStore()
+  const { user } = useAuth()
+  const puedeWhatsapp = !!user && rolPuede(user.rol, 'whatsapp', data.config, rolesConfig)
   const [q, setQ] = useState('')
   const [filtro, setFiltro] = useState('Todas')
   const [sort, setSort] = useState<{ k: keyof Clienta; dir: number }>({ k: 'ultima', dir: -1 })
@@ -859,6 +951,19 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   const [confirmDelete, setConfirmDelete] = useState<Clienta | null>(null)
   const [editCl, setEditCl] = useState<Partial<Clienta> | null>(null)
   const csvRef = useRef<HTMLInputElement>(null)
+
+  // Lo que antes era la pantalla de "Seguimiento" ahora vive como pestaña
+  // aquí dentro — se carga aparte (es un módulo grande, Resumen+Audiencias+
+  // Automatización+Conversaciones) para no pesar la vista de Clientas, que
+  // es la que casi siempre se usa primero.
+  const [vistaTop, setVistaTop] = useState<'Clientas' | 'WhatsApp'>('Clientas')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [WaScreen, setWaScreen] = useState<React.ComponentType<any> | null>(null)
+  useEffect(() => {
+    if (vistaTop === 'WhatsApp' && !WaScreen) {
+      import('./whatsapp').then(mod => setWaScreen(() => mod.ScreenWhatsApp))
+    }
+  }, [vistaTop, WaScreen])
 
   const handleCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -982,6 +1087,19 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
   // se sobrescribe en lugar de acumularse.
   const perfilLive = perfil ? (data.clientas.find(x => x.id === perfil.id) || perfil) : null
 
+  if (vistaTop === 'WhatsApp' && puedeWhatsapp) return (
+    <div>
+      <div className="between" style={{ marginBottom: 22 }}>
+        <div>
+          <h1 className="display" style={{ fontSize: 26, margin: 0 }}>CRM</h1>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Conversaciones, audiencias y automatización de WhatsApp</div>
+        </div>
+        <Seg opts={['Clientas', 'WhatsApp']} value={vistaTop} onChange={v => setVistaTop(v as 'Clientas' | 'WhatsApp')} />
+      </div>
+      {WaScreen ? <WaScreen onNavigate={onNavigate} /> : <div className="dim" style={{ padding: '40px 0', textAlign: 'center' }}>Cargando…</div>}
+    </div>
+  )
+
   if (perfilLive) return (
     <>
       <ClientaPerfil
@@ -999,14 +1117,15 @@ export function ScreenCRM({ onNavigate }: { onNavigate: (r: string) => void }) {
 
   return (
     <div>
-      <div className="between" style={{ marginBottom: 22 }}>
+      <div className="between" style={{ marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 className="display" style={{ fontSize: 26, margin: 0 }}>CRM de clientas</h1>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
             {data.clientas.length} clientas registradas · {cuentas.Nueva} nuevas
           </div>
         </div>
-        <div className="vc gap12">
+        <div className="vc gap12" style={{ flexWrap: 'wrap' }}>
+          {puedeWhatsapp && <Seg opts={['Clientas', 'WhatsApp']} value={vistaTop} onChange={v => setVistaTop(v as 'Clientas' | 'WhatsApp')} />}
           <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvImport} />
           <button className="btn ghost" onClick={() => csvRef.current?.click()}><Ic n="upload-simple" />Importar CSV</button>
           <button className="btn gold" onClick={() => setEditCl({})}><Ic n="plus" />Nueva clienta</button>

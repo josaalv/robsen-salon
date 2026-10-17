@@ -57,6 +57,45 @@ servicio → apaga el switch "Activo". Un servicio inactivo ya no aparece como
 opción al crear una cita nueva, pero las citas viejas que ya lo usaban
 conservan la información completa — no se rompe el historial.
 
+## CRM y WhatsApp
+
+El sistema manda WhatsApp automático en varios momentos de la agenda — no
+hace falta hacer nada para que salgan, pero sí conviene saber cuándo pasa
+cada uno:
+
+- **Al agendar una cita**: se manda la confirmación en automático.
+- **24h antes de la cita**: recordatorio automático, con botones de
+  "Confirmar"/"Cancelar" que la clienta puede tocar directo.
+- **Al cancelar una cita** (desde Agenda): se le avisa a la clienta sola,
+  invitándola a reagendar si fue un error.
+- **Al marcar "No asistió"**: mensaje automático preguntando si quiere
+  reagendar.
+- **Al cerrar una cita** (estado "Hecha"): mensaje de agradecimiento.
+- **Cumpleaños y reactivación de clientas inactivas**: salen solos todos
+  los días, pero reactivación siempre pide aprobación de alguien del
+  equipo antes de mandarse (CRM → WhatsApp → Automatización) — es
+  mensaje de marketing, no de confirmación de cita.
+
+**Ver y contestar la conversación de una clienta**: entra a su perfil
+(CRM → busca la clienta) → pestaña "WhatsApp". Ahí se ve todo lo que se
+le ha mandado y lo que ha contestado, y se le puede responder directo si
+escribió en las últimas 24 horas — pasado ese tiempo, WhatsApp ya no
+permite texto libre y hay que usar una plantilla aprobada (ver más abajo).
+
+**Bandeja general de conversaciones** (para ver todas las clientas que
+han escrito, no solo una): CRM → pestaña "WhatsApp" → "Conversaciones".
+
+**Mandar un mensaje a varias clientas a la vez** (ej. todas las que no
+han venido en meses): CRM → pestaña "WhatsApp" → "Audiencias", elige la
+sección, selecciona a quiénes, "Encolar envío". Si son 5 o más, el
+sistema pide confirmar con el número exacto antes de mandarlo — revísalo
+bien, no hay manera de deshacer un envío ya encolado salvo borrarlo a
+mano en Automatización antes de que salga.
+
+**Una clienta ya no quiere recibir mensajes**: si contesta "BAJA" se da
+de baja sola automáticamente. También se puede quitar a mano desde su
+perfil (editar clienta → apagar "Recibe mensajes por WhatsApp").
+
 ## Usuarios y accesos
 
 **Dar de alta a alguien nuevo**: Ajustes → Usuarios y roles → "Nuevo

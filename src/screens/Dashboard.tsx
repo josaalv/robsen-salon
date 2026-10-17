@@ -299,7 +299,7 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
                   <div className="at">{sinConfirmar.length} cita{sinConfirmar.length > 1 ? 's' : ''} sin confirmar</div>
                   <div className="as">{sinConfirmar.map(c => c.cl).join(', ')} · hoy</div>
                 </div>
-                <button className="btn sm line" onClick={() => onNavigate('whatsapp')}>Confirmar</button>
+                <button className="btn sm line" onClick={() => onNavigate('crm')}>Confirmar</button>
               </div>
             )}
 

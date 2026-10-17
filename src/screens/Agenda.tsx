@@ -123,6 +123,15 @@ export function CitaModal({ cita, bloqueos, onClose, onSaved }: {
   const [addSrv, setAddSrv] = useState('')
   const [estado, setEstado] = useState<EstadoCita>(cita.estado || 'pend')
   const [ant, setAnt] = useState(cita.ant || 0)
+  // Método con el que se cobró el anticipo — antes quedaba fijo en 'efectivo'
+  // sin importar cómo se cobrara de verdad, lo que hacía que el corte de caja
+  // no cuadrara (dinero cobrado con tarjeta/transferencia se contaba como
+  // efectivo). Se precarga con el método ya guardado si la cita ya tenía un
+  // apartado registrado, o el primer método habilitado en Ajustes si no.
+  const ventaApartadoExistente = data.ventas.find(v => v.citaId === cita.id)
+  const pagoOpts = Object.entries(data.config?.metodospago || {})
+    .filter(([, v]) => v).map(([k]) => k.charAt(0).toUpperCase() + k.slice(1))
+  const [pagoAnt, setPagoAnt] = useState(ventaApartadoExistente?.pago || pagoOpts[0] || 'Efectivo')
   const [saving, setSaving] = useState(false)
 
   const isToday = selectedDate === todayIso
@@ -238,15 +247,28 @@ export function CitaModal({ cita, bloqueos, onClose, onSaved }: {
       // pasa por addVenta/updateVenta del store — no por db.* directo — para que
       // esto también quede protegido por la cola de sincronización si no hay
       // conexión (es, ni más ni menos, un pago).
+      // Solo se crea un apartado nuevo si el anticipo de verdad cambió en esta
+      // sesión (antFinal !== antOriginal). Si no cambió y tampoco hay venta
+      // previa, el anticipo llegó por otra vía (ej. una cita agendada y
+      // pagada en línea desde /agendar vía Mercado Pago, que hoy solo guarda
+      // el monto en citas.ant, sin crear un registro de venta) — crear un
+      // apartado aquí lo atribuiría hoy y al método que elija quien esté
+      // editando la cita, aunque ese dinero ya se haya cobrado antes y por
+      // otro medio. Ver docs/PENDIENTES.md (Mercado Pago) para el pendiente
+      // de que el webhook cree su propio registro de apartado.
+      const antOriginal = cita.ant || 0
       if (antFinal > 0) {
         const existing = data.ventas.find(v => v.citaId === id)
         const hoy = new Date().toISOString().slice(0, 10)
         if (existing) {
-          await updateVenta(existing.id, { anticipo: antFinal, estado: antFinal >= precioTotal ? 'pagada' : 'apartado' })
-        } else {
+          await updateVenta(existing.id, {
+            anticipo: antFinal, pago: pagoAnt,
+            estado: antFinal >= precioTotal ? 'pagada' : 'apartado',
+          })
+        } else if (antFinal !== antOriginal) {
           const ventaApartado: Venta = {
             id: 'v' + Date.now(), ticket: TICKET_PENDIENTE, fecha: hoy,
-            cliente: cl.trim(), clienteId: '', pago: 'efectivo',
+            cliente: cl.trim(), clienteId: '', pago: pagoAnt,
             estado: antFinal >= precioTotal ? 'pagada' : 'apartado',
             desc: 0, anticipo: antFinal, citaId: id,
             lineas: lineasInfo.map(l => {
@@ -372,6 +394,21 @@ export function CitaModal({ cita, bloqueos, onClose, onSaved }: {
                 onChange={e => setAnt(Math.min(precioTotal, Math.max(0, +e.target.value)))} />
             </div>
           </div>
+          {ant > 0 && (ventaApartadoExistente || ant !== (cita.ant || 0)) && (
+            <div className="field">
+              <label>¿Cómo se cobró el anticipo?</label>
+              <select className="select" value={pagoAnt} onChange={e => setPagoAnt(e.target.value)}>
+                {pagoOpts.map(m => <option key={m}>{m}</option>)}
+              </select>
+            </div>
+          )}
+          {ant > 0 && !ventaApartadoExistente && ant === (cita.ant || 0) && (
+            <div className="muted" style={{ fontSize: 11.5, marginTop: -6 }}>
+              Este anticipo se cobró en línea (agendamiento web) — todavía no genera un
+              registro de venta local. Si cambias el monto aquí, se registrará como un
+              apartado de mostrador y pedirá el método de pago.
+            </div>
+          )}
           <div className="card" style={{ background: 'var(--surface)', padding: 14 }}>
             <div className="between">
               <span className="muted">Total{lineasInfo.length > 1 ? ` (${lineasInfo.length} servicios)` : ''}</span>
@@ -862,7 +899,7 @@ function MonthView({ onDayClick }: { onDayClick?: (date: Date) => void }) {
 
 // ─── Pantalla principal ─────────────────────────────────────────────────────
 export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
-  const { data, upsertCita, upsertCitaFutura, deleteCita, deleteCitaFutura, upsertBloqueo, deleteBloqueo, addVenta, deleteVenta } = useStore()
+  const { data, upsertCita, upsertCitaFutura, deleteCita, deleteCitaFutura, upsertBloqueo, deleteBloqueo, addVenta, completarApartado } = useStore()
   const { agendaStart: S, agendaEnd: E } = data.config
   const [vista, setVista] = useState('Día')
   const [filtro, setFiltro] = useState('todos')
@@ -927,19 +964,34 @@ export function ScreenAgenda({ onNavigate: _onNavigate }: { onNavigate: (r: stri
   const confirmarVenta = async (venta: Venta) => {
     if (!posCita) return
     const cita = posCita
-    // Si la cita tenía anticipo, ya existe una venta de apartado; el anticipo se
-    // precarga en el POS (venta.anticipo), así que esta venta ya representa el
-    // total con el anticipo aplicado. Se elimina la de apartado para no duplicar
-    // la venta ni dejar el apartado colgado como pendiente.
+    // Si la cita tenía anticipo, ya existe una venta de apartado — se
+    // completa EN SU LUGAR (completarApartado) en vez de borrarla y crear
+    // una venta nueva: así conserva su fecha y método originales, y el
+    // corte de caja no le atribuye el anticipo (cobrado quizá otro día, con
+    // otro método) al día/método con el que se cobra el saldo. Sin
+    // apartado previo, es una venta normal de mostrador.
     const apartadoPrevio = data.ventas.find(v => v.citaId === cita.id) || null
     try {
-      await addVenta(venta)
+      if (apartadoPrevio) {
+        const totalFinal = venta.lineas.reduce((s, l) => s + l.precio * l.cant, 0) - (venta.desc || 0)
+        const depositoMonto = venta.anticipo
+        const saldoMonto = Math.max(0, totalFinal - depositoMonto)
+        const pagosSaldo = venta.pagos && venta.pagos.length ? venta.pagos : [{ metodo: venta.pago, monto: saldoMonto }]
+        const pagosFinal = depositoMonto > 0
+          ? [{ metodo: apartadoPrevio.pago, monto: depositoMonto }, ...(saldoMonto > 0 ? pagosSaldo : [])]
+          : pagosSaldo
+        await completarApartado(apartadoPrevio.id, {
+          lineas: venta.lineas, clienteId: venta.clienteId, desc: venta.desc,
+          pago: saldoMonto > 0 ? venta.pago : apartadoPrevio.pago,
+          pagos: pagosFinal.length > 1 ? pagosFinal : undefined,
+          saldoCobradoMonto: saldoMonto,
+        })
+      } else {
+        await addVenta(venta)
+      }
     } catch (err) {
       toast(friendlyVentaError(err))
-      throw new Error('addVenta failed')
-    }
-    if (apartadoPrevio) {
-      try { await deleteVenta(apartadoPrevio.id) } catch { /* la venta nueva ya quedó; el apartado se puede limpiar luego */ }
+      throw new Error('confirmarVenta failed')
     }
     setPosCita(null)
     try {
