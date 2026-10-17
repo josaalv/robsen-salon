@@ -25,22 +25,11 @@ const STATUS_MAP: Record<string, string> = {
 // procesa un evento sin esta verificación — es un endpoint público, sin JWT,
 // y escribe en la base con service role.
 async function verificarFirma(rawBody: string, header: string | null): Promise<boolean> {
-  // DIAGNÓSTICO TEMPORAL (quitar una vez que el webhook quede verificado en
-  // vivo) — todas las llamadas reales de YCloud venían regresando 403 y no
-  // había forma de saber, solo desde los logs, en qué paso fallaba sin esto.
-  if (!WEBHOOK_SECRET) { console.error("[wa-webhook] falta YCLOUD_WEBHOOK_SECRET"); return false; }
-  if (!header) { console.error("[wa-webhook] sin header YCloud-Signature"); return false; }
+  if (!WEBHOOK_SECRET || !header) return false;
   const partes = Object.fromEntries(header.split(",").map(p => p.trim().split("=", 2))) as { t?: string; s?: string };
-  if (!partes.t || !partes.s || !/^\d+$/.test(partes.t)) {
-    console.error("[wa-webhook] header con formato inesperado:", header);
-    return false;
-  }
+  if (!partes.t || !partes.s || !/^\d+$/.test(partes.t)) return false;
   // Tolerancia de 5 min contra reproducción de un payload viejo.
-  const desfaseSeg = Date.now() / 1000 - Number(partes.t);
-  if (Math.abs(desfaseSeg) > 300) {
-    console.error("[wa-webhook] timestamp fuera de tolerancia, desfase(s)=", desfaseSeg);
-    return false;
-  }
+  if (Math.abs(Date.now() / 1000 - Number(partes.t)) > 300) return false;
 
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(WEBHOOK_SECRET),
@@ -49,10 +38,7 @@ async function verificarFirma(rawBody: string, header: string | null): Promise<b
   const firma = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${partes.t}.${rawBody}`));
   const firmaHex = Array.from(new Uint8Array(firma)).map(b => b.toString(16).padStart(2, "0")).join("");
 
-  if (firmaHex.length !== partes.s.length || firmaHex !== partes.s) {
-    console.error("[wa-webhook] firma no coincide — calculada:", firmaHex, "recibida:", partes.s, "secretLen:", WEBHOOK_SECRET.length);
-    return false;
-  }
+  if (firmaHex.length !== partes.s.length) return false;
   let diff = 0;
   for (let i = 0; i < firmaHex.length; i++) diff |= firmaHex.charCodeAt(i) ^ partes.s.charCodeAt(i);
   return diff === 0;
@@ -117,6 +103,27 @@ async function rest(path: string, init: RequestInit = {}) {
   });
 }
 
+// Los triggers de BD ya traen clienta_id porque disparan desde una fila de
+// citas/clientas; los mensajes que llegan por aquí (entrantes y, con
+// coexistence, los que el personal manda a mano desde el celular) solo
+// traen el teléfono. Sin esto, esas filas quedaban con clienta_id en null
+// y rompían cualquier vista que una el perfil de la clienta con su
+// conversación — ver resolver_clienta_por_tel en
+// 070_resolver_clienta_por_tel.sql.
+async function resolverClientaId(tel: string): Promise<string | null> {
+  try {
+    const res = await rest(`rpc/resolver_clienta_por_tel`, {
+      method: "POST",
+      body: JSON.stringify({ p_tel: tel }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data === "string" ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   // YCloud no usa el handshake GET de Meta (hub.mode/verify_token) — el
   // endpoint se registra directo contra su API (ver acción 'register-webhook'
@@ -152,10 +159,12 @@ Deno.serve(async (req: Request) => {
     if (tipo === "whatsapp.smb.message.echoes") {
       const wm = body.whatsappMessage ?? {};
       const texto = wm.text?.body ?? '[Mensaje sin texto]';
+      const telDestino = String(wm.to ?? '');
+      const clientaId = await resolverClientaId(telDestino);
       await rest(`wa_mensajes`, {
         method: "POST", headers: { "Prefer": "return=minimal" },
         body: JSON.stringify({
-          tel: String(wm.to ?? ''), flujo: "saliente_app", cuerpo: texto, estado: "enviado",
+          clienta_id: clientaId, tel: telDestino, flujo: "saliente_app", cuerpo: texto, estado: "enviado",
           wa_message_id: wm.wamid ?? null, enviado_at: wm.sendTime ?? new Date().toISOString(),
           requiere_aprobacion: false, creado_por: "staff_app",
         }),
@@ -217,10 +226,11 @@ Deno.serve(async (req: Request) => {
         if (m?.link) mediaPath = await descargarYSubirMedia(m.link, m.mime_type || "application/octet-stream", m.id, from);
       }
 
+      const clientaId = await resolverClientaId(from);
       await rest(`wa_mensajes`, {
         method: "POST", headers: { "Prefer": "return=minimal" },
         body: JSON.stringify({
-          tel: from, flujo: "entrante", cuerpo: texto, estado: "respondido",
+          clienta_id: clientaId, tel: from, flujo: "entrante", cuerpo: texto, estado: "respondido",
           media_path: mediaPath, media_tipo: tipoMedia ?? null,
           requiere_aprobacion: false, creado_por: "clienta",
         }),
