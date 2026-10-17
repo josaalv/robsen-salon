@@ -801,6 +801,24 @@ export const db = {
     if (error) { console.error('[db.getWaMensajes]', error.message); return [] }
     return (data ?? []).map(mapWaMensaje)
   },
+  // Hilo completo de UNA clienta (pestaña WhatsApp en su perfil, CRM.tsx) —
+  // a diferencia de getWaMensajes (los últimos 300 de TODO el salón), esto
+  // no se puede perder entre el ruido de otras conversaciones. Filtra por
+  // clienta_id (lo que ya traen los triggers/webhook, ver
+  // 070_resolver_clienta_por_tel.sql) con el teléfono como respaldo —
+  // mensajes viejos de antes de ese cambio solo tienen tel.
+  async getWaMensajesPorClienta(clientaId: string, tel?: string): Promise<WaMensaje[]> {
+    if (!supabase) return []
+    const tel10 = (tel || '').replace(/\D/g, '').slice(-10)
+    let query = supabase.from('wa_mensajes').select('*').order('created_at', { ascending: true }).limit(200)
+    if (clientaId && tel10) query = query.or(`clienta_id.eq.${clientaId},tel.ilike.%${tel10}`)
+    else if (clientaId) query = query.eq('clienta_id', clientaId)
+    else if (tel10) query = query.ilike('tel', `%${tel10}`)
+    else return []
+    const { data, error } = await query
+    if (error) { console.error('[db.getWaMensajesPorClienta]', error.message); return [] }
+    return (data ?? []).map(mapWaMensaje)
+  },
   async insertWaMensajes(rows: Omit<WaMensaje, 'id' | 'createdAt'>[]): Promise<void> {
     if (!supabase || rows.length === 0) return
     const { error } = await supabase.from('wa_mensajes').insert(rows.map(toWaMensajeRow))
