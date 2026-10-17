@@ -1,24 +1,23 @@
-// wa-templates — administra las plantillas de WhatsApp en Meta.
-//   { "action": "create" }  -> somete el catálogo a aprobación de Meta
-//   { "action": "list" }    -> lista las plantillas y su estado actual
-// Lee el token del secreto WHATSAPP_TOKEN.
+// wa-templates — administra las plantillas de WhatsApp y el webhook en
+// YCloud (Tech Provider, coexistence — ver docs/PENDIENTES.md).
+//   { "action": "create" }           -> somete el catálogo a aprobación
+//   { "action": "list" }             -> lista las plantillas y su estado actual
+//   { "action": "sync" }             -> refleja el estado real en wa_plantillas.estado_meta
+//   { "action": "register-webhook" } -> registra wa-webhook en YCloud (una sola vez)
+// Lee la API key del secreto YCLOUD_API_KEY.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
-// WABA real que posee el número en producción (+52 1 33 1175 1393). El WABA
-// "1033375755765717" es solo el de pruebas (número de test de Meta) — nunca
-// tuvo el número real ni debe usarse para enviar/aprobar plantillas.
-// Fijo en código (no en secreto): el secreto WHATSAPP_WABA_ID en Supabase
-// quedó configurado con el WABA de pruebas por error y hacía que 'list',
-// 'sync' y 'create' operaran sobre la cuenta equivocada sin dar ningún
-// error — mismo patrón que el incidente de deploy (config apuntando a un
-// lugar distinto del real sin ninguna señal de fallo).
-const WABA_ID = "2057500331515195";
+const YCLOUD_BASE = "https://api.ycloud.com/v2";
+// WABA real del número +52 1 33 1175 1393, visible en el dashboard de
+// YCloud (WhatsApp Manager → WhatsApp accounts). Fijo en código (no en
+// secreto) — es un identificador, no una credencial; mismo criterio que ya
+// se usaba con el WABA_ID de Meta.
+const WABA_ID = "2828283060886913";
 const LANG = "es_MX";
 const SUPA_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-// Traduce el estado de Meta al que usa la app en wa_plantillas.estado_meta.
+// Traduce el estado de YCloud/Meta al que usa la app en wa_plantillas.estado_meta.
 function metaEstado(status: string): string {
   const s = (status || "").toUpperCase();
   if (s === "APPROVED") return "aprobada";
@@ -92,48 +91,50 @@ function buildComponents(t: Tpl): unknown[] {
   return components;
 }
 
-async function createTemplate(token: string, t: Tpl) {
-  const res = await fetch(`${GRAPH}/${WABA_ID}/message_templates`, {
+async function createTemplate(apiKey: string, t: Tpl) {
+  const res = await fetch(`${YCLOUD_BASE}/whatsapp/templates`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: t.name, language: LANG, category: t.category, components: buildComponents(t) }),
+    headers: { "X-API-Key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ wabaId: WABA_ID, name: t.name, language: LANG, category: t.category, components: buildComponents(t) }),
   });
   const data = await res.json();
-  return { name: t.name, ok: res.ok, status: res.status, data };
+  return { name: t.name, ok: res.ok && !data?.error, status: res.status, data };
 }
 
 Deno.serve(async (req: Request) => {
   try {
-    const token = Deno.env.get("WHATSAPP_TOKEN");
-    if (!token) return json({ error: "Falta el secreto WHATSAPP_TOKEN en Supabase." }, 500);
+    const apiKey = Deno.env.get("YCLOUD_API_KEY");
+    if (!apiKey) return json({ error: "Falta el secreto YCLOUD_API_KEY en Supabase." }, 500);
     const body = await req.json().catch(() => ({}));
     const action = body.action || "list";
 
     if (action === "list") {
-      const res = await fetch(`${GRAPH}/${WABA_ID}/message_templates?fields=name,status,category,language&limit=100`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `${YCLOUD_BASE}/whatsapp/templates?filter.wabaId=${encodeURIComponent(WABA_ID)}&limit=100`,
+        { headers: { "X-API-Key": apiKey } },
+      );
       return json(await res.json(), res.ok ? 200 : 400);
     }
 
     if (action === "create") {
       const results = [];
-      for (const t of CATALOGO) results.push(await createTemplate(token, t));
+      for (const t of CATALOGO) results.push(await createTemplate(apiKey, t));
       return json({ submitted: results }, 200);
     }
 
-    // sync: lee el estado real en Meta y lo refleja en wa_plantillas.estado_meta,
+    // sync: lee el estado real en YCloud y lo refleja en wa_plantillas.estado_meta,
     // para que el panel muestre "Aprobada" en cuanto Meta apruebe (sin tocar la BD a mano).
     if (action === "sync") {
-      const res = await fetch(`${GRAPH}/${WABA_ID}/message_templates?fields=name,status&limit=100`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `${YCLOUD_BASE}/whatsapp/templates?filter.wabaId=${encodeURIComponent(WABA_ID)}&limit=100`,
+        { headers: { "X-API-Key": apiKey } },
+      );
       const data = await res.json();
-      if (!res.ok || !Array.isArray(data?.data)) return json({ error: "No se pudo leer Meta", detail: data }, 400);
+      if (!res.ok || !Array.isArray(data?.items)) return json({ error: "No se pudo leer YCloud", detail: data }, 400);
       if (!SUPA_URL || !SERVICE) return json({ error: "Faltan credenciales de servicio para actualizar la BD." }, 500);
 
       const cambios: { nombre: string; estado: string }[] = [];
-      for (const t of data.data) {
+      for (const t of data.items) {
         const estado = metaEstado(t.status);
         cambios.push({ nombre: t.name, estado });
         await fetch(`${SUPA_URL}/rest/v1/wa_plantillas?nombre=eq.${encodeURIComponent(t.name)}`, {
@@ -148,68 +149,32 @@ Deno.serve(async (req: Request) => {
       return json({ sincronizados: cambios.length, cambios }, 200);
     }
 
-    // phones: lista los números de teléfono reales registrados bajo el WABA,
-    // con su ID, número mostrado y estado — para resolver de una vez cuál ID
-    // corresponde a cuál número (en vez de confiar en capturas de pantalla).
-    if (action === "phones") {
-      const res = await fetch(`${GRAPH}/${WABA_ID}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,platform_type,throughput`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
-      return json(await res.json(), res.ok ? 200 : 400);
-    }
-
-    // phone-info: consulta directo un phone_number_id específico (no depende
-    // del WABA configurado) — para resolver a qué número/cuenta pertenece
-    // realmente un ID dado. Si no se manda 'id' explícito, usa el secreto
-    // WHATSAPP_PHONE_NUMBER_ID ya configurado — diagnóstico de solo lectura.
-    if (action === "phone-info") {
-      const id = String(body.id || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "");
-      if (!id) return json({ error: "Falta 'id' y no hay WHATSAPP_PHONE_NUMBER_ID configurado." }, 400);
-      const res = await fetch(
-        `https://graph.facebook.com/v26.0/${id}?fields=is_on_biz_app,platform_type,status,code_verification_status,display_phone_number,verified_name,quality_rating`,
-        { headers: { "Authorization": `Bearer ${token}` } },
-      );
-      return json(await res.json(), res.ok ? 200 : 400);
-    }
-
-    // deregister-number: quita el número de la Cloud API directa — deja de
-    // poder enviar/recibir por este sistema de inmediato. Acción destructiva
-    // deliberada (migración a un Tech Provider con Coexistence); exige
-    // body.confirmar === true para no dispararse por accidente.
-    if (action === "deregister-number") {
-      if (body.confirmar !== true) return json({ error: "Falta confirmar: true — acción destructiva, requiere confirmación explícita." }, 400);
-      const id = String(body.id || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "");
-      if (!id) return json({ error: "Falta 'id' y no hay WHATSAPP_PHONE_NUMBER_ID configurado." }, 400);
-      const res = await fetch(`https://graph.facebook.com/v21.0/${id}/deregister`, {
+    // register-webhook: registra wa-webhook contra YCloud UNA SOLA VEZ (ver
+    // docs/PENDIENTES.md). YCloud regresa un 'secret' que NO vuelve a
+    // mostrarse — hay que copiarlo de la respuesta y guardarlo de inmediato
+    // como el secreto YCLOUD_WEBHOOK_SECRET en Supabase, o wa-webhook
+    // rechazará todos los eventos entrantes por firma inválida.
+    if (action === "register-webhook") {
+      if (!SUPA_URL) return json({ error: "Falta SUPABASE_URL." }, 500);
+      const projectRef = new URL(SUPA_URL).hostname.split(".")[0];
+      const url = `https://${projectRef}.supabase.co/functions/v1/wa-webhook`;
+      const res = await fetch(`${YCLOUD_BASE}/webhookEndpoints`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      });
-      return json(await res.json(), res.ok ? 200 : 400);
-    }
-
-    // edit: reenvía a Meta el catálogo (componentes actualizados, ej. botones
-    // nuevos) para una plantilla YA aprobada, sin cambiar su nombre/id — Meta
-    // la vuelve a poner en revisión conservando el historial.
-    if (action === "edit") {
-      const name = String(body.name || "");
-      const t = CATALOGO.find(c => c.name === name);
-      if (!t) return json({ error: `No hay plantilla '${name}' en el catálogo` }, 400);
-      const listRes = await fetch(`${GRAPH}/${WABA_ID}/message_templates?name=${encodeURIComponent(name)}&fields=id`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
-      const listData = await listRes.json();
-      const id = listData?.data?.[0]?.id;
-      if (!id) return json({ error: `No se encontró '${name}' en el WABA`, detail: listData }, 404);
-      const res = await fetch(`${GRAPH}/${id}`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ category: t.category, components: buildComponents(t) }),
+        headers: { "X-API-Key": apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url,
+          enabledEvents: [
+            "whatsapp.inbound_message.received",
+            "whatsapp.message.updated",
+            "whatsapp.smb.message.echoes",
+          ],
+        }),
       });
       const data = await res.json();
-      return json({ id, ok: res.ok, data }, res.ok ? 200 : 400);
+      return json({ ok: res.ok, url, data, aviso: "Copia 'secret' de la respuesta y guárdalo como YCLOUD_WEBHOOK_SECRET en Supabase — no se vuelve a mostrar." }, res.ok ? 200 : 400);
     }
 
-    return json({ error: "action debe ser 'create', 'list', 'sync', 'phones', 'phone-info' o 'edit'" }, 400);
+    return json({ error: "action debe ser 'create', 'list', 'sync' o 'register-webhook'" }, 400);
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
