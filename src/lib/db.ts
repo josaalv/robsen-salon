@@ -477,11 +477,29 @@ export const db = {
   // — Ventas —
   async getVentas(): Promise<Venta[]> {
     if (!supabase) return []
-    const [{ data: ventas }, { data: lineas }] = await Promise.all([
-      supabase.from('ventas').select('*').order('fecha', { ascending: false }),
-      supabase.from('lineas_venta').select('*'),
+    // Paginado manual: PostgREST tope por defecto 1000 filas por consulta.
+    // Con un solo .select('*') sin .range(), al pasar de 1000 líneas se
+    // perdían en silencio las más nuevas (sin orden explícito, el recorte
+    // no respeta ningún criterio) — las ventas recientes quedaban con
+    // lineas: [] y por lo tanto Total $0 en toda la pantalla, aunque la
+    // fila sí existiera y el filtro por día la encontrara bien.
+    const fetchAll = async (table: 'ventas' | 'lineas_venta', orderCol: string) => {
+      const PAGE = 1000
+      const filas: Record<string, unknown>[] = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase!.from(table).select('*')
+          .order(orderCol, { ascending: true }).range(from, from + PAGE - 1)
+        if (error) { console.error(`[db.getVentas] ${table}`, error.message); break }
+        filas.push(...(data ?? []))
+        if (!data || data.length < PAGE) break
+      }
+      return filas
+    }
+    const [ventas, lineas] = await Promise.all([
+      fetchAll('ventas', 'created_at'),
+      fetchAll('lineas_venta', 'id'),
     ])
-    return (ventas ?? []).map(v => mapVenta(v, lineas ?? []))
+    return ventas.map(v => mapVenta(v, lineas)).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   },
   // Venta + líneas (+ descuento de stock si aplica) en una sola transacción
   // de Postgres — ver crear_venta_con_lineas en
