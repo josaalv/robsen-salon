@@ -4,6 +4,11 @@ CRM/ERP interno del salón. Ver `README.md` para stack y estructura de carpetas.
 Este archivo es memoria persistente: se lee automáticamente al abrir el repo.
 Consulta siempre `docs/` antes de asumir cómo funciona algo — no adivines.
 
+**Pendientes pausados:** ver `docs/PENDIENTES.md`. Si el usuario pide
+"recordar pagos mercadopago" o algo similar (activar credenciales reales
+de Mercado Pago), ese archivo ya tiene el paso a paso completo — usarlo
+tal cual en vez de reconstruirlo de memoria.
+
 ## Flujo de despliegue (deploy) — leer ANTES de tocar producción
 
 **Fuente de verdad:** `docs/DEPLOY.md`. Resumen:

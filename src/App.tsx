@@ -33,14 +33,13 @@ const NAV: NavGroup[] = [
     { id:'dashboard', label:'Dashboard',            icon:'squares-four',        title:'Dashboard',             sub:'Resumen general del salón' },
     { id:'agenda',    label:'Agenda',               icon:'calendar-blank',       title:'Agenda',                sub:'Citas y disponibilidad' },
     { id:'ventas',    label:'Ventas',               icon:'cash-register',        title:'Ventas',                sub:'Punto de venta y tickets' },
-    { id:'crm',       label:'Clientas',             icon:'users',                title:'CRM de clientas',       sub:'Base de clientas y perfiles' },
+    { id:'crm',       label:'CRM',                  icon:'users',                title:'CRM',                   sub:'Clientas, conversaciones y automatización' },
     { id:'servicios', label:'Servicios',            icon:'scissors',             title:'Servicios',             sub:'Catálogo y paquetes' },
     { id:'productos', label:'Productos',            icon:'package',              title:'Productos e inventario',sub:'Inventario, ventas y movimientos' },
     { id:'empleados', label:'Empleados',            icon:'identification-badge', title:'Empleados',             sub:'Equipo y comisiones' },
   ]},
   { grupo: 'Gestión', items: [
     { id:'finanzas',  label:'Finanzas',             icon:'chart-line-up',        title:'Finanzas',              sub:'Reportes e ingresos' },
-    { id:'whatsapp',  label:'Seguimiento',          icon:'whatsapp-logo',        title:'Seguimiento',           sub:'Mensajes y recordatorios' },
   ]},
   { grupo: 'Sistema', items: [
     { id:'ajustes',    label:'Ajustes',              icon:'gear-six',             title:'Ajustes',               sub:'Configuración y permisos' },
@@ -235,7 +234,6 @@ function AppShell() {
           case 'productos': mod = await import('./screens/Productos'); setScreen(() => mod.ScreenProductos); break
           case 'empleados': mod = await import('./screens/Empleados'); setScreen(() => mod.ScreenEmpleados); break
           case 'finanzas':  mod = await import('./screens/Finanzas');  setScreen(() => mod.ScreenFinanzas);  break
-          case 'whatsapp':  mod = await import('./screens/whatsapp'); setScreen(() => mod.ScreenWhatsApp);  break
           case 'ajustes':   mod = await import('./screens/Ajustes');   setScreen(() => mod.ScreenAjustes);   break
           case 'conflictos': mod = await import('./screens/ConflictosInbox'); setScreen(() => mod.ScreenConflictosInbox); break
           case 'pagos-pendientes': mod = await import('./screens/PagosPendientes'); setScreen(() => mod.ScreenPagosPendientes); break
@@ -251,10 +249,14 @@ function AppShell() {
 
   const rolData = roles[user.rol] || roles.admin
   const can = (id: string) => rolPuede(user.rol, id, data.config, roles)
+  // 'crm' fusiona dos permisos (ver arriba, en el filtro del nav) — se
+  // repite el mismo criterio aquí para que un rol con solo uno de los dos
+  // no se quede fuera de su propia ruta.
+  const canRoute = (id: string) => id === 'crm' ? (can('crm') || can('whatsapp')) : can(id)
   // Si el rol no puede ver la ruta actual, cae al primer módulo permitido (o a
   // Ajustes, siempre accesible desde el menú de cuenta para el perfil propio).
-  const primerModulo = ALL.find(i => can(i.id))?.id || 'ajustes'
-  const effRoute = route === 'ajustes' || can(route) ? route : primerModulo
+  const primerModulo = ALL.find(i => canRoute(i.id))?.id || 'ajustes'
+  const effRoute = route === 'ajustes' || canRoute(route) ? route : primerModulo
   const meta = ALL.find(i => i.id === effRoute) || ALL[0]
 
   // Public booking view
@@ -287,13 +289,16 @@ function AppShell() {
         </div>
         <nav className="nav">
           {NAV.map(g => {
-            const items = g.items.filter(it => can(it.id))
+            // 'crm' fusiona Clientas + lo que era Seguimiento/WhatsApp — se
+            // muestra si el rol tiene cualquiera de los dos permisos (no
+            // solo 'crm'), por si algún rol llega a tener solo uno de los dos.
+            const items = g.items.filter(it => it.id === 'crm' ? (can('crm') || can('whatsapp')) : can(it.id))
             if (!items.length) return null
             return (
               <React.Fragment key={g.grupo}>
                 <div className="nav-label">{g.grupo}</div>
                 {items.map(it => {
-                  const badge = it.id === 'whatsapp' ? waPend : it.id === 'conflictos' ? outboxConflict : it.id === 'pagos-pendientes' ? pagosPendCount : it.badge
+                  const badge = it.id === 'crm' ? waPend : it.id === 'conflictos' ? outboxConflict : it.id === 'pagos-pendientes' ? pagosPendCount : it.badge
                   return (
                     <div key={it.id} className={'nav-item' + (effRoute === it.id ? ' active' : '')} onClick={() => setRoute(it.id)}>
                       <Ic n={it.icon} />{it.label}
