@@ -6,6 +6,29 @@ const BUCKET = 'media'
 const BUCKET_PRIVADO = 'fotos-clientas'
 const BUCKET_WA_MEDIA = 'wa-media'
 
+// Paginado manual: PostgREST tope por defecto 1000 filas por consulta. Un
+// solo .select('*') sin .range() en una tabla que ya pasó esa marca recorta
+// la respuesta en silencio (sin error, sin aviso) — así se perdían las
+// líneas de venta más nuevas (ver fix de "Ventas" en $0 del 28-oct-2026).
+// Cualquier tabla que crece sin límite natural (una fila por cita, por
+// venta, por contacto marcado…) corre el mismo riesgo tarde o temprano, así
+// que toda lectura de "todas las filas" pasa por aquí en vez de un
+// .select('*') suelto.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAllRows<T = any>(table: string, orderCol: string): Promise<T[]> {
+  if (!supabase) return []
+  const PAGE = 1000
+  const filas: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase.from(table).select('*')
+      .order(orderCol, { ascending: true }).range(from, from + PAGE - 1)
+    if (error) { console.error(`[db.fetchAllRows] ${table}`, error.message); break }
+    filas.push(...((data ?? []) as T[]))
+    if (!data || data.length < PAGE) break
+  }
+  return filas
+}
+
 // ─── Mappers DB ↔ TypeScript ──────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -320,19 +343,8 @@ export const db = {
   // podía variar entre cargas, porque tampoco había un orden explícito).
   // Se pagina en bloques de 1000 hasta agotar la tabla completa.
   async getClientas(): Promise<Clienta[]> {
-    if (!supabase) return []
-    const PAGE = 1000
-    let desde = 0
-    const todas: unknown[] = []
-    for (;;) {
-      const { data, error } = await supabase.from('clientas').select('*').order('id').range(desde, desde + PAGE - 1)
-      if (error) { console.error('[db.getClientas]', error.message); break }
-      if (!data || data.length === 0) break
-      todas.push(...data)
-      if (data.length < PAGE) break
-      desde += PAGE
-    }
-    return todas.map(mapClienta)
+    const data = await fetchAllRows('clientas', 'id')
+    return data.map(mapClienta)
   },
   async upsertClienta(c: Clienta) {
     if (!supabase) return
@@ -349,8 +361,8 @@ export const db = {
   async getCitas(): Promise<{ hoy: Cita[]; futuras: Cita[] }> {
     if (!supabase) return { hoy: [], futuras: [] }
     const today = fechaLocalIso()
-    const { data } = await supabase.from('citas').select('*')
-    const all = (data ?? []).map(mapCita)
+    const data = await fetchAllRows('citas', 'id')
+    const all = data.map(mapCita)
     // Sin el "|| !c.fecha" del filtro anterior: una cita sin fecha real ya
     // no cuenta como "hoy" para siempre — ese hueco es justo lo que hacía
     // que citas de días anteriores (ya 'done'/'canc') se siguieran mostrando
@@ -477,27 +489,9 @@ export const db = {
   // — Ventas —
   async getVentas(): Promise<Venta[]> {
     if (!supabase) return []
-    // Paginado manual: PostgREST tope por defecto 1000 filas por consulta.
-    // Con un solo .select('*') sin .range(), al pasar de 1000 líneas se
-    // perdían en silencio las más nuevas (sin orden explícito, el recorte
-    // no respeta ningún criterio) — las ventas recientes quedaban con
-    // lineas: [] y por lo tanto Total $0 en toda la pantalla, aunque la
-    // fila sí existiera y el filtro por día la encontrara bien.
-    const fetchAll = async (table: 'ventas' | 'lineas_venta', orderCol: string) => {
-      const PAGE = 1000
-      const filas: Record<string, unknown>[] = []
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase!.from(table).select('*')
-          .order(orderCol, { ascending: true }).range(from, from + PAGE - 1)
-        if (error) { console.error(`[db.getVentas] ${table}`, error.message); break }
-        filas.push(...(data ?? []))
-        if (!data || data.length < PAGE) break
-      }
-      return filas
-    }
     const [ventas, lineas] = await Promise.all([
-      fetchAll('ventas', 'created_at'),
-      fetchAll('lineas_venta', 'id'),
+      fetchAllRows('ventas', 'created_at'),
+      fetchAllRows('lineas_venta', 'id'),
     ])
     return ventas.map(v => mapVenta(v, lineas)).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   },
@@ -582,9 +576,7 @@ export const db = {
 
   // — Productos —
   async getProductos(): Promise<Producto[]> {
-    if (!supabase) return []
-    const { data } = await supabase.from('productos').select('*')
-    return (data ?? []) as Producto[]
+    return fetchAllRows<Producto>('productos', 'id')
   },
   async upsertProducto(p: Producto) {
     if (!supabase) throw new Error('Sin conexión a Supabase')
@@ -620,9 +612,8 @@ export const db = {
 
   // — Gastos —
   async getGastos(): Promise<Gasto[]> {
-    if (!supabase) return []
-    const { data } = await supabase.from('gastos').select('*').order('fecha', { ascending: false })
-    return (data ?? []) as Gasto[]
+    const data = await fetchAllRows<Gasto>('gastos', 'id')
+    return data.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
   },
   async upsertGasto(g: Gasto) {
     if (!supabase) throw new Error('Sin conexión a Supabase')
@@ -933,12 +924,10 @@ export const db = {
 
   // ─── WhatsApp: "contactado" manual compartido (reemplaza localStorage) ────
   async getContactosManual(): Promise<Record<string, { por: string; at: string }>> {
-    if (!supabase) return {}
-    const { data, error } = await supabase.from('wa_contactos_manual').select('item_id,contactado_por,contactado_at')
-    if (error) { console.error('[db.getContactosManual]', error.message); return {} }
-    const out: Record<string, { por: string; at: string }> = {}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const r of (data ?? []) as any[]) out[r.item_id] = { por: r.contactado_por || '', at: r.contactado_at }
+    const data = await fetchAllRows<any>('wa_contactos_manual', 'item_id')
+    const out: Record<string, { por: string; at: string }> = {}
+    for (const r of data) out[r.item_id] = { por: r.contactado_por || '', at: r.contactado_at }
     return out
   },
   async marcarContactosManual(ids: string[], por: string): Promise<void> {
