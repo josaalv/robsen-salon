@@ -210,15 +210,12 @@ export const ventaTS = (v: Venta): number | null => {
   return m ? Number(m[1]) : null
 }
 
-// ¿La venta v es del mismo día que `ref`? Compara por ventaTS (timestamp
-// real), no por el texto de v.fecha — ese campo tiene DOS formatos según
-// cómo se creó la venta ("28-oct · 11:40 a.m." desde el POS, "2026-10-28"
-// ISO desde un apartado de Agenda), así que un .startsWith/.includes sobre
-// v.fecha excluye en silencio los apartados de cualquier total "de hoy"
-// (ver Dashboard: Ventas de hoy no incluía los anticipos cobrados hoy).
-export const esMismoDiaVenta = (v: Venta, ref: Date): boolean => {
-  const t = ventaTS(v)
-  return t != null && new Date(t).toDateString() === ref.toDateString()
+// Timestamp (ms) de cuando se cobró el saldo restante de un apartado, si
+// aplica (completar_venta_apartado / "Cobrar saldo" en VentaDetalle).
+export const saldoTS = (v: Venta): number | null => {
+  if (!v.saldoCobradoEn) return null
+  const t = Date.parse(v.saldoCobradoEn)
+  return isNaN(t) ? null : t
 }
 
 export const ventaCalc = {
@@ -244,6 +241,36 @@ export const ventaCalc = {
   },
   porTipo: (v: Venta, tipo: string) => v.lineas.filter(l => l.tipo === tipo).reduce((s, l) => s + l.precio * l.cant, 0),
 }
+
+// Dinero que entró el día en que se CREÓ la venta. No usa ventaCalc.cobrado()
+// a secas porque esa función mira el estado ACTUAL: un apartado ya
+// completado dice 'pagada' aunque el saldo se haya cobrado otro día (y tal
+// vez con otro método) — eso inflaría retroactivamente el corte del día de
+// creación con dinero que en realidad entró después.
+const montoEnCreacion = (v: Venta): number => v.saldoCobradoEn ? (v.anticipo || 0) : ventaCalc.cobrado(v)
+
+// ¿La venta v tuvo actividad dentro del periodo que describe `enPeriodo`
+// (recibe un timestamp y dice si cae dentro), y cuánto dinero entró
+// realmente en ese periodo? Una venta puede tener dos eventos de cobro en
+// días distintos — la creación (anticipo) y el cobro del saldo — así que se
+// evalúan por separado y se suman, en vez de usar un solo timestamp por
+// venta como si todo el dinero hubiera entrado de una vez.
+export const ventaEnPeriodo = (v: Venta, enPeriodo: (t: number) => boolean): { incluida: boolean; monto: number } => {
+  const t = ventaTS(v)
+  const ts = saldoTS(v)
+  const creacionEnPeriodo = t != null && enPeriodo(t)
+  const saldoEnPeriodo = ts != null && enPeriodo(ts)
+  const monto = (creacionEnPeriodo ? montoEnCreacion(v) : 0) + (saldoEnPeriodo ? (v.saldoCobradoMonto || 0) : 0)
+  return { incluida: creacionEnPeriodo || saldoEnPeriodo, monto }
+}
+
+// ¿La venta v es del mismo día que `ref`? Por ventaTS/saldoTS (timestamps
+// reales), no por el texto de v.fecha — ese campo tiene DOS formatos según
+// cómo se creó la venta ("28-oct · 11:40 a.m." desde el POS, "2026-10-28"
+// ISO desde un apartado de Agenda) — y tampoco alcanza con solo ventaTS: un
+// apartado creado un día y completado otro tiene actividad real en los dos.
+export const esMismoDiaVenta = (v: Venta, ref: Date): boolean =>
+  ventaEnPeriodo(v, t => new Date(t).toDateString() === ref.toDateString()).incluida
 
 // Traduce el error real que rechazó una venta a un mensaje que el equipo del
 // salón pueda entender. Si esto se está mostrando, NUNCA es un problema de
