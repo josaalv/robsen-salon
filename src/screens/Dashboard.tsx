@@ -3,12 +3,11 @@ import { Stat, CardHead, EstadoBadge, Avatar, toast } from '../components/ui'
 import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { db } from '../lib/db'
-import { mxn, ventaCalc } from '../lib/helpers'
+import { mxn, ventaCalc, ventaTS, esMismoDiaVenta } from '../lib/helpers'
 import type { Usuario } from '../types'
 
 const DIAS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-const MESES_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const DIAS_SHORT_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 
 function fmtDur(min: number): string {
@@ -41,24 +40,30 @@ export function ScreenDashboard({ onNavigate, user }: { onNavigate: (r: string) 
   const proximas = citasHoy.filter(a => ['conf', 'pay', 'pend'].includes(a.estado)).slice(0, 6)
 
   // — Ventas —
-  const todayStr = hoy.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
-  const ventasHoy = data.ventas.filter(v => v.fecha.startsWith(todayStr))
+  // Por ventaTS (timestamp real), no por el texto de v.fecha: ese campo
+  // tiene dos formatos distintos (POS vs. apartado de Agenda) y un
+  // .startsWith/.includes sobre él excluye en silencio los apartados — ver
+  // esMismoDiaVenta en helpers.ts.
+  const ventasHoy = data.ventas.filter(v => esMismoDiaVenta(v, hoy))
   const totalHoy = ventasHoy.reduce((s, v) => s + ventaCalc.cobrado(v), 0)
 
   // Últimos 7 días reales
   const semanaData = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const d = new Date(hoy); d.setDate(hoy.getDate() - (6 - i))
-    const dStr = d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
     const total = data.ventas
-      .filter(v => v.fecha.toLowerCase().startsWith(dStr.toLowerCase()))
+      .filter(v => esMismoDiaVenta(v, d))
       .reduce((s, v) => s + ventaCalc.cobrado(v), 0)
     return { d: DIAS_SHORT_ES[d.getDay()], v: total }
   }), [data.ventas, hoy.toDateString()])
 
   // Ticket promedio del mes (queda como promedio por transacción, no como
   // total de periodo — es información operativa, no un reporte financiero).
-  const mesActualStr = MESES_SHORT[hoy.getMonth()].toLowerCase()
-  const ventasMesArr = data.ventas.filter(v => v.fecha.toLowerCase().includes(mesActualStr))
+  const ventasMesArr = data.ventas.filter(v => {
+    const t = ventaTS(v)
+    if (t == null) return false
+    const d = new Date(t)
+    return d.getFullYear() === hoy.getFullYear() && d.getMonth() === hoy.getMonth()
+  })
   const totalMes = ventasMesArr.reduce((s, v) => s + ventaCalc.cobrado(v), 0)
   const ticketProm = ventasMesArr.length ? Math.round(totalMes / ventasMesArr.length) : 0
 

@@ -210,6 +210,17 @@ export const ventaTS = (v: Venta): number | null => {
   return m ? Number(m[1]) : null
 }
 
+// ¿La venta v es del mismo día que `ref`? Compara por ventaTS (timestamp
+// real), no por el texto de v.fecha — ese campo tiene DOS formatos según
+// cómo se creó la venta ("28-oct · 11:40 a.m." desde el POS, "2026-10-28"
+// ISO desde un apartado de Agenda), así que un .startsWith/.includes sobre
+// v.fecha excluye en silencio los apartados de cualquier total "de hoy"
+// (ver Dashboard: Ventas de hoy no incluía los anticipos cobrados hoy).
+export const esMismoDiaVenta = (v: Venta, ref: Date): boolean => {
+  const t = ventaTS(v)
+  return t != null && new Date(t).toDateString() === ref.toDateString()
+}
+
 export const ventaCalc = {
   subtotal: (v: Venta) => v.lineas.reduce((s, l) => s + l.precio * l.cant, 0),
   total: (v: Venta) => ventaCalc.subtotal(v) - (v.desc || 0),
