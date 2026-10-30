@@ -4,7 +4,7 @@ import { PhosphorIcon as Ic } from '../components/PhosphorIcon'
 import { useStore } from '../data/store'
 import { useAuth } from '../lib/auth'
 import { db } from '../lib/db'
-import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS, normalizarBusqueda, friendlyVentaError } from '../lib/helpers'
+import { mxn, ventaCalc, descargarCSV, desglosePagos, ventaTS, ventaEnPeriodo, esMismoDiaVenta, normalizarBusqueda, friendlyVentaError } from '../lib/helpers'
 import { POSBuilder } from './POS'
 import type { Venta, CierreCaja, LineaVenta } from '../types'
 
@@ -425,42 +425,58 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const esMismoDia = (t: number | null, d: Date) => t != null && new Date(t).toDateString() === d.toDateString()
   const todayStr = hoyDate.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })   // para el cierre de caja del día
 
-  const hoyVentas = ventas.filter(v => esMismoDia(ventaTS(v), hoyDate))
-  // "Ventas de hoy" es dinero realmente cobrado, no lo facturado: un ticket
-  // 'pendiente' o el saldo sin cobrar de un 'apartado'/'parcial' no cuenta
-  // como venta del día hasta que de verdad se recibe.
-  const totalHoy = hoyVentas.reduce((s, v) => s + ventaCalc.cobrado(v), 0)
+  // "Ventas de hoy" cuenta actividad real de hoy (se creó la venta y/o se
+  // cobró su saldo hoy) y el monto es lo que de verdad entró hoy — no usa
+  // ventaCalc.cobrado() a secas: un apartado creado ayer y completado hoy
+  // diría 'pagada' (estado actual) e inflaría el total con el anticipo de
+  // ayer. Ver ventaEnPeriodo en helpers.ts.
+  const enDiaHoy = (t: number) => esMismoDia(t, hoyDate)
+  const hoyVentas = ventas.filter(v => esMismoDiaVenta(v, hoyDate))
+  const totalHoy = ventas.reduce((s, v) => s + ventaEnPeriodo(v, enDiaHoy).monto, 0)
   const ticketProm = hoyVentas.length ? Math.round(totalHoy / hoyVentas.length) : 0
-  const comisionesHoy = hoyVentas.reduce((s, v) => s + comisionVenta(v), 0)
+  // Comisión: se atribuye al día en que se hizo la venta (el servicio), no
+  // se parte entre el día del anticipo y el del saldo.
+  const comisionesHoy = ventas.filter(v => esMismoDia(ventaTS(v), hoyDate)).reduce((s, v) => s + comisionVenta(v), 0)
   const pendientes = ventas.filter(v => v.estado === 'parcial' || v.estado === 'pendiente')
-
-  const periodFilter = (v: Venta) => {
-    const t = ventaTS(v)
-    if (filtroPeriodo === 'Hoy') return esMismoDia(t, hoyDate)
-    if (filtroPeriodo === 'Mes') {
-      if (t == null) return false
-      const d = new Date(t)
-      return d.getFullYear() === hoyDate.getFullYear() && d.getMonth() === hoyDate.getMonth()
-    }
-    return true
-  }
 
   const diaDate = dia ? new Date(dia + 'T12:00:00') : null
   const rangoActivo = !!(desde || hasta)
   const rangoDesde = desde ? Date.parse(desde + 'T00:00:00') : -Infinity
   const rangoHasta = hasta ? Date.parse(hasta + 'T23:59:59.999') : Infinity
 
+  // Predicado temporal del periodo mostrado — rango de fechas > día > filtro
+  // rápido (Hoy/Mes/Todo). Recibe un timestamp suelto (no una venta) para
+  // poder aplicarse tanto al día de creación como al día del saldo cobrado
+  // de un apartado completado (ventaEnPeriodo) — un apartado creado un día
+  // y completado otro tiene actividad real en los dos.
+  const periodFilterPredicate = (t: number): boolean => {
+    if (rangoActivo) return t >= rangoDesde && t <= rangoHasta
+    if (dia && diaDate) return esMismoDia(t, diaDate)
+    if (filtroPeriodo === 'Mes') {
+      const d = new Date(t)
+      return d.getFullYear() === hoyDate.getFullYear() && d.getMonth() === hoyDate.getMonth()
+    }
+    if (filtroPeriodo === 'Hoy') return esMismoDia(t, hoyDate)
+    return true
+  }
+
   const apartados = ventas.filter(v => v.estado === 'apartado')
+
+  // Ventas creadas dentro del periodo mostrado (sin importar si su saldo se
+  // cobró fuera de él) — base de comisión/descuento/anticipos, que se
+  // atribuyen al día en que se hizo la venta, no se parten por día de cobro.
+  const creadasEnPeriodo = (vs: Venta[]) => vs.filter(v => {
+    const t = ventaTS(v)
+    return t != null && periodFilterPredicate(t)
+  })
 
   const lista = ventas.filter(v => {
     if (v.estado === 'apartado') return false
-    // Prioridad de filtro temporal: rango de fechas > día > periodo.
-    if (rangoActivo) {
-      const t = ventaTS(v)
-      if (t == null || t < rangoDesde || t > rangoHasta) return false
-    } else if (dia && diaDate) {
-      if (!esMismoDia(ventaTS(v), diaDate)) return false
-    } else if (!periodFilter(v)) return false
+    // Entra si se creó dentro del periodo, o si se cobró su saldo dentro del
+    // periodo (apartado completado otro día) — igual que el cierre de caja
+    // ya distinguía "creadasHoy" de "saldosHoy", generalizado a cualquier
+    // día/rango elegido aquí, no solo "hoy".
+    if (!ventaEnPeriodo(v, periodFilterPredicate).incluida) return false
     if (filtroPago !== 'Todos' && v.pago !== filtroPago &&
         !(v.pagos && v.pagos.some(p => p.metodo === filtroPago))) return false
     if (q && !normalizarBusqueda(v.cliente).includes(normalizarBusqueda(q)) && !v.ticket.includes(q)) return false
@@ -492,18 +508,47 @@ export function ScreenVentas({ onNavigate }: { onNavigate: (r: string) => void }
   const pageIdx = Math.min(page, totalPages) - 1
   const pageRows = listaOrdenada.slice(pageIdx * PAGE, pageIdx * PAGE + PAGE)
 
-  // Totales por método de pago sobre la lista visible (separa efectivo/tarjeta).
+  // Método de pago de cada "pata" de la venta, para atribuir el dinero al
+  // día correcto. En un apartado completado (citaId + saldoCobradoEn),
+  // v.pagos trae [anticipo, saldo] en ese orden con su método original cada
+  // uno (ver confirmarVenta en Agenda.tsx) — se usa esa pareja en vez de
+  // desglosePagos genérico, que repartiría proporcionalmente y mezclaría el
+  // método del anticipo con el del saldo.
+  const pagoCreacion = (v: Venta): { metodo: string; monto: number } =>
+    v.saldoCobradoEn && v.pagos && v.pagos.length >= 2
+      ? v.pagos[0]
+      : { metodo: v.pago, monto: ventaCalc.cobrado(v) }
+  const pagoSaldo = (v: Venta): { metodo: string; monto: number } =>
+    v.pagos && v.pagos.length >= 2
+      ? v.pagos[v.pagos.length - 1]
+      : { metodo: v.pago, monto: v.saldoCobradoMonto || 0 }
+
+  // Totales por método de pago sobre la lista visible (separa efectivo/
+  // tarjeta). Por periodo: solo cuenta la pata (creación y/o saldo) que cae
+  // dentro del periodo mostrado — si no, un apartado completado otro día
+  // aparecería con el total completo en el día equivocado.
   const totalesPorPago = lista.reduce((acc, v) => {
-    desglosePagos(v, totalVenta(v)).forEach(p => { acc[p.metodo] = (acc[p.metodo] || 0) + p.monto })
+    const t = ventaTS(v)
+    if (t != null && periodFilterPredicate(t)) {
+      const p = pagoCreacion(v)
+      acc[p.metodo] = (acc[p.metodo] || 0) + p.monto
+    }
+    const ts = v.saldoCobradoEn ? Date.parse(v.saldoCobradoEn) : NaN
+    if (!isNaN(ts) && periodFilterPredicate(ts)) {
+      const p = pagoSaldo(v)
+      acc[p.metodo] = (acc[p.metodo] || 0) + p.monto
+    }
     return acc
   }, {} as Record<string, number>)
   const metodosPago = ['Todos', 'Efectivo', 'Tarjeta', 'Transferencia', 'Crédito']
 
-  // Corte del periodo mostrado (día o rango): totales para cuadrar caja.
-  const corteTotal = lista.reduce((s, v) => s + totalVenta(v), 0)
-  const corteComis = lista.reduce((s, v) => s + comisionVenta(v), 0)
-  const corteDesc = lista.reduce((s, v) => s + (v.desc || 0), 0)
-  const corteAnticipos = lista.reduce((s, v) => s + (v.anticipo || 0), 0)
+  // Corte del periodo mostrado (día o rango): totales para cuadrar caja —
+  // dinero que de verdad entró en el periodo, no el valor facturado de cada
+  // ticket que lo toca (ver ventaEnPeriodo).
+  const corteTotal = lista.reduce((s, v) => s + ventaEnPeriodo(v, periodFilterPredicate).monto, 0)
+  const corteComis = creadasEnPeriodo(lista).reduce((s, v) => s + comisionVenta(v), 0)
+  const corteDesc = creadasEnPeriodo(lista).reduce((s, v) => s + (v.desc || 0), 0)
+  const corteAnticipos = creadasEnPeriodo(lista).reduce((s, v) => s + (v.anticipo || 0), 0)
   const cortePromedio = lista.length ? Math.round(corteTotal / lista.length) : 0
   const fmtDia = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) }
   const corteLabel = rangoActivo
