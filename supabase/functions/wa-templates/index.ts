@@ -1,6 +1,8 @@
 // wa-templates — administra las plantillas de WhatsApp y el webhook en
 // YCloud (Tech Provider, coexistence — ver docs/PENDIENTES.md).
 //   { "action": "create" }           -> somete el catálogo a aprobación
+//   { "action": "create-campana",
+//     etiqueta, cuerpo }             -> somete una plantilla de campaña ad-hoc (Campañas)
 //   { "action": "list" }             -> lista las plantillas y su estado actual
 //   { "action": "sync" }             -> refleja el estado real en wa_plantillas.estado_meta
 //   { "action": "register-webhook" } -> registra wa-webhook en YCloud (una sola vez)
@@ -144,6 +146,43 @@ Deno.serve(async (req: Request) => {
       return json({ submitted: results }, 200);
     }
 
+    // create-campana: somete una plantilla de MARKETING ad-hoc (una campaña
+    // puntual, no un disparador fijo del CATALOGO) — el equipo la escribe
+    // desde Campañas con las mismas variables {nombre}/{promo} que ya usan
+    // las plantillas locales de Audiencias, y aquí se traducen a {{1}}/{{2}}
+    // posicional porque así es como Meta/YCloud exige el body de un template.
+    if (action === "create-campana") {
+      const etiqueta: string = String(body.etiqueta || "").trim();
+      const textoOriginal: string = String(body.cuerpo || "").trim();
+      if (!etiqueta) return json({ error: "Falta el nombre de la campaña." }, 400);
+      if (!textoOriginal) return json({ error: "Falta el texto del mensaje." }, 400);
+
+      const slug = etiqueta.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 55);
+      if (!slug) return json({ error: "El nombre de la campaña debe tener letras o números." }, 400);
+      const nombre = `promo_${slug}`;
+
+      const PLACEHOLDER: Record<string, string> = { nombre: "Ana", promo: "20% de descuento en tintes todo noviembre" };
+      const ORDEN = ["nombre", "promo"];
+      const presentes = ORDEN.filter((k) => textoOriginal.includes(`{${k}}`));
+      if (presentes.length === 0) {
+        return json({ error: "El mensaje debe usar al menos {nombre} o {promo} — un template de marketing sin ninguna variable no se puede someter." }, 400);
+      }
+      let cuerpoMeta = textoOriginal;
+      presentes.forEach((k, i) => { cuerpoMeta = cuerpoMeta.split(`{${k}}`).join(`{{${i + 1}}}`); });
+      if (/\{[a-z_]+\}/.test(cuerpoMeta)) {
+        return json({ error: "El mensaje tiene una variable que no es {nombre} ni {promo}." }, 400);
+      }
+
+      const t: Tpl = {
+        name: nombre, category: "MARKETING", body: cuerpoMeta,
+        example: presentes.map((k) => PLACEHOLDER[k]),
+        footer: "Robsen Salón & Spa",
+      };
+      const result = await createTemplate(apiKey, t);
+      return json({ submitted: result, nombre, cuerpo: textoOriginal }, result.ok ? 200 : 400);
+    }
+
     // sync: lee el estado real en YCloud y lo refleja en wa_plantillas.estado_meta,
     // para que el panel muestre "Aprobada" en cuanto Meta apruebe (sin tocar la BD a mano).
     if (action === "sync") {
@@ -196,7 +235,7 @@ Deno.serve(async (req: Request) => {
       return json({ ok: res.ok, url, data, aviso: "Copia 'secret' de la respuesta y guárdalo como YCLOUD_WEBHOOK_SECRET en Supabase — no se vuelve a mostrar." }, res.ok ? 200 : 400);
     }
 
-    return json({ error: "action debe ser 'create', 'list', 'sync' o 'register-webhook'" }, 400);
+    return json({ error: "action debe ser 'create', 'create-campana', 'list', 'sync' o 'register-webhook'" }, 400);
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
