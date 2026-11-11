@@ -16,9 +16,47 @@ import { EST_META } from './shared'
 const ORDEN_VARS = ['nombre', 'promo'] as const
 const VARS_CAMPANA = ['{nombre}', '{promo}']
 
-function NuevaCampanaModal({ onClose, onCreada }: { onClose: () => void; onCreada: () => void }) {
-  const [etiqueta, setEtiqueta] = useState('')
-  const [cuerpo, setCuerpo] = useState('')
+// Punto de partida listo para usar — el equipo solo completa {promo} (el
+// texto de la oferta) en vez de redactar una campaña desde cero cada vez.
+// Siguen necesitando aprobación de Meta antes de poder lanzarse, como
+// cualquier plantilla de marketing — esto no se salta ese paso, solo quita
+// la fricción de escribir el mensaje.
+const CAMPANAS_PREDEFINIDAS: { icon: string; etiqueta: string; cuerpo: string }[] = [
+  {
+    icon: 'sparkle',
+    etiqueta: 'Promoción del mes',
+    cuerpo: 'Hola {nombre} 💛 Este mes en Robsen Salón & Spa tenemos {promo}. ¿Agendamos tu cita? Contesta este mensaje y te apartamos tu lugar ✨',
+  },
+  {
+    icon: 'users-three',
+    etiqueta: 'Trae una amiga',
+    cuerpo: 'Hola {nombre} 💅 ¿Conoces a alguien que ama consentirse tanto como tú? Trae a una amiga y las dos reciben {promo} en Robsen Salón & Spa. ¡Agenden juntas!',
+  },
+  {
+    icon: 'clock-countdown',
+    etiqueta: 'Tiempo limitado',
+    cuerpo: 'Hola {nombre} ✨ Por tiempo limitado: {promo} en Robsen Salón & Spa. Agenda esta semana para no quedarte sin lugar — responde este mensaje 💛',
+  },
+  {
+    icon: 'star',
+    etiqueta: 'Nuevo servicio',
+    cuerpo: 'Hola {nombre} 💛 Tenemos algo nuevo que te va a encantar: {promo}. ¿Quieres ser de las primeras en probarlo en Robsen Salón & Spa? Escríbenos 🌟',
+  },
+  {
+    icon: 'heart',
+    etiqueta: 'Clienta especial',
+    cuerpo: 'Hola {nombre} 💛 Como clienta de Robsen Salón & Spa, tienes acceso a {promo}. Te esperamos pronto para consentirte otra vez ✨',
+  },
+  {
+    icon: 'gift',
+    etiqueta: 'Fecha especial / temporada',
+    cuerpo: '¡Hola {nombre}! 🎉 Por {promo}, consiéntete en Robsen Salón & Spa. Agenda ya, los lugares se llenan rápido 💛',
+  },
+]
+
+function NuevaCampanaModal({ inicial, onClose, onCreada }: { inicial?: { etiqueta: string; cuerpo: string }; onClose: () => void; onCreada: () => void }) {
+  const [etiqueta, setEtiqueta] = useState(inicial?.etiqueta || '')
+  const [cuerpo, setCuerpo] = useState(inicial?.cuerpo || '')
   const [enviando, setEnviando] = useState(false)
 
   const varsEnTexto = cuerpo.match(/\{[^}]+\}/g) || []
@@ -51,7 +89,10 @@ function NuevaCampanaModal({ onClose, onCreada }: { onClose: () => void; onCread
     <Modal onClose={onClose} width={480}>
       <div style={{ borderTop: '3px solid var(--gold)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
         <div className="between card-pad" style={{ borderBottom: '1px solid var(--line-soft)', paddingBottom: 16 }}>
-          <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>Nueva campaña</h3>
+          <div>
+            <h3 className="serif" style={{ margin: 0, fontSize: 20 }}>{inicial ? 'Usar plantilla sugerida' : 'Nueva campaña'}</h3>
+            {inicial && <div className="dim" style={{ fontSize: 11.5, marginTop: 3 }}>Ajusta el texto si quieres — {'{promo}'} se llena después, al lanzarla.</div>}
+          </div>
           <button className="btn ghost icon-btn" onClick={onClose}><Ic n="x" /></button>
         </div>
         <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -212,7 +253,7 @@ function LanzarCampanaModal({ plantilla, onClose, onEnviado }: { plantilla: WaPl
 }
 
 export function Campanas({ plantillas, recargar }: { plantillas: WaPlantilla[]; recargar: () => Promise<void> }) {
-  const [showNueva, setShowNueva] = useState(false)
+  const [modal, setModal] = useState<{ etiqueta: string; cuerpo: string } | 'nueva' | null>(null)
   const [lanzando, setLanzando] = useState<WaPlantilla | null>(null)
   const [sincronizando, setSincronizando] = useState(false)
 
@@ -233,8 +274,32 @@ export function Campanas({ plantillas, recargar }: { plantillas: WaPlantilla[]; 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {showNueva && <NuevaCampanaModal onClose={() => setShowNueva(false)} onCreada={recargar} />}
+      {modal && (
+        <NuevaCampanaModal
+          inicial={modal === 'nueva' ? undefined : modal}
+          onClose={() => setModal(null)}
+          onCreada={recargar}
+        />
+      )}
       {lanzando && <LanzarCampanaModal plantilla={lanzando} onClose={() => setLanzando(null)} onEnviado={recargar} />}
+
+      <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <CardHead title="Plantillas sugeridas" sub="Puntos de partida listos — elige una, ajusta el texto si quieres y sométela a aprobación" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+          {CAMPANAS_PREDEFINIDAS.map(p => (
+            <div key={p.etiqueta} style={{ border: '1px solid var(--line-soft)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="vc gap8">
+                <Ic n={p.icon} size={16} style={{ color: 'var(--gold)' }} />
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{p.etiqueta}</span>
+              </div>
+              <div className="dim" style={{ fontSize: 11.5, lineHeight: 1.45, flex: 1 }}>{p.cuerpo}</div>
+              <button className="btn ghost sm" style={{ justifyContent: 'center' }} onClick={() => setModal(p)}>
+                <Ic n="arrow-right" size={13} />Usar esta
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="between" style={{ flexWrap: 'wrap', gap: 10 }}>
@@ -243,7 +308,7 @@ export function Campanas({ plantillas, recargar }: { plantillas: WaPlantilla[]; 
             <button className="btn ghost sm" disabled={sincronizando} onClick={sincronizar}>
               <Ic n={sincronizando ? 'spinner' : 'arrows-clockwise'} size={13} />{sincronizando ? 'Consultando…' : 'Sincronizar con Meta'}
             </button>
-            <button className="btn gold sm" onClick={() => setShowNueva(true)}><Ic n="plus" size={13} />Nueva campaña</button>
+            <button className="btn gold sm" onClick={() => setModal('nueva')}><Ic n="plus" size={13} />Nueva campaña desde cero</button>
           </div>
         </div>
 
