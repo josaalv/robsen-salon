@@ -855,6 +855,24 @@ export const db = {
     if (error) throw new Error(error.message)
     return (data as { sincronizados: number }) ?? { sincronizados: 0 }
   },
+  // Somete una plantilla de campaña (Campañas) a aprobación de Meta y la
+  // refleja en wa_plantillas como 'pendiente' — se confirma su aprobación
+  // real después con sincronizarWaPlantillas, igual que el resto.
+  async crearPlantillaCampana(etiqueta: string, cuerpo: string): Promise<{ nombre: string }> {
+    if (!supabase) throw new Error('Sin conexión a Supabase')
+    const { data, error } = await supabase.functions.invoke('wa-templates', { body: { action: 'create-campana', etiqueta, cuerpo } })
+    if (error) throw new Error(error.message)
+    const r = data as { submitted?: { ok: boolean; data?: { error?: { message?: string } } }; nombre?: string; error?: string }
+    if (r?.error) throw new Error(r.error)
+    if (!r?.submitted?.ok) throw new Error(r?.submitted?.data?.error?.message || 'Meta rechazó la plantilla.')
+    const nombre = r.nombre!
+    const { error: dbError } = await supabase.from('wa_plantillas').upsert({
+      nombre, idioma: 'es_MX', categoria: 'marketing', flujo: 'campana',
+      cuerpo, estado_meta: 'pendiente', activa: true,
+    }, { onConflict: 'nombre,idioma' })
+    if (dbError) console.error('[db.crearPlantillaCampana]', dbError.message)
+    return { nombre }
+  },
   // Manda texto libre a una clienta desde la bandeja de conversaciones —
   // solo funciona dentro de la ventana de 24h de servicio al cliente.
   async responderWa(tel: string, texto: string): Promise<{ ok: boolean }> {

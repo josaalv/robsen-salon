@@ -85,4 +85,5 @@ export const EST_MSG: Record<string, { label: string; color: string }> = {
 export const FLUJO_LABEL: Record<string, string> = {
   confirmacion: 'Confirmación', recordatorio_24h: 'Recordatorio', post_visita: 'Post-visita',
   cumpleanos: 'Cumpleaños', bienvenida: 'Bienvenida', reactivacion: 'Reactivación',
+  campana: 'Campaña',
 }

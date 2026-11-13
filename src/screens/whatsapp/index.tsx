@@ -7,8 +7,9 @@ import type { WaMensaje, WaPlantilla } from '../../types'
 import { Resumen } from './Resumen'
 import { Audiencias } from './Audiencias'
 import { Conversaciones } from './Conversaciones'
+import { Campanas } from './Campanas'
 
-const TABS = ['Resumen', 'Audiencias', 'Conversaciones']
+const TABS = ['Resumen', 'Audiencias', 'Campañas', 'Conversaciones']
 
 export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r: string) => void }) {
   const { loadFromSupabase } = useStore()
@@ -72,6 +73,7 @@ export function ScreenWhatsApp({ onNavigate: _onNavigate }: { onNavigate: (r: st
           recargar={recargarCola} onAbrirConversacion={abrirConversacion}
         />
       )}
+      {vista === 'Campañas' && <Campanas plantillas={plantillas} recargar={recargarCola} />}
       {vista === 'Conversaciones' && <Conversaciones cola={cola} recargar={recargarCola} openTel={telAbierto} />}
     </div>
   )
